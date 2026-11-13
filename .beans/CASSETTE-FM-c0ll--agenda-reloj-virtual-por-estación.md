@@ -1,10 +1,11 @@
 ---
 # CASSETTE-FM-c0ll
 title: 'Agenda: reloj virtual por estación'
-status: todo
+status: completed
 type: task
+priority: normal
 created_at: 2026-11-13T23:03:54Z
-updated_at: 2026-11-13T23:03:54Z
+updated_at: 2026-11-13T23:13:45Z
 parent: CASSETTE-FM-u2yr
 blocked_by:
     - CASSETTE-FM-na6t
