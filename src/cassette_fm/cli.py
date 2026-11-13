@@ -3,11 +3,13 @@ import http.client
 import dataclasses
 import json
 import logging
+import shutil
+import subprocess
 import sys
 import urllib.error
 import urllib.request
 
-from cassette_fm import __version__, config
+from cassette_fm import __version__, atajos, config
 
 ACCIONES = {"next": "siguiente", "prev": "anterior", "on": "encender", "off": "apagar",
             "toggle": "alternar", "rescan": "rescan"}
@@ -57,6 +59,7 @@ def _armar_parser() -> argparse.ArgumentParser:
     parser.add_argument("--version", action="store_true")
     sub = parser.add_subparsers(dest="comando")
     sub.add_parser("serve", parents=[comun], help="levanta el servicio")
+    sub.add_parser("atajos", help="registra los atajos de teclado en Cinnamon")
     for nombre in ACCIONES:
         sub.add_parser(nombre, parents=[comun])
     sub.add_parser("status", parents=[comun], help="qué está sonando")
@@ -90,6 +93,20 @@ def _ejecutar(args, puerto: int) -> None:
         print(_linea_estado(_llamar(puerto, "POST", f"/{ACCIONES[args.comando]}")))
 
 
+def _instalar_atajos() -> int:
+    ejecutable = shutil.which("cassette")
+    if ejecutable is None:
+        print("instalá cassette en el PATH primero (scripts/instalar.sh)", file=sys.stderr)
+        return 1
+    try:
+        for mensaje in atajos.instalar(ejecutable, atajos.gsettings):
+            print(mensaje)
+    except (OSError, subprocess.CalledProcessError) as e:
+        print(f"no se pudo configurar Cinnamon con gsettings: {e}", file=sys.stderr)
+        return 1
+    return 0
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = _armar_parser()
     args = parser.parse_args(argv)
@@ -99,6 +116,8 @@ def main(argv: list[str] | None = None) -> int:
     if args.comando is None:
         parser.print_help()
         return 0
+    if args.comando == "atajos":
+        return _instalar_atajos()
     rutas = config.rutas()
     try:
         cfg = config.cargar_config(rutas.config)

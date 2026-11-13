@@ -30,6 +30,15 @@ El servicio arranca con la sesión **en silencio**: solo suena con `cassette on`
 | `cassette rescan` | vuelve a leer `~/Música` |
 | `cassette serve` | levanta el servicio a mano (sin systemd) |
 
+## Atajos de teclado (Cinnamon)
+
+`cassette atajos` registra estas teclas (no pisa las que ya uses ni las que cambies a mano):
+
+| Tecla | Acción |
+|---|---|
+| `Super+Alt+→` / `Super+Alt+←` | estación siguiente / anterior |
+| `Super+Alt+↑` / `Super+Alt+↓` | volumen +10 / −10 (en 0 se apaga; subir lo enciende) |
+
 ## Configuración
 
 `~/.config/cassette-fm/config.toml` (todas las claves son opcionales):
