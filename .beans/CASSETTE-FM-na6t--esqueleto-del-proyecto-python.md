@@ -1,10 +1,11 @@
 ---
 # CASSETTE-FM-na6t
 title: Esqueleto del proyecto Python
-status: todo
+status: completed
 type: task
+priority: normal
 created_at: 2026-11-13T23:03:54Z
-updated_at: 2026-11-13T23:03:54Z
+updated_at: 2026-11-13T23:12:25Z
 parent: CASSETTE-FM-u2yr
 ---
 

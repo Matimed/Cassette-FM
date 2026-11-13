@@ -1,0 +1,8 @@
+Metadata-Version: 2.4
+Name: cassette-fm
+Version: 0.1.0
+Summary: Radios continuas a partir de las carpetas de ~/Música
+Requires-Python: >=3.12
+Requires-Dist: mutagen
+Provides-Extra: dev
+Requires-Dist: pytest; extra == "dev"
