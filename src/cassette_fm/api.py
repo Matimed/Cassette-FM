@@ -1,9 +1,12 @@
 import json
+import logging
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
 from cassette_fm.mpv import ErrorMpv
 from cassette_fm.radio import EstacionInexistente, SinEstaciones
+
+_log = logging.getLogger("cassette_fm")
 
 ACCIONES = ("siguiente", "anterior", "encender", "apagar", "alternar", "rescan")
 
@@ -42,6 +45,13 @@ def crear_servidor(radio, host: str = "127.0.0.1", puerto: int = 7710,
             return datos
 
         def do_GET(self):
+            try:
+                self._get()
+            except Exception:
+                _log.exception("error inesperado en GET %s", self.path)
+                self._error(500, "error interno (mirá el log del servicio)")
+
+        def _get(self):
             if self.path == "/estado":
                 self._responder(200, radio.estado())
             elif self.path == "/estaciones":
@@ -80,6 +90,9 @@ def crear_servidor(radio, host: str = "127.0.0.1", puerto: int = 7710,
             except SinEstaciones:
                 donde = f" en {raiz}" if raiz else ""
                 self._error(409, f"No hay estaciones{donde}: cada subcarpeta con música es una estación")
+            except Exception:
+                _log.exception("error inesperado en POST %s", self.path)
+                self._error(500, "error interno (mirá el log del servicio)")
             else:
                 self._responder(200, radio.estado())
 

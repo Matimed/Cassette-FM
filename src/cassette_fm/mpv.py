@@ -1,5 +1,6 @@
 import itertools
 import json
+import logging
 import queue
 import socket as socket_mod
 import subprocess
@@ -8,6 +9,8 @@ import time
 from collections.abc import Callable, Sequence
 from pathlib import Path
 from typing import Any
+
+_log = logging.getLogger("cassette_fm")
 
 TIMEOUT_RESPUESTA = 5.0
 TIMEOUT_SOCKET = 5.0
@@ -21,11 +24,13 @@ class _Conexion:
     """Un socket con su hilo lector y su hilo despachador de eventos."""
 
     def __init__(self, sock: socket_mod.socket, al_evento: Callable[[], Callable | None],
-                 al_perder: Callable[[], Callable | None] = lambda: None):
+                 al_perder: Callable[[], Callable | None] = lambda: None,
+                 vigente: Callable[["_Conexion"], bool] = lambda c: True):
         self.sock = sock
         self.viva = True
         self.cerrada = False
         self._al_perder = al_perder
+        self._vigente = vigente
         self.pendientes: dict[int, tuple[threading.Event, list]] = {}
         self.eventos: queue.Queue = queue.Queue()
         self._al_evento = al_evento
@@ -74,19 +79,21 @@ class _Conexion:
                     try:
                         callback()
                     except Exception:
-                        pass
+                        _log.exception("error al reaccionar a la caída de mpv")
 
     def _despachar(self) -> None:
         while True:
             msg = self.eventos.get()
             if msg is None:
                 return
+            if not self._vigente(self):
+                continue  # evento de un mpv que ya fue reemplazado: sus ids no valen
             callback = self._al_evento()
             if callback is not None:
                 try:
                     callback(msg)
                 except Exception:
-                    pass
+                    _log.exception("error en el manejador de eventos de mpv")
 
     def cerrar(self) -> None:
         self.cerrada = True
@@ -119,12 +126,15 @@ class ClienteMpv:
             self._socket.parent.mkdir(parents=True, exist_ok=True)
             self._socket.unlink(missing_ok=True)
             self._proceso = subprocess.Popen(
-                [self._ejecutable, "--idle=yes", "--no-video", "--no-terminal",
+                [self._ejecutable, "--no-config", "--idle=yes", "--no-video", "--no-terminal",
                  f"--input-ipc-server={self._socket}", *self._extra_args],
                 stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
             sock = self._conectar()
-            self._conexion = _Conexion(sock, lambda: self.al_evento, lambda: self.al_perder)
+            conexion = _Conexion(sock, lambda: self.al_evento, lambda: self.al_perder,
+                                 lambda c: c is self._conexion)
+            self._conexion = conexion
             self.generacion += 1
+            _log.info("mpv iniciado (pid %s)", self._proceso.pid)
 
     def _conectar(self) -> socket_mod.socket:
         fin = time.monotonic() + TIMEOUT_SOCKET
@@ -158,6 +168,9 @@ class ClienteMpv:
     def _vivo(self) -> bool:
         return (self._proceso is not None and self._proceso.poll() is None
                 and self._conexion is not None and self._conexion.viva)
+
+    def vivo(self) -> bool:
+        return self._vivo()
 
     def asegurar(self) -> None:
         with self._lock_vida:

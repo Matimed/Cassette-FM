@@ -1,3 +1,4 @@
+import logging
 import threading
 import time
 from collections import deque
@@ -5,13 +6,19 @@ from collections.abc import Callable
 
 from cassette_fm.agenda import secuencia
 from cassette_fm.biblioteca import Estacion, Pista
+from cassette_fm.mpv import ErrorMpv
+
+_log = logging.getLogger("cassette_fm")
 
 
 class Reproductor:
     """Alimenta a mpv con la secuencia de la agenda: pista actual + `cola` siguientes."""
 
+    MAX_FALLOS = 10   # errores de carga seguidos antes de darse por vencido
+
     pista_actual: Pista | None = None
-    al_cambiar_pista: Callable[[Pista], None] | None = None
+    al_cambiar_pista: Callable[[Pista, Estacion], None] | None = None
+    al_fallar: Callable[[], None] | None = None   # no hay forma de seguir sonando
 
     def __init__(self, mpv, reloj: Callable[[], float] = time.time, cola: int = 2):
         self._mpv = mpv
@@ -25,6 +32,7 @@ class Reproductor:
         self._avisada = True
         self._estacion: Estacion | None = None
         self._volumen: int | None = None
+        self._fallos = 0
         self._generacion = mpv.generacion
         self._mpv.al_evento = self.manejar_evento
         self._mpv.al_perder = self._al_perder_mpv
@@ -41,6 +49,7 @@ class Reproductor:
             self._sintonizar(estacion)
 
     def _sintonizar(self, estacion: Estacion) -> None:
+        self._fallos = 0
         self._secuencia = secuencia(estacion, self._reloj())
         self._pistas = {}
         self._ids = deque()
@@ -55,13 +64,25 @@ class Reproductor:
 
     def detener(self) -> None:
         with self._lock:
-            self._estacion = None
-            self._secuencia = None
-            self._pistas = {}
-            self._ids = deque()
-            self._primero = None
-            self.pista_actual = None
-            self._mpv.comando("stop")
+            self._detener()
+
+    def _detener(self) -> None:
+        self._estacion = None
+        self._secuencia = None
+        self._pistas = {}
+        self._ids = deque()
+        self._primero = None
+        self.pista_actual = None
+        self._mpv.comando("stop")
+
+    def posicion(self) -> float | None:
+        """Segundo de la pista que suena; no relanza mpv si está caído."""
+        if self.pista_actual is None or not self._mpv.vivo():
+            return None
+        try:
+            return self._mpv.comando("get_property", "time-pos")
+        except ErrorMpv:
+            return None
 
     def volumen(self, valor: int) -> int:
         valor = max(0, min(100, int(valor)))
@@ -73,6 +94,7 @@ class Reproductor:
 
     def manejar_evento(self, evento: dict) -> None:
         avisar = None
+        fallo = False
         with self._lock:
             tipo = evento.get("event")
             if tipo == "start-file":
@@ -87,11 +109,23 @@ class Reproductor:
                     self._mpv.comando("playlist-remove", 0)
                     self._pistas.pop(self._ids.popleft(), None)
                     self._encolar()
-            elif tipo == "file-loaded" and self.pista_actual and not self._avisada:
-                self._avisada = True
-                avisar = self.pista_actual
+            elif tipo == "file-loaded":
+                self._fallos = 0
+                if self.pista_actual and not self._avisada:
+                    self._avisada = True
+                    avisar = (self.pista_actual, self._estacion)
+            elif (tipo == "end-file" and evento.get("reason") == "error"
+                  and evento.get("playlist_entry_id") in self._pistas):
+                self._fallos += 1
+                if self._fallos >= self.MAX_FALLOS:
+                    _log.error("%d errores de carga seguidos en %r: se detiene la reproducción",
+                               self._fallos, self._estacion.nombre if self._estacion else None)
+                    self._detener()
+                    fallo = True
         if avisar is not None and self.al_cambiar_pista is not None:
-            self.al_cambiar_pista(avisar)
+            self.al_cambiar_pista(*avisar)
+        if fallo and self.al_fallar is not None:
+            self.al_fallar()
 
     def _asegurar(self, restaurar_estacion: bool = True) -> None:
         self._mpv.asegurar()

@@ -1,6 +1,8 @@
 import argparse
 import http.client
+import dataclasses
 import json
+import logging
 import sys
 import urllib.error
 import urllib.request
@@ -98,9 +100,16 @@ def main(argv: list[str] | None = None) -> int:
         parser.print_help()
         return 0
     rutas = config.rutas()
-    cfg = config.cargar_config(rutas.config)
+    try:
+        cfg = config.cargar_config(rutas.config)
+    except config.ErrorConfig as e:
+        print(e, file=sys.stderr)
+        return 1
     if args.comando == "serve":
         from cassette_fm import servicio
+        logging.basicConfig(level=logging.INFO, format="%(levelname)s %(name)s: %(message)s")
+        if hasattr(args, "puerto"):
+            cfg = dataclasses.replace(cfg, puerto=args.puerto)
         servicio.servir(cfg, rutas)
         return 0
     try:

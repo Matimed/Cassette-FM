@@ -33,7 +33,7 @@ def secuencia(estacion: Estacion, instante: float) -> Iterator[tuple[Pista, floa
     ciclo = sum(p.duracion for p in estacion.pistas)
     t = instante - EPOCA
     k = math.floor(t / ciclo)
-    resto = t - k * ciclo
+    resto = max(0.0, t - k * ciclo)  # puede salir -ε por redondeo justo en un borde
     primera = True
     while True:
         for pista in orden_ciclo(estacion, k):

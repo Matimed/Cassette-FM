@@ -13,6 +13,7 @@ class ReproductorFalso:
         self.llamadas = []
         self.pista_actual = None
         self.al_cambiar_pista = None
+        self.al_fallar = None
 
     def sintonizar(self, estacion):
         self.llamadas.append(("sintonizar", estacion.nombre))
@@ -24,6 +25,9 @@ class ReproductorFalso:
         valor = max(0, min(100, valor))
         self.llamadas.append(("volumen", valor))
         return valor
+
+    def posicion(self):
+        return 12.34 if self.pista_actual else None
 
     def sintonizadas(self):
         return [l[1] for l in self.llamadas if l[0] == "sintonizar"]
@@ -167,10 +171,12 @@ def test_rescan_conserva_o_reubica():
 def test_estado_dict():
     radio, rep, _, _ = crear(estado=Estado(estacion="A", volumen=60))
     assert radio.estado() == {"encendida": False, "estacion": "A", "pista": None,
-                              "volumen": 60, "estaciones": ["A", "B", "Regueton 2000"]}
+                              "volumen": 60, "estaciones": ["A", "B", "Regueton 2000"],
+                              "segundo": None}
     radio.encender()
     rep.pista_actual = est("A").pistas[0]
     assert radio.estado()["pista"] == "tema de A"
+    assert radio.estado()["segundo"] == 12.3
     assert radio.estado()["encendida"] is True
 
 
@@ -178,8 +184,54 @@ def test_avisa_al_cambiar_pista():
     avisos = []
     radio, rep, _, _ = crear(avisar=lambda e, t: avisos.append((e, t)))
     radio.sintonizar("A")
-    rep.al_cambiar_pista(est("A").pistas[0])
+    rep.al_cambiar_pista(est("A").pistas[0], est("A"))
     assert avisos == [("A", "tema de A")]
+
+
+def test_el_aviso_usa_la_estacion_del_evento_y_no_depende_de_encendida():
+    avisos = []
+    radio, rep, _, _ = crear(avisar=lambda e, t: avisos.append((e, t)))
+    assert not radio.encendida
+    rep.al_cambiar_pista(est("B").pistas[0], est("B"))
+    assert avisos == [("B", "tema de B")]
+
+
+def test_si_el_reproductor_falla_la_radio_se_apaga():
+    radio, rep, _, _ = crear()
+    radio.encender()
+    rep.al_fallar()
+    assert not radio.encendida and rep.llamadas[-1] == ("detener",)
+
+
+def test_buscar_normaliza_unicode():
+    import unicodedata
+    nfd = unicodedata.normalize("NFD", "Música Ñandú")
+    radio, rep, _, _ = crear(nombres=(nfd, "Zeta"))
+    radio.sintonizar(unicodedata.normalize("NFC", "música ñandú"))
+    assert rep.sintonizadas() == [nfd]
+
+
+def test_rescan_no_bloquea_el_estado_mientras_escanea():
+    liberar = threading.Event()
+    entro = threading.Event()
+
+    def lento():
+        entro.set()
+        liberar.wait(5)
+        return [est("A")]
+
+    radio, _, _, _ = crear(escanear=lento)
+    hilo = threading.Thread(target=radio.rescan)
+    hilo.start()
+    assert entro.wait(2)
+    resultado = []
+    consulta = threading.Thread(target=lambda: resultado.append(radio.estado()))
+    consulta.start()
+    consulta.join(1)
+    respondio_mientras_escaneaba = bool(resultado)
+    liberar.set()
+    hilo.join(2)
+    assert respondio_mientras_escaneaba, "estado() quedó bloqueado por rescan"
 
 
 def test_cambios_rapidos():

@@ -5,6 +5,10 @@ from dataclasses import asdict, dataclass, fields
 from pathlib import Path
 
 
+class ErrorConfig(Exception):
+    pass
+
+
 @dataclass(frozen=True)
 class Config:
     raiz_musica: Path = Path.home() / "Música"
@@ -44,14 +48,25 @@ def rutas() -> Rutas:
     )
 
 
+_NOMBRE_TIPO = {str: "un texto", int: "un número entero", bool: "true o false"}
+
+
 def cargar_config(archivo: Path) -> Config:
     try:
         with open(archivo, "rb") as f:
             datos = tomllib.load(f)
     except FileNotFoundError:
         return Config()
+    except (tomllib.TOMLDecodeError, OSError) as e:
+        raise ErrorConfig(f"{archivo}: {e}")
     conocidas = {c.name for c in fields(Config)}
     datos = {k: v for k, v in datos.items() if k in conocidas}
+    for clave, valor in datos.items():
+        tipo = {"raiz_musica": str, "puerto": int, "avisos": bool, "normalizar": bool}[clave]
+        if not isinstance(valor, tipo) or (tipo is int and isinstance(valor, bool)):
+            raise ErrorConfig(f"{archivo}: '{clave}' tiene que ser {_NOMBRE_TIPO[tipo]}")
+    if "puerto" in datos and not 1 <= datos["puerto"] <= 65535:
+        raise ErrorConfig(f"{archivo}: 'puerto' tiene que estar entre 1 y 65535")
     if "raiz_musica" in datos:
         datos["raiz_musica"] = Path(datos["raiz_musica"]).expanduser()
     return Config(**datos)

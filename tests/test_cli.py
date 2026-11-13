@@ -150,3 +150,11 @@ def test_servicio_que_corta_sin_responder(capsys):
     err = capsys.readouterr().err
     srv.close()
     assert "no está corriendo" not in err and "cortó" in err
+
+
+def test_config_invalida_da_mensaje_y_codigo_1(monkeypatch, tmp_path, capsys):
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path))
+    (tmp_path / "cassette-fm").mkdir()
+    (tmp_path / "cassette-fm" / "config.toml").write_text('puerto = "x"\n')
+    assert main(["status"]) == 1
+    assert "config.toml" in capsys.readouterr().err

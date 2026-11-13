@@ -1,8 +1,13 @@
 import threading
+import unicodedata
 from collections.abc import Callable
 
 from cassette_fm.biblioteca import Estacion
 from cassette_fm.config import Estado
+
+
+def _normalizar(nombre: str) -> str:
+    return unicodedata.normalize("NFC", nombre).casefold()
 
 
 class EstacionInexistente(Exception):
@@ -26,6 +31,7 @@ class Radio:
         self._lock = threading.RLock()
         self.encendida = False
         reproductor.al_cambiar_pista = self._al_cambiar_pista
+        reproductor.al_fallar = self._al_fallar
         reproductor.volumen(estado.volumen)
 
     def estaciones(self) -> list[Estacion]:
@@ -69,8 +75,9 @@ class Radio:
             return self._estado.volumen
 
     def rescan(self) -> None:
+        nuevas = list(self._escanear())   # fuera del lock: puede tardar con bibliotecas grandes
         with self._lock:
-            self._estaciones = list(self._escanear())
+            self._estaciones = nuevas
             if self.encendida and self._indice_actual() is None:
                 if self._estaciones:
                     self._sintonizar(self._estaciones[0])
@@ -80,12 +87,14 @@ class Radio:
     def estado(self) -> dict:
         with self._lock:
             pista = self._reproductor.pista_actual
+            segundo = self._reproductor.posicion() if self.encendida and pista else None
             return {
                 "encendida": self.encendida,
                 "estacion": self._estado.estacion,
                 "pista": pista.titulo if self.encendida and pista else None,
                 "volumen": self._estado.volumen,
                 "estaciones": [e.nombre for e in self._estaciones],
+                "segundo": round(segundo, 1) if segundo is not None else None,
             }
 
     def _requerir_estaciones(self) -> None:
@@ -99,11 +108,11 @@ class Radio:
         return None
 
     def _buscar(self, nombre: str) -> Estacion:
-        buscado = nombre.casefold()
-        exactas = [e for e in self._estaciones if e.nombre.casefold() == buscado]
+        buscado = _normalizar(nombre)
+        exactas = [e for e in self._estaciones if _normalizar(e.nombre) == buscado]
         if exactas:
             return exactas[0]
-        prefijo = [e for e in self._estaciones if e.nombre.casefold().startswith(buscado)]
+        prefijo = [e for e in self._estaciones if _normalizar(e.nombre).startswith(buscado)]
         if len(prefijo) == 1:
             return prefijo[0]
         motivo = "es ambigua" if prefijo else "no existe"
@@ -134,6 +143,11 @@ class Radio:
         self._reproductor.detener()
         self.encendida = False
 
-    def _al_cambiar_pista(self, pista) -> None:
-        if self._avisar is not None and self.encendida:
-            self._avisar(self._estado.estacion, pista.titulo)
+    def _al_cambiar_pista(self, pista, estacion) -> None:
+        if self._avisar is not None and estacion is not None:
+            self._avisar(estacion.nombre, pista.titulo)
+
+    def _al_fallar(self) -> None:
+        with self._lock:
+            if self.encendida:
+                self._apagar()

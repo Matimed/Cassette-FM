@@ -62,13 +62,13 @@ def test_sintonizar_carga_con_desplazamiento_y_encola(rep, mpv):
 
 def test_start_file_fija_pista_actual_y_file_loaded_avisa(rep, mpv):
     avisos = []
-    rep.al_cambiar_pista = avisos.append
+    rep.al_cambiar_pista = lambda p, e: avisos.append((p, e.nombre))
     rep.sintonizar(E)
     rep.manejar_evento({"event": "start-file", "playlist_entry_id": 1})
     assert rep.pista_actual == S[0][0]
     assert avisos == []
     rep.manejar_evento({"event": "file-loaded"})
-    assert avisos == [S[0][0]]
+    assert avisos == [(S[0][0], "E")]
 
 
 def test_start_file_siguiente_rota_la_cola(rep, mpv):
@@ -155,6 +155,47 @@ def test_detener_olvida_la_estacion_para_el_relanzamiento(rep, mpv):
     assert not any(c[0][0] == "loadfile" for c in mpv.comandos)
 
 
+def test_posicion_pregunta_a_mpv_solo_si_hay_pista(rep, mpv):
+    assert rep.posicion() is None
+    rep.sintonizar(E)
+    rep.manejar_evento({"event": "start-file", "playlist_entry_id": 1})
+    mpv.comando = lambda *a, **k: 12.5 if a[:2] == ("get_property", "time-pos") else {"playlist_entry_id": 1}
+    mpv.vivo = lambda: True
+    assert rep.posicion() == 12.5
+    mpv.vivo = lambda: False
+    assert rep.posicion() is None
+
+
+def _fallo(rep, id_):
+    rep.manejar_evento({"event": "end-file", "reason": "error", "playlist_entry_id": id_})
+
+
+def test_demasiados_errores_seguidos_detienen_y_avisan(rep, mpv):
+    caidas = []
+    rep.al_fallar = lambda: caidas.append(1)
+    rep.sintonizar(E)  # ids 1..3
+    mpv.comandos.clear()
+    for _ in range(Reproductor.MAX_FALLOS - 1):
+        _fallo(rep, 1)
+    assert caidas == [] and (("stop",), {}) not in mpv.comandos
+    _fallo(rep, 1)
+    assert caidas == [1] and (("stop",), {}) in mpv.comandos
+    assert rep.pista_actual is None
+
+
+def test_cargar_bien_reinicia_la_cuenta_de_errores(rep, mpv):
+    caidas = []
+    rep.al_fallar = lambda: caidas.append(1)
+    rep.sintonizar(E)
+    for _ in range(Reproductor.MAX_FALLOS - 1):
+        _fallo(rep, 1)
+    rep.manejar_evento({"event": "start-file", "playlist_entry_id": 1})
+    rep.manejar_evento({"event": "file-loaded"})
+    for _ in range(Reproductor.MAX_FALLOS - 1):
+        _fallo(rep, 1)
+    assert caidas == []
+
+
 # --- integración con mpv real ---
 
 def esperar(condicion, timeout):
@@ -188,7 +229,7 @@ def test_integracion_entra_a_mitad_y_avanza(mpv_real, crear_mp3, tmp_path):
     esperadas = [p for p, _ in islice(secuencia(e, reloj()), 3)]
     rep = Reproductor(mpv_real, reloj=reloj)
     vistas = []
-    rep.al_cambiar_pista = vistas.append
+    rep.al_cambiar_pista = lambda p, e: vistas.append(p)
     rep.sintonizar(e)
     assert esperar(lambda: len(vistas) >= 2, 5)
     assert vistas[0] == esperadas[0]
@@ -201,7 +242,7 @@ def test_integracion_salta_archivo_borrado(mpv_real, crear_mp3, tmp_path):
     s = [p for p, _ in islice(secuencia(e, reloj()), 4)]
     rep = Reproductor(mpv_real, reloj=reloj)
     vistas = []
-    rep.al_cambiar_pista = vistas.append
+    rep.al_cambiar_pista = lambda p, e: vistas.append(p)
     rep.sintonizar(e)
     s[1].ruta.unlink()
     assert esperar(lambda: s[2] in vistas, 8)
@@ -213,10 +254,22 @@ def test_integracion_mpv_muerto_restaura_volumen_y_playlist(mpv_real, crear_mp3,
     e = _estacion_real(crear_mp3, tmp_path, 3, segundos=30)
     rep = Reproductor(mpv_real, reloj=lambda: EPOCA + 1)
     vistas = []
-    rep.al_cambiar_pista = vistas.append
+    rep.al_cambiar_pista = lambda p, e: vistas.append(p)
     rep.volumen(70)
     rep.sintonizar(e)
     assert esperar(lambda: len(vistas) == 1, 5)
     os.kill(mpv_real._proceso.pid, signal.SIGKILL)
     assert esperar(lambda: len(vistas) == 2, 8)  # se resintonizó solo, sin ningún comando
     assert mpv_real.comando("get_property", "volume") == 70
+
+
+def test_integracion_estacion_sin_archivos_termina_parando(mpv_real, crear_mp3, tmp_path):
+    e = _estacion_real(crear_mp3, tmp_path, 3)
+    for p in e.pistas:
+        p.ruta.unlink()
+    rep = Reproductor(mpv_real, reloj=lambda: EPOCA + 1)
+    caidas = []
+    rep.al_fallar = lambda: caidas.append(1)
+    rep.sintonizar(e)
+    assert esperar(lambda: caidas, 8)
+    assert rep.pista_actual is None

@@ -139,3 +139,10 @@ def test_error_de_mpv_503(servidor):
 def test_volumen_con_tipos_invalidos_400(servidor, cuerpo):
     assert pedir(servidor, "POST", "/volumen", cuerpo)[0] == 400
     assert servidor.radio.llamadas == []
+
+
+def test_error_inesperado_500_y_se_loguea(servidor, caplog):
+    servidor.radio.error = RuntimeError("explotó")
+    codigo, cuerpo = pedir(servidor, "POST", "/siguiente")
+    assert codigo == 500 and "error" in cuerpo
+    assert "explotó" in caplog.text

@@ -92,3 +92,45 @@ def test_cli_serve_llama_a_servir(monkeypatch, tmp_path):
     monkeypatch.setattr(servicio, "servir", lambda config, rutas, **kw: llamadas.append((config, rutas)))
     assert cli.main(["serve"]) == 0
     assert len(llamadas) == 1 and llamadas[0][0] == Config()
+
+
+def test_cli_serve_respeta_puerto(monkeypatch, tmp_path):
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path))
+    llamadas = []
+    monkeypatch.setattr(servicio, "servir", lambda config, rutas, **kw: llamadas.append(config))
+    assert cli.main(["serve", "--puerto", "7999"]) == 0
+    assert llamadas[0].puerto == 7999
+
+
+def test_apagado_cierra_mpv_aunque_apagar_falle(tmp_path, dir_corto, monkeypatch):
+    cerrado = []
+    real_mpv, real_radio = servicio.ClienteMpv, servicio.Radio
+
+    class MpvEspia(real_mpv):
+        def cerrar(self):
+            cerrado.append(1)
+            super().cerrar()
+
+    class RadioRota(real_radio):
+        def apagar(self):
+            raise RuntimeError("falla al apagar")
+
+    monkeypatch.setattr(servicio, "ClienteMpv", MpvEspia)
+    monkeypatch.setattr(servicio, "Radio", RadioRota)
+    parar = threading.Event()
+    parar.set()
+    rutas = Rutas(tmp_path / "c.toml", tmp_path / "e.json", tmp_path / "d.json", dir_corto)
+    servir(Config(raiz_musica=tmp_path / "x", puerto=0), rutas, parar=parar,
+           extra_args_mpv=["--ao=null"])
+    assert cerrado == [1]
+
+
+def test_servir_loguea_el_arranque(tmp_path, dir_corto, caplog):
+    import logging
+    caplog.set_level(logging.INFO, logger="cassette_fm")
+    parar = threading.Event()
+    parar.set()
+    rutas = Rutas(tmp_path / "c.toml", tmp_path / "e.json", tmp_path / "d.json", dir_corto)
+    servir(Config(raiz_musica=tmp_path / "x", puerto=0), rutas, parar=parar,
+           extra_args_mpv=["--ao=null"])
+    assert "0 estaciones" in caplog.text

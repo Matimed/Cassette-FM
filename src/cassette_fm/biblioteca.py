@@ -1,6 +1,7 @@
 import json
 import logging
 import os
+import unicodedata
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -40,6 +41,13 @@ def leer_pista(ruta: Path) -> Pista | None:
     else:
         texto = titulo or Path(ruta).stem
     return Pista(ruta=Path(ruta), duracion=float(f.info.length), titulo=texto)
+
+
+def clave_orden(nombre: str) -> str:
+    """Orden alfabético sin mayúsculas ni acentos (\"Árbol\" va con la A)."""
+    sin_acentos = "".join(c for c in unicodedata.normalize("NFD", nombre)
+                          if unicodedata.category(c) != "Mn")
+    return sin_acentos.casefold()
 
 
 def _cargar_cache(cache: Path | None) -> dict:
@@ -90,7 +98,9 @@ def _pista_con_cache(ruta: Path, previa: dict, nueva: dict) -> Pista | None:
     clave = str(ruta)
     entrada = previa.get(clave)
     if (isinstance(entrada, dict) and entrada.get("mtime_ns") == st.st_mtime_ns
-            and entrada.get("tamano") == st.st_size):
+            and entrada.get("tamano") == st.st_size
+            and isinstance(entrada.get("duracion"), (int, float))
+            and isinstance(entrada.get("titulo"), str)):
         nueva[clave] = entrada
         return Pista(ruta=ruta, duracion=entrada["duracion"], titulo=entrada["titulo"])
     pista = leer_pista(ruta)
@@ -107,7 +117,12 @@ def escanear(raiz: Path, cache: Path | None = None) -> list[Estacion]:
     previa = _cargar_cache(cache)
     nueva: dict = {}
     estaciones = []
-    for carpeta in raiz.iterdir():
+    try:
+        carpetas = list(raiz.iterdir())
+    except OSError as e:
+        _log.warning("no se puede leer %s: %s", raiz, e)
+        return []
+    for carpeta in carpetas:
         if not carpeta.is_dir() or carpeta.name.startswith(".") or not _es_utf8(carpeta):
             continue
         pistas = [p for r in _archivos_de_audio(carpeta)
@@ -115,6 +130,6 @@ def escanear(raiz: Path, cache: Path | None = None) -> list[Estacion]:
         if pistas:
             pistas.sort(key=lambda p: str(p.ruta))
             estaciones.append(Estacion(carpeta.name, tuple(pistas)))
-    estaciones.sort(key=lambda e: e.nombre.casefold())
+    estaciones.sort(key=lambda e: clave_orden(e.nombre))
     _guardar_cache(cache, nueva)
     return estaciones

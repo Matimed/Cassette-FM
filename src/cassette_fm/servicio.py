@@ -1,3 +1,4 @@
+import logging
 import signal
 import threading
 import time
@@ -10,6 +11,9 @@ from cassette_fm.config import Config, Rutas, cargar_estado, guardar_estado
 from cassette_fm.mpv import ClienteMpv
 from cassette_fm.radio import Radio
 from cassette_fm.reproductor import Reproductor
+
+
+_log = logging.getLogger("cassette_fm")
 
 
 def servir(config: Config, rutas: Rutas, avisar: Callable[[str, str], None] | None = None,
@@ -28,16 +32,20 @@ def servir(config: Config, rutas: Rutas, avisar: Callable[[str, str], None] | No
     estado = cargar_estado(rutas.estado)
     args_mpv = (["--af=dynaudnorm"] if config.normalizar else []) + list(extra_args_mpv)
     mpv = ClienteMpv(rutas.runtime / "mpv.sock", extra_args=args_mpv)
-    radio = Radio(Reproductor(mpv), escanear(), estado,
+    estaciones = escanear()
+    _log.info("%d estaciones en %s", len(estaciones), config.raiz_musica)
+    radio = Radio(Reproductor(mpv), estaciones, estado,
                   guardar=lambda e: guardar_estado(rutas.estado, e),
                   escanear=escanear, avisar=avisar)
     servidor = crear_servidor(radio, "127.0.0.1", config.puerto, raiz=config.raiz_musica)
     hilo = threading.Thread(target=lambda: servidor.serve_forever(poll_interval=0.05), daemon=True)
     hilo.start()
+    _log.info("escuchando en 127.0.0.1:%d", servidor.server_address[1])
     try:
         parar.wait()
     finally:
-        servidor.shutdown()
-        servidor.server_close()
-        radio.apagar()
-        mpv.cerrar()
+        for paso in (servidor.shutdown, servidor.server_close, radio.apagar, mpv.cerrar):
+            try:
+                paso()
+            except Exception:
+                _log.exception("error al apagar (%s)", getattr(paso, "__qualname__", paso))

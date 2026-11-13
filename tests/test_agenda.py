@@ -97,3 +97,12 @@ def test_estacion_de_una_pista():
 def test_estacion_vacia_da_error():
     with pytest.raises(ValueError):
         next(secuencia(Estacion("V", ()), EPOCA))
+
+
+def test_el_desplazamiento_nunca_es_negativo_en_los_bordes():
+    for duraciones in ([123.456, 78.9, 201.3], [100.1, 200.2, 150.3, 99.9, 80.7]):
+        e = estacion(duraciones)
+        total = sum(p.duracion for p in e.pistas)
+        for k in range(1, 3000):
+            _, desde = next(secuencia(e, EPOCA + k * total))
+            assert desde >= 0.0

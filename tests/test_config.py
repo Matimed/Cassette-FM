@@ -1,7 +1,9 @@
 import os
+
+import pytest
 from pathlib import Path
 
-from cassette_fm.config import (Config, Estado, cargar_config, cargar_estado,
+from cassette_fm.config import (Config, ErrorConfig, Estado, cargar_config, cargar_estado,
                                 guardar_estado, rutas)
 
 
@@ -63,3 +65,19 @@ def test_normalizar_por_defecto_y_configurable(tmp_path):
     archivo = tmp_path / "config.toml"
     archivo.write_text("normalizar = false\n")
     assert cargar_config(archivo).normalizar is False
+
+
+@pytest.mark.parametrize("contenido", [
+    "esto no es toml =",
+    'puerto = "7710"',
+    "puerto = 70000",
+    'avisos = "si"',
+    "normalizar = 1",
+    "raiz_musica = 5",
+])
+def test_config_invalida_da_error_claro(tmp_path, contenido):
+    archivo = tmp_path / "config.toml"
+    archivo.write_text(contenido + "\n")
+    with pytest.raises(ErrorConfig) as exc:
+        cargar_config(archivo)
+    assert str(archivo) in str(exc.value)

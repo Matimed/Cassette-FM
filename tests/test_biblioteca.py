@@ -113,3 +113,29 @@ def test_nombres_que_no_son_utf8_se_saltean(tmp_path, crear_mp3):
     assert [e.nombre for e in estaciones] == ["Buena"]
     assert [p.ruta.name for p in estaciones[0].pistas] == ["ok.mp3"]
     assert cache.exists()
+
+
+def test_orden_ignora_acentos(tmp_path, crear_mp3):
+    for n in ("Zeta", "Árbol", "abeja"):
+        crear_mp3(tmp_path / n / "t.mp3")
+    assert [e.nombre for e in escanear(tmp_path)] == ["abeja", "Árbol", "Zeta"]
+
+
+def test_cache_con_entradas_incompletas_se_relee(tmp_path, crear_mp3):
+    import json
+    raiz = tmp_path / "m"
+    a = crear_mp3(raiz / "E" / "a.mp3", 2)
+    st = a.stat()
+    cache = tmp_path / "d.json"
+    cache.write_text(json.dumps({str(a): {"mtime_ns": st.st_mtime_ns, "tamano": st.st_size}}))
+    assert len(escanear(raiz, cache)[0].pistas) == 1
+
+
+def test_raiz_sin_permisos_devuelve_vacio(tmp_path, crear_mp3):
+    raiz = tmp_path / "m"
+    crear_mp3(raiz / "E" / "a.mp3")
+    raiz.chmod(0)
+    try:
+        assert escanear(raiz) == []
+    finally:
+        raiz.chmod(0o755)

@@ -1,2 +1,0 @@
-[console_scripts]
-cassette = cassette_fm.cli:main

@@ -25,3 +25,4 @@ venv/
 
 # Ejecución de planes (superpowers)
 .superpowers/
+*.egg-info/

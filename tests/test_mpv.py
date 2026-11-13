@@ -98,3 +98,44 @@ def test_al_perder_no_avisa_al_cerrar(dir_corto):
     cliente.cerrar()
     time.sleep(0.3)
     assert avisos == []
+
+
+def test_ignora_la_configuracion_del_usuario(dir_corto, monkeypatch, tmp_path):
+    (tmp_path / "mpv").mkdir()
+    (tmp_path / "mpv" / "mpv.conf").write_text("volume=33\n")
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path))
+    cliente = ClienteMpv(dir_corto / "mpv.sock", extra_args=["--ao=null"])
+    cliente.iniciar()
+    try:
+        assert cliente.comando("get_property", "volume") != 33
+    finally:
+        cliente.cerrar()
+
+
+def test_conexion_vieja_no_entrega_eventos():
+    import socket as sk
+    from cassette_fm.mpv import _Conexion
+    recibidos = []
+    a, b = sk.socketpair()
+    vigente = {"si": False}
+    conexion = _Conexion(a, lambda: recibidos.append, vigente=lambda c: vigente["si"])
+    b.sendall(b'{"event": "viejo"}\n')
+    time.sleep(0.2)
+    assert recibidos == []
+    vigente["si"] = True
+    b.sendall(b'{"event": "nuevo"}\n')
+    assert esperar(lambda: recibidos == [{"event": "nuevo"}], 2)
+    conexion.cerrar()
+    b.close()
+
+
+def test_excepcion_en_el_manejador_se_loguea(mpv, caplog):
+    import logging
+    caplog.set_level(logging.ERROR, logger="cassette_fm")
+
+    def malo(e):
+        raise RuntimeError("boom")
+
+    mpv.al_evento = malo
+    mpv.comando("loadfile", url="/no/existe.mp3", flags="replace")
+    assert esperar(lambda: "boom" in caplog.text or "manejador" in caplog.text, 3)
