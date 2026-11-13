@@ -1,10 +1,11 @@
 ---
 # CASSETTE-FM-dwgu
 title: Configuración y estado persistente
-status: todo
+status: completed
 type: task
+priority: normal
 created_at: 2026-11-13T23:03:54Z
-updated_at: 2026-11-13T23:03:54Z
+updated_at: 2026-11-13T23:12:49Z
 parent: CASSETTE-FM-u2yr
 blocked_by:
     - CASSETTE-FM-na6t
