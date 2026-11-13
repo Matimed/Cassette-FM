@@ -1,0 +1,6 @@
+FROM radio-dj-test
+USER root
+RUN /opt/tts/bin/pip install --no-cache-dir kokoro-onnx soundfile
+RUN mkdir -p /opt/kokoro && cd /opt/kokoro && R=https://github.com/thewh1teagle/kokoro-onnx/releases/download/model-files-v1.0 && \
+    curl -fsSLO $R/kokoro-v1.0.onnx && curl -fsSLO $R/voices-v1.0.bin
+USER dj

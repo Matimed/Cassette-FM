@@ -1,0 +1,24 @@
+# Claude Code (local)
+.claude/settings.local.json
+.claude/worktrees/
+
+# Audio y modelos (pesados / con copyright)
+*.mp3
+*.wav
+*.flac
+*.ogg
+*.m4a
+*.onnx
+voices-*.bin
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+
+# Editor / SO
+.vscode/
+.idea/
+.DS_Store
+*.swp

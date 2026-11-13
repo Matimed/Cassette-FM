@@ -1,0 +1,21 @@
+FROM golang:1.26-bookworm AS build
+WORKDIR /src
+COPY src/ .
+RUN go build -ldflags="-s -w" -o /radio-dj .
+
+FROM debian:bookworm-slim
+RUN apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
+      icecast2 ffmpeg ca-certificates tzdata python3 python3-venv curl && rm -rf /var/lib/apt/lists/*
+RUN python3 -m venv /opt/tts && /opt/tts/bin/pip install --no-cache-dir edge-tts piper-tts \
+    && ln -s /opt/tts/bin/edge-tts /usr/local/bin/edge-tts && ln -s /opt/tts/bin/piper /usr/local/bin/piper
+RUN mkdir -p /opt/voices && cd /opt/voices && HF=https://huggingface.co/rhasspy/piper-voices/resolve/v1.0.0 && \
+    for v in es/es_AR/daniela/high/es_AR-daniela-high en/en_US/ryan/high/en_US-ryan-high; do \
+      curl -fsSLO "$HF/$v.onnx" && curl -fsSLO "$HF/$v.onnx.json"; done
+RUN useradd -m dj && ln -s /usr/bin/icecast2 /usr/local/bin/icecast \
+    && mkdir -p /opt/homebrew/opt/icecast/share && ln -s /usr/share/icecast2 /opt/homebrew/opt/icecast/share/icecast
+COPY docker/tts-retry.sh /usr/local/bin/tts-retry
+COPY --from=build /radio-dj /usr/local/bin/radio-dj
+USER dj
+ENV PATH=/usr/sbin:/usr/bin:/usr/local/bin:/bin TZ=America/Argentina/Buenos_Aires
+EXPOSE 7710 7702
+CMD ["radio-dj","serve"]

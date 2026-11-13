@@ -1,0 +1,54 @@
+--- a/internal/icecast/source.go
++++ b/internal/icecast/source.go
+@@ -37,6 +37,7 @@
+ 	decoderMu sync.Mutex // guards decoder
+ 	decoder   *exec.Cmd  // in-flight music decoder, nil between songs
+ 	ffmpeg    string     // resolved ffmpeg binary (launchd has a minimal PATH)
++	exited    chan struct{} // closed once the master process has been reaped
+ }
+ 
+ // OpenStreamer starts the master with the ducking filtergraph. Both inputs are
+@@ -100,12 +101,20 @@
+ 		vw.Close()
+ 		return nil, fmt.Errorf("master ffmpeg: %w", err)
+ 	}
++	// The child holds its own copies of the read ends; keeping ours open would
++	// make writes block forever (instead of EPIPE) once the master dies.
++	mr.Close()
++	vr.Close()
+ 	s := &Streamer{
+ 		master: master, w: mw, vw: vw,
+ 		voiceQ: make(chan []byte, 8),
+ 		done:   make(chan struct{}),
+ 		ffmpeg: ffmpegBin,
++		exited: make(chan struct{}),
+ 	}
++	// Reap the master as soon as it dies so Alive() sees it (ProcessState is
++	// only set by Wait — without this a killed master looks alive forever).
++	go func() { _ = master.Wait(); close(s.exited) }()
+ 	go s.voiceFeeder()
+ 	return s, nil
+ }
+@@ -208,7 +217,12 @@
+ 
+ // Alive reports whether the master is still running.
+ func (s *Streamer) Alive() bool {
+-	return s.master.ProcessState == nil
++	select {
++	case <-s.exited:
++		return false
++	default:
++		return true
++	}
+ }
+ 
+ // Close shuts the master + feeder down cleanly. Idempotent: the radio loop
+@@ -219,7 +233,7 @@
+ 		close(s.done)
+ 		_ = s.w.Close()
+ 		_ = s.vw.Close()
+-		_ = s.master.Wait()
++		<-s.exited
+ 	})
+ }
+ 
