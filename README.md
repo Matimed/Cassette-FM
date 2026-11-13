@@ -8,14 +8,17 @@ Diseño: [`docs/superpowers/specs/2026-11-13-cassette-fm-design.md`](docs/superp
 
 ## Instalación
 
-Requiere Python 3.12 y mpv.
+Requiere Python 3.12 y mpv. Un solo comando instala el servicio, el comando `cassette`, los atajos de
+teclado y el applet del panel de Cinnamon:
 
 ```bash
-scripts/instalar.sh
+scripts/instalar-todo.sh
 ```
 
-Crea `.venv`, deja `cassette` en `~/.local/bin` e instala y arranca el servicio de usuario `cassette-fm`.
-El servicio arranca con la sesión **en silencio**: solo suena con `cassette on`.
+Después recargá Cinnamon con `Ctrl+Alt+Esc` para ver el applet. Se puede correr las veces que haga falta.
+El servicio arranca con la sesión **en silencio**: solo suena con `cassette on` (o con el applet).
+
+Si solo querés el servicio y la CLI, sin el escritorio: `scripts/instalar.sh`.
 
 ## Uso
 
@@ -30,9 +33,18 @@ El servicio arranca con la sesión **en silencio**: solo suena con `cassette on`
 | `cassette rescan` | vuelve a leer `~/Música` |
 | `cassette serve` | levanta el servicio a mano (sin systemd) |
 
+## Applet de Cinnamon
+
+Un ícono en el panel con el nombre de la estación (vacío si está apagada). Rueda del mouse: hacia arriba pasa
+a la estación siguiente y hacia abajo a la anterior. Clic izquierdo: enciende o apaga. Clic derecho: lista de
+estaciones para elegir una. El tooltip muestra estación, tema y volumen; si el servicio no está, dice que no
+responde. En los ajustes del applet se cambia el puerto y si se muestra el nombre.
+
+Si algo falla: `Alt+F2`, escribir `lg`, pestaña *Errors* (Looking Glass), y `journalctl --user -u cassette-fm -e`.
+
 ## Atajos de teclado (Cinnamon)
 
-`cassette atajos` registra estas teclas (no pisa las que ya uses ni las que cambies a mano):
+`cassette atajos` (ya lo hace `instalar-todo.sh`) registra estas teclas (no pisa las que ya uses ni las que cambies a mano):
 
 | Tecla | Acción |
 |---|---|

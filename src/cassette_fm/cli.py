@@ -3,13 +3,15 @@ import http.client
 import dataclasses
 import json
 import logging
+import os
 import shutil
 import subprocess
 import sys
 import urllib.error
 import urllib.request
+from pathlib import Path
 
-from cassette_fm import __version__, atajos, config
+from cassette_fm import __version__, applet, atajos, config
 
 ACCIONES = {"next": "siguiente", "prev": "anterior", "on": "encender", "off": "apagar",
             "toggle": "alternar", "rescan": "rescan"}
@@ -60,6 +62,7 @@ def _armar_parser() -> argparse.ArgumentParser:
     sub = parser.add_subparsers(dest="comando")
     sub.add_parser("serve", parents=[comun], help="levanta el servicio")
     sub.add_parser("atajos", help="registra los atajos de teclado en Cinnamon")
+    sub.add_parser("applet", help="instala el applet del panel de Cinnamon")
     for nombre in ACCIONES:
         sub.add_parser(nombre, parents=[comun])
     sub.add_parser("status", parents=[comun], help="qué está sonando")
@@ -107,6 +110,26 @@ def _instalar_atajos() -> int:
     return 0
 
 
+def _origen_applet() -> Path:
+    return Path(__file__).resolve().parents[2] / "applet" / applet.UUID
+
+
+def _instalar_applet() -> int:
+    origen = _origen_applet()
+    if not origen.is_dir():
+        print(f"no se encuentra el applet en {origen}: corré cassette desde una instalación "
+              "en modo editable del repo (scripts/instalar.sh)", file=sys.stderr)
+        return 1
+    datos = Path(os.environ.get("XDG_DATA_HOME") or Path.home() / ".local" / "share")
+    try:
+        for mensaje in applet.instalar(origen, datos / "cinnamon" / "applets", atajos.gsettings):
+            print(mensaje)
+    except (OSError, subprocess.CalledProcessError) as e:
+        print(f"no se pudo instalar el applet: {e}", file=sys.stderr)
+        return 1
+    return 0
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = _armar_parser()
     args = parser.parse_args(argv)
@@ -118,6 +141,8 @@ def main(argv: list[str] | None = None) -> int:
         return 0
     if args.comando == "atajos":
         return _instalar_atajos()
+    if args.comando == "applet":
+        return _instalar_applet()
     rutas = config.rutas()
     try:
         cfg = config.cargar_config(rutas.config)

@@ -1,0 +1,8 @@
+{
+  "uuid": "cassette-fm@cassette-fm",
+  "name": "cassette-fm",
+  "description": "Controla las radios de cassette-fm: la rueda cambia de estación, el clic enciende o apaga",
+  "icon": "audio-x-generic",
+  "version": "0.1.0",
+  "max-instances": 1
+}
