@@ -256,3 +256,58 @@ def test_sintonizar_fallida_no_cambia_la_estacion_ni_enciende():
         radio.sintonizar("B")
     assert estado.estacion == "A" and not radio.encendida
     assert guardados == []
+
+
+def test_volumen_cero_apaga():
+    radio, rep, _, _ = crear(estado=Estado(volumen=10))
+    radio.encender()
+    assert radio.volumen(delta=-10) == 0
+    assert not radio.encendida and rep.llamadas[-1] == ("detener",)
+
+
+def test_subir_volumen_enciende_la_estacion_guardada():
+    radio, rep, _, _ = crear(estado=Estado(estacion="B", volumen=0))
+    assert radio.volumen(delta=10) == 10
+    assert radio.encendida and rep.sintonizadas() == ["B"]
+
+
+def test_subir_volumen_enciende_la_primera_si_no_hay_guardada():
+    radio, rep, _, _ = crear(estado=Estado(volumen=0))
+    radio.volumen(delta=10)
+    assert radio.encendida and rep.sintonizadas() == ["A"]
+
+
+def test_apagar_conserva_el_volumen_y_subir_lo_suma():
+    radio, rep, _, estado = crear(estado=Estado(volumen=70))
+    radio.encender()
+    radio.apagar()
+    assert estado.volumen == 70
+    assert radio.volumen(delta=10) == 80
+    assert radio.encendida
+
+
+def test_bajar_volumen_apagada_no_enciende():
+    radio, rep, _, _ = crear(estado=Estado(volumen=50))
+    assert radio.volumen(delta=-10) == 40
+    assert not radio.encendida and rep.sintonizadas() == []
+
+
+def test_bajar_en_cero_apagada_sigue_apagada():
+    radio, rep, _, _ = crear(estado=Estado(volumen=0))
+    assert radio.volumen(delta=-10) == 0
+    assert not radio.encendida and rep.sintonizadas() == []
+
+
+def test_encender_con_volumen_cero_sube_a_minimo():
+    radio, rep, _, _ = crear(estado=Estado(volumen=0))
+    rep.llamadas.clear()
+    radio.encender()
+    assert radio.volumen() == 10
+    assert rep.llamadas.index(("volumen", 10)) < rep.llamadas.index(("sintonizar", "A"))
+
+
+def test_subir_sin_estaciones_guarda_el_volumen_y_falla():
+    radio, _, _, _ = crear(nombres=(), estado=Estado(volumen=0))
+    with pytest.raises(SinEstaciones):
+        radio.volumen(delta=10)
+    assert radio.volumen() == 10

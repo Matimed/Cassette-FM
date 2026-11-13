@@ -26,7 +26,7 @@ El servicio arranca con la sesión **en silencio**: solo suena con `cassette on`
 | `cassette tune <nombre>` | sintoniza por nombre o por el comienzo (`cassette tune reg`) |
 | `cassette status` | qué suena |
 | `cassette list` | estaciones y cantidad de temas |
-| `cassette vol 70` / `+5` / `-5` | volumen |
+| `cassette vol 70` / `+5` / `-5` | volumen; en 0 la radio se apaga (como un mute) y subirlo la enciende |
 | `cassette rescan` | vuelve a leer `~/Música` |
 | `cassette serve` | levanta el servicio a mano (sin systemd) |
 

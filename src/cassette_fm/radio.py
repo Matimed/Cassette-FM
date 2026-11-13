@@ -6,6 +6,9 @@ from cassette_fm.biblioteca import Estacion
 from cassette_fm.config import Estado
 
 
+VOLUMEN_MINIMO = 10   # con el volumen en 0 la radio está apagada; al encender se parte de acá
+
+
 def _normalizar(nombre: str) -> str:
     return unicodedata.normalize("NFC", nombre).casefold()
 
@@ -69,9 +72,16 @@ class Radio:
         with self._lock:
             if valor is None and delta is None:
                 return self._estado.volumen
-            nuevo = valor if valor is not None else self._estado.volumen + delta
+            previo = self._estado.volumen
+            nuevo = valor if valor is not None else previo + delta
             self._estado.volumen = self._reproductor.volumen(nuevo)
             self._guardar(self._estado)
+            # volumen 0 = mutear = apagada; subir el volumen estando apagada enciende
+            if self._estado.volumen == 0:
+                if self.encendida:
+                    self._apagar()
+            elif not self.encendida and self._estado.volumen > previo:
+                self.encender()
             return self._estado.volumen
 
     def rescan(self) -> None:
@@ -129,6 +139,8 @@ class Radio:
             self._sintonizar(self._estaciones[destino])
 
     def _sintonizar(self, estacion: Estacion) -> None:
+        if self._estado.volumen == 0:
+            self._estado.volumen = self._reproductor.volumen(VOLUMEN_MINIMO)
         anterior = self._estado.estacion
         self._estado.estacion = estacion.nombre
         try:

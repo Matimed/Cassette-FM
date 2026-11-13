@@ -1,10 +1,11 @@
 ---
 # CASSETTE-FM-nq19
 title: El volumen en 0 apaga la radio y subirlo la enciende
-status: todo
+status: completed
 type: task
+priority: normal
 created_at: 2026-11-13T23:45:17Z
-updated_at: 2026-11-13T23:45:17Z
+updated_at: 2026-11-13T23:47:05Z
 parent: CASSETTE-FM-zp3c
 ---
 
