@@ -2,6 +2,7 @@ import json
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
+from cassette_fm.mpv import ErrorMpv
 from cassette_fm.radio import EstacionInexistente, SinEstaciones
 
 ACCIONES = ("siguiente", "anterior", "encender", "apagar", "alternar", "rescan")
@@ -61,8 +62,12 @@ def crear_servidor(radio, host: str = "127.0.0.1", puerto: int = 7710,
                         raise _SolicitudInvalida("falta el campo 'estacion'")
                     radio.sintonizar(datos["estacion"])
                 elif ruta == "volumen":
-                    if not isinstance(datos.get("valor"), int) and not isinstance(datos.get("delta"), int):
+                    valor, delta = datos.get("valor"), datos.get("delta")
+                    if valor is None and delta is None:
                         raise _SolicitudInvalida("falta 'valor' o 'delta' (enteros)")
+                    for campo in (valor, delta):
+                        if campo is not None and (isinstance(campo, bool) or not isinstance(campo, int)):
+                            raise _SolicitudInvalida("'valor' y 'delta' tienen que ser enteros")
                     radio.volumen(valor=datos.get("valor"), delta=datos.get("delta"))
                 else:
                     getattr(radio, ruta)()
@@ -70,6 +75,8 @@ def crear_servidor(radio, host: str = "127.0.0.1", puerto: int = 7710,
                 self._error(400, str(e))
             except EstacionInexistente as e:
                 self._error(404, str(e))
+            except ErrorMpv as e:
+                self._error(503, f"mpv: {e}")
             except SinEstaciones:
                 donde = f" en {raiz}" if raiz else ""
                 self._error(409, f"No hay estaciones{donde}: cada subcarpeta con música es una estación")

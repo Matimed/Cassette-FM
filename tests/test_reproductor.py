@@ -14,7 +14,12 @@ class MpvFalso:
     def __init__(self):
         self.comandos = []
         self.al_evento = None
+        self.al_perder = None
+        self.generacion = 0
         self._ids = 0
+
+    def asegurar(self):
+        pass
 
     def comando(self, *args, **nombrados):
         self.comandos.append((args, nombrados))
@@ -107,6 +112,49 @@ def test_detener(rep, mpv):
     assert rep.pista_actual is None
 
 
+def test_relanzamiento_restaura_volumen_y_estacion(rep, mpv):
+    rep.sintonizar(E)
+    rep.volumen(60)
+    mpv.comandos.clear()
+    mpv.generacion += 1  # mpv se relanzó
+    rep.asegurar()
+    assert mpv.comandos[0] == (("set_property", "volume", 60), {})
+    assert mpv.comandos[1][1]["flags"] == "replace"
+    assert mpv.comandos[1][1]["url"] == str(S[0][0].ruta)
+    mpv.comandos.clear()
+    rep.asegurar()  # ya restaurado: no repite
+    assert mpv.comandos == []
+
+
+def test_sintonizar_tras_relanzamiento_no_carga_dos_veces(rep, mpv):
+    rep.sintonizar(E)
+    rep.volumen(60)
+    mpv.comandos.clear()
+    mpv.generacion += 1
+    rep.sintonizar(estacion(3, "B"))
+    cargas = [c for c in mpv.comandos if c[0][0] == "loadfile" and c[1]["flags"] == "replace"]
+    assert len(cargas) == 1
+    assert (("set_property", "volume", 60), {}) in mpv.comandos
+
+
+def test_volumen_tras_relanzamiento_restaura_estacion_y_aplica_el_nuevo(rep, mpv):
+    rep.sintonizar(E)
+    mpv.comandos.clear()
+    mpv.generacion += 1
+    rep.volumen(50)
+    assert any(c[0][0] == "loadfile" and c[1]["flags"] == "replace" for c in mpv.comandos)
+    assert mpv.comandos[-1] == (("set_property", "volume", 50), {})
+
+
+def test_detener_olvida_la_estacion_para_el_relanzamiento(rep, mpv):
+    rep.sintonizar(E)
+    rep.detener()
+    mpv.comandos.clear()
+    mpv.generacion += 1
+    rep.asegurar()
+    assert not any(c[0][0] == "loadfile" for c in mpv.comandos)
+
+
 # --- integración con mpv real ---
 
 def esperar(condicion, timeout):
@@ -158,3 +206,17 @@ def test_integracion_salta_archivo_borrado(mpv_real, crear_mp3, tmp_path):
     s[1].ruta.unlink()
     assert esperar(lambda: s[2] in vistas, 8)
     assert s[1] not in vistas
+
+
+def test_integracion_mpv_muerto_restaura_volumen_y_playlist(mpv_real, crear_mp3, tmp_path):
+    import os, signal
+    e = _estacion_real(crear_mp3, tmp_path, 3, segundos=30)
+    rep = Reproductor(mpv_real, reloj=lambda: EPOCA + 1)
+    vistas = []
+    rep.al_cambiar_pista = vistas.append
+    rep.volumen(70)
+    rep.sintonizar(e)
+    assert esperar(lambda: len(vistas) == 1, 5)
+    os.kill(mpv_real._proceso.pid, signal.SIGKILL)
+    assert esperar(lambda: len(vistas) == 2, 8)  # se resintonizó solo, sin ningún comando
+    assert mpv_real.comando("get_property", "volume") == 70

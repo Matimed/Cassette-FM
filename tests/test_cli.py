@@ -7,6 +7,7 @@ import pytest
 
 from cassette_fm.api import crear_servidor
 from cassette_fm.cli import main
+from cassette_fm.mpv import ErrorMpv
 from cassette_fm.radio import EstacionInexistente
 
 
@@ -125,3 +126,27 @@ def test_error_de_api(servicio, capsys):
     servicio.radio.error = EstacionInexistente("la estación 'x' no existe")
     assert main(["tune", "x", "--puerto", servicio.puerto]) == 1
     assert "la estación 'x' no existe" in capsys.readouterr().err
+
+
+def test_error_de_mpv_no_se_confunde_con_servicio_caido(servicio, capsys):
+    servicio.radio.error = ErrorMpv("mpv no respondió a 'loadfile'")
+    assert main(["next", "--puerto", servicio.puerto]) == 1
+    err = capsys.readouterr().err
+    assert "mpv no respondió" in err and "no está corriendo" not in err
+
+
+def test_servicio_que_corta_sin_responder(capsys):
+    srv = socket.socket()
+    srv.bind(("127.0.0.1", 0))
+    srv.listen(1)
+
+    def aceptar_y_cortar():
+        c, _ = srv.accept()
+        c.recv(4096)
+        c.close()
+
+    threading.Thread(target=aceptar_y_cortar, daemon=True).start()
+    assert main(["status", "--puerto", str(srv.getsockname()[1])]) == 1
+    err = capsys.readouterr().err
+    srv.close()
+    assert "no está corriendo" not in err and "cortó" in err

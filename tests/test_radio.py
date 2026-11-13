@@ -191,3 +191,16 @@ def test_cambios_rapidos():
         h.join()
     assert len(rep.sintonizadas()) == 10
     assert rep.sintonizadas()[-1] == radio.estado()["estacion"]
+
+
+def test_sintonizar_fallida_no_cambia_la_estacion_ni_enciende():
+    radio, rep, guardados, estado = crear(estado=Estado(estacion="A"))
+
+    def falla(estacion):
+        raise RuntimeError("mpv")
+
+    rep.sintonizar = falla
+    with pytest.raises(RuntimeError):
+        radio.sintonizar("B")
+    assert estado.estacion == "A" and not radio.encendida
+    assert guardados == []

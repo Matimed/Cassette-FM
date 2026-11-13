@@ -92,3 +92,24 @@ def test_cache_evita_releer(tmp_path, crear_mp3, monkeypatch):
     duraciones = {p.ruta.name: p.duracion for p in estaciones[0].pistas}
     assert abs(duraciones["b.mp3"] - 4) < 0.05
     assert abs(duraciones["a.mp3"] - 2) < 0.05
+
+
+def _crear_bytes(raiz, *partes):
+    ruta = os.path.join(os.fsencode(raiz), *[os.fsencode(p) if isinstance(p, str) else p for p in partes])
+    os.makedirs(os.path.dirname(ruta), exist_ok=True)
+    return ruta
+
+
+def test_nombres_que_no_son_utf8_se_saltean(tmp_path, crear_mp3):
+    import shutil
+    modelo = crear_mp3(tmp_path / "modelo.mp3", 2)
+    crear_mp3(tmp_path / "m" / "Buena" / "ok.mp3", 2)
+    # archivo con nombre latin-1 dentro de una estación buena
+    shutil.copy(modelo, _crear_bytes(tmp_path / "m", "Buena", b"Canci\xf3n.mp3"))
+    # estación entera con nombre latin-1
+    shutil.copy(modelo, _crear_bytes(tmp_path / "m", b"M\xfasica", "a.mp3"))
+    cache = tmp_path / "cache" / "d.json"
+    estaciones = escanear(tmp_path / "m", cache)
+    assert [e.nombre for e in estaciones] == ["Buena"]
+    assert [p.ruta.name for p in estaciones[0].pistas] == ["ok.mp3"]
+    assert cache.exists()

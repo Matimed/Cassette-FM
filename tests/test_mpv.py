@@ -71,3 +71,30 @@ def test_cerrar_termina_el_proceso(dir_corto):
     proceso = cliente._proceso
     cliente.cerrar()
     assert proceso.poll() is not None
+
+
+def test_generacion_sube_al_relanzar(mpv):
+    g = mpv.generacion
+    os.kill(mpv._proceso.pid, signal.SIGKILL)
+    esperar(lambda: mpv._proceso.poll() is not None)
+    mpv.asegurar()
+    assert mpv.generacion == g + 1
+    mpv.asegurar()
+    assert mpv.generacion == g + 1
+
+
+def test_al_perder_avisa_si_mpv_muere(mpv):
+    avisos = []
+    mpv.al_perder = lambda: avisos.append(1)
+    os.kill(mpv._proceso.pid, signal.SIGKILL)
+    assert esperar(lambda: avisos, 3)
+
+
+def test_al_perder_no_avisa_al_cerrar(dir_corto):
+    avisos = []
+    cliente = ClienteMpv(dir_corto / "mpv.sock", extra_args=["--ao=null"])
+    cliente.al_perder = lambda: avisos.append(1)
+    cliente.iniciar()
+    cliente.cerrar()
+    time.sleep(0.3)
+    assert avisos == []

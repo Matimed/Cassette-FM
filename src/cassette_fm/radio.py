@@ -120,9 +120,14 @@ class Radio:
             self._sintonizar(self._estaciones[destino])
 
     def _sintonizar(self, estacion: Estacion) -> None:
+        anterior = self._estado.estacion
         self._estado.estacion = estacion.nombre
+        try:
+            self._reproductor.sintonizar(estacion)
+        except Exception:
+            self._estado.estacion = anterior
+            raise
         self._guardar(self._estado)
-        self._reproductor.sintonizar(estacion)
         self.encendida = True
 
     def _apagar(self) -> None:

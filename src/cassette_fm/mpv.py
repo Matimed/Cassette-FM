@@ -20,9 +20,12 @@ class ErrorMpv(Exception):
 class _Conexion:
     """Un socket con su hilo lector y su hilo despachador de eventos."""
 
-    def __init__(self, sock: socket_mod.socket, al_evento: Callable[[], Callable | None]):
+    def __init__(self, sock: socket_mod.socket, al_evento: Callable[[], Callable | None],
+                 al_perder: Callable[[], Callable | None] = lambda: None):
         self.sock = sock
         self.viva = True
+        self.cerrada = False
+        self._al_perder = al_perder
         self.pendientes: dict[int, tuple[threading.Event, list]] = {}
         self.eventos: queue.Queue = queue.Queue()
         self._al_evento = al_evento
@@ -65,6 +68,13 @@ class _Conexion:
             for evento, _ in esperas:
                 evento.set()
             self.eventos.put(None)
+            if not self.cerrada:
+                callback = self._al_perder()
+                if callback is not None:
+                    try:
+                        callback()
+                    except Exception:
+                        pass
 
     def _despachar(self) -> None:
         while True:
@@ -79,6 +89,7 @@ class _Conexion:
                     pass
 
     def cerrar(self) -> None:
+        self.cerrada = True
         self.viva = False
         try:
             self.sock.shutdown(socket_mod.SHUT_RDWR)
@@ -89,6 +100,8 @@ class _Conexion:
 
 class ClienteMpv:
     al_evento: Callable[[dict], None] | None = None
+    al_perder: Callable[[], None] | None = None   # mpv murió sin que lo cerráramos
+    generacion: int = 0                           # sube cada vez que se (re)lanza mpv
 
     def __init__(self, socket: Path, extra_args: Sequence[str] = (), ejecutable: str = "mpv"):
         self._socket = Path(socket)
@@ -110,7 +123,8 @@ class ClienteMpv:
                  f"--input-ipc-server={self._socket}", *self._extra_args],
                 stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
             sock = self._conectar()
-            self._conexion = _Conexion(sock, lambda: self.al_evento)
+            self._conexion = _Conexion(sock, lambda: self.al_evento, lambda: self.al_perder)
+            self.generacion += 1
 
     def _conectar(self) -> socket_mod.socket:
         fin = time.monotonic() + TIMEOUT_SOCKET
@@ -144,6 +158,11 @@ class ClienteMpv:
     def _vivo(self) -> bool:
         return (self._proceso is not None and self._proceso.poll() is None
                 and self._conexion is not None and self._conexion.viva)
+
+    def asegurar(self) -> None:
+        with self._lock_vida:
+            if not self._vivo():
+                self.iniciar()
 
     def comando(self, *args: Any, **nombrados: Any) -> Any:
         for intento in range(2):

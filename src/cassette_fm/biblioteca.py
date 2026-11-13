@@ -1,9 +1,12 @@
 import json
+import logging
 import os
 from dataclasses import dataclass
 from pathlib import Path
 
 import mutagen
+
+_log = logging.getLogger("cassette_fm")
 
 EXTENSIONES = frozenset({".mp3", ".flac", ".ogg", ".m4a"})
 
@@ -59,12 +62,24 @@ def _guardar_cache(cache: Path | None, datos: dict) -> None:
     os.replace(tmp, cache)
 
 
+def _es_utf8(ruta: Path) -> bool:
+    """mpv por IPC JSON y el caché solo manejan UTF-8; los demás nombres se saltean."""
+    try:
+        str(ruta).encode("utf-8")
+        return True
+    except UnicodeEncodeError:
+        _log.warning("se ignora %r: el nombre no es UTF-8 válido", os.fsencode(ruta))
+        return False
+
+
 def _archivos_de_audio(carpeta: Path):
     for dirpath, dirnames, filenames in os.walk(carpeta):
         dirnames[:] = [d for d in dirnames if not d.startswith(".")]
         for nombre in filenames:
             if not nombre.startswith(".") and Path(nombre).suffix.lower() in EXTENSIONES:
-                yield Path(dirpath) / nombre
+                ruta = Path(dirpath) / nombre
+                if _es_utf8(ruta):
+                    yield ruta
 
 
 def _pista_con_cache(ruta: Path, previa: dict, nueva: dict) -> Pista | None:
@@ -93,7 +108,7 @@ def escanear(raiz: Path, cache: Path | None = None) -> list[Estacion]:
     nueva: dict = {}
     estaciones = []
     for carpeta in raiz.iterdir():
-        if not carpeta.is_dir() or carpeta.name.startswith("."):
+        if not carpeta.is_dir() or carpeta.name.startswith(".") or not _es_utf8(carpeta):
             continue
         pistas = [p for r in _archivos_de_audio(carpeta)
                   if (p := _pista_con_cache(r, previa, nueva)) is not None]

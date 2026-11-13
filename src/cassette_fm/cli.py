@@ -1,4 +1,5 @@
 import argparse
+import http.client
 import json
 import sys
 import urllib.error
@@ -36,9 +37,14 @@ def _llamar(puerto: int, metodo: str, ruta: str, cuerpo: dict | None = None):
         except (ValueError, KeyError):
             mensaje = f"error {e.code}"
         raise _ErrorCli(mensaje)
-    except (urllib.error.URLError, ConnectionError, TimeoutError):
-        raise _ErrorCli("cassette-fm no está corriendo. Arrancalo con: "
-                        "systemctl --user start cassette-fm (o cassette serve)")
+    except urllib.error.URLError as e:
+        if isinstance(e.reason, (ConnectionRefusedError, FileNotFoundError)):
+            raise _ErrorCli("cassette-fm no está corriendo. Arrancalo con: "
+                            "systemctl --user start cassette-fm (o cassette serve)")
+        raise _ErrorCli(f"no se pudo hablar con cassette-fm: {e.reason}")
+    except (ConnectionError, TimeoutError, http.client.HTTPException):
+        raise _ErrorCli("el servicio cortó la conexión sin responder "
+                        "(mirá: journalctl --user -u cassette-fm -e)")
 
 
 def _armar_parser() -> argparse.ArgumentParser:

@@ -8,6 +8,7 @@ from types import SimpleNamespace
 import pytest
 
 from cassette_fm.api import crear_servidor
+from cassette_fm.mpv import ErrorMpv
 from cassette_fm.radio import EstacionInexistente, SinEstaciones
 
 
@@ -126,3 +127,15 @@ def test_sin_estaciones_409_nombra_la_raiz(servidor):
 def test_ruta_desconocida_404(servidor):
     assert pedir(servidor, "GET", "/nada")[0] == 404
     assert pedir(servidor, "POST", "/nada")[0] == 404
+
+
+def test_error_de_mpv_503(servidor):
+    servidor.radio.error = ErrorMpv("mpv no respondió a 'loadfile'")
+    codigo, cuerpo = pedir(servidor, "POST", "/siguiente")
+    assert codigo == 503 and "mpv" in cuerpo["error"]
+
+
+@pytest.mark.parametrize("cuerpo", [{"valor": "x", "delta": 5}, {"delta": "5"}, {"valor": 1.5}])
+def test_volumen_con_tipos_invalidos_400(servidor, cuerpo):
+    assert pedir(servidor, "POST", "/volumen", cuerpo)[0] == 400
+    assert servidor.radio.llamadas == []
