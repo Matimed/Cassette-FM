@@ -5,6 +5,7 @@ from collections.abc import Callable, Sequence
 
 from cassette_fm import biblioteca
 from cassette_fm.api import crear_servidor
+from cassette_fm.avisos import Notificador
 from cassette_fm.config import Config, Rutas, cargar_estado, guardar_estado
 from cassette_fm.mpv import ClienteMpv
 from cassette_fm.radio import Radio
@@ -15,6 +16,8 @@ def servir(config: Config, rutas: Rutas, avisar: Callable[[str, str], None] | No
            parar: threading.Event | None = None, extra_args_mpv: Sequence[str] = ()) -> None:
     """Arma la radio y sirve la API hasta SIGTERM/SIGINT o hasta que se setee `parar`."""
     parar = parar or threading.Event()
+    if avisar is None and config.avisos:
+        avisar = Notificador()
     if threading.current_thread() is threading.main_thread():
         for senal in (signal.SIGTERM, signal.SIGINT):
             signal.signal(senal, lambda *_: parar.set())

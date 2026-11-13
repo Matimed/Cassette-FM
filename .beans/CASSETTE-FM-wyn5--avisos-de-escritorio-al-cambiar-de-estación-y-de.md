@@ -1,10 +1,11 @@
 ---
 # CASSETTE-FM-wyn5
 title: Avisos de escritorio al cambiar de estación y de tema
-status: todo
+status: completed
 type: feature
+priority: normal
 created_at: 2026-11-13T23:03:54Z
-updated_at: 2026-11-13T23:03:54Z
+updated_at: 2026-11-13T23:18:08Z
 parent: CASSETTE-FM-u2yr
 blocked_by:
     - CASSETTE-FM-jcrq
