@@ -1,10 +1,11 @@
 ---
 # CASSETTE-FM-jcrq
 title: Servicio y API HTTP de control
-status: todo
+status: in-progress
 type: task
+priority: normal
 created_at: 2026-11-13T23:03:54Z
-updated_at: 2026-11-13T23:03:54Z
+updated_at: 2026-11-13T23:15:43Z
 parent: CASSETTE-FM-u2yr
 blocked_by:
     - CASSETTE-FM-dwgu

@@ -1,0 +1,193 @@
+import threading
+from pathlib import Path
+
+import pytest
+
+from cassette_fm.biblioteca import Estacion, Pista
+from cassette_fm.config import Estado
+from cassette_fm.radio import EstacionInexistente, Radio, SinEstaciones
+
+
+class ReproductorFalso:
+    def __init__(self):
+        self.llamadas = []
+        self.pista_actual = None
+        self.al_cambiar_pista = None
+
+    def sintonizar(self, estacion):
+        self.llamadas.append(("sintonizar", estacion.nombre))
+
+    def detener(self):
+        self.llamadas.append(("detener",))
+
+    def volumen(self, valor):
+        valor = max(0, min(100, valor))
+        self.llamadas.append(("volumen", valor))
+        return valor
+
+    def sintonizadas(self):
+        return [l[1] for l in self.llamadas if l[0] == "sintonizar"]
+
+
+def est(nombre):
+    return Estacion(nombre, (Pista(Path(f"/m/{nombre}.mp3"), 100.0, f"tema de {nombre}"),))
+
+
+def crear(nombres=("A", "B", "Regueton 2000"), estado=None, escanear=None, avisar=None):
+    rep = ReproductorFalso()
+    guardados = []
+    estado = estado or Estado()
+    estaciones = [est(n) for n in nombres]
+    radio = Radio(rep, estaciones, estado,
+                  guardar=lambda e: guardados.append((e.estacion, e.volumen)),
+                  escanear=escanear or (lambda: estaciones), avisar=avisar)
+    return radio, rep, guardados, estado
+
+
+def test_nace_apagada_y_aplica_volumen():
+    radio, rep, _, _ = crear(estado=Estado(volumen=55))
+    assert radio.encendida is False
+    assert ("volumen", 55) in rep.llamadas
+    assert rep.sintonizadas() == []
+
+
+def test_encender_sin_estado_sintoniza_la_primera():
+    radio, rep, _, _ = crear()
+    radio.encender()
+    assert rep.sintonizadas() == ["A"]
+    assert radio.encendida
+
+
+def test_encender_recuerda_la_ultima():
+    radio, rep, _, _ = crear(estado=Estado(estacion="B"))
+    radio.encender()
+    assert rep.sintonizadas() == ["B"]
+
+
+def test_siguiente_y_anterior_dan_la_vuelta():
+    radio, rep, _, _ = crear(estado=Estado(estacion="Regueton 2000"))
+    radio.siguiente()
+    radio.anterior()
+    radio.anterior()
+    assert rep.sintonizadas() == ["A", "Regueton 2000", "B"]
+
+
+def test_siguiente_y_anterior_sin_estacion_actual():
+    radio, rep, _, _ = crear()
+    radio.siguiente()
+    radio2, rep2, _, _ = crear()
+    radio2.anterior()
+    assert rep.sintonizadas() == ["A"]
+    assert rep2.sintonizadas() == ["Regueton 2000"]
+
+
+def test_siguiente_estando_apagada_enciende():
+    radio, rep, _, _ = crear(estado=Estado(estacion="A"))
+    assert not radio.encendida
+    radio.siguiente()
+    assert radio.encendida and rep.sintonizadas() == ["B"]
+
+
+def test_sintonizar_por_prefijo_y_sin_mayusculas():
+    radio, rep, _, _ = crear()
+    radio.sintonizar("reg")
+    radio.sintonizar("REGUETON 2000")
+    assert rep.sintonizadas() == ["Regueton 2000", "Regueton 2000"]
+
+
+def test_sintonizar_enciende_y_acepta_acentos():
+    radio, rep, _, _ = crear(nombres=("Música Ñandú", "Zeta"))
+    radio.sintonizar("música ñandú")
+    assert radio.encendida and rep.sintonizadas() == ["Música Ñandú"]
+
+
+def test_sintonizar_inexistente_o_ambiguo():
+    radio, _, _, _ = crear(nombres=("Rock", "Rap"))
+    with pytest.raises(EstacionInexistente):
+        radio.sintonizar("x")
+    with pytest.raises(EstacionInexistente):
+        radio.sintonizar("r")
+
+
+def test_coincidencia_exacta_gana_al_prefijo():
+    radio, rep, _, _ = crear(nombres=("Rock", "Rocker"))
+    radio.sintonizar("rock")
+    assert rep.sintonizadas() == ["Rock"]
+
+
+def test_sin_estaciones():
+    radio, _, _, _ = crear(nombres=())
+    for accion in (radio.encender, radio.siguiente, radio.anterior):
+        with pytest.raises(SinEstaciones):
+            accion()
+    assert radio.estado()["estaciones"] == []
+
+
+def test_guarda_estado_al_sintonizar_y_al_cambiar_volumen():
+    radio, _, guardados, _ = crear()
+    radio.sintonizar("B")
+    assert guardados[-1] == ("B", 70)
+    radio.volumen(valor=40)
+    assert guardados[-1] == ("B", 40)
+
+
+def test_volumen_delta_y_valor():
+    radio, _, _, _ = crear(estado=Estado(volumen=70))
+    assert radio.volumen(delta=5) == 75
+    assert radio.volumen(delta=-100) == 0
+    assert radio.volumen(valor=30) == 30
+    assert radio.volumen() == 30
+
+
+def test_apagar_detiene():
+    radio, rep, _, _ = crear()
+    radio.encender()
+    radio.apagar()
+    assert not radio.encendida and rep.llamadas[-1] == ("detener",)
+    radio.alternar()
+    assert radio.encendida
+    radio.alternar()
+    assert not radio.encendida
+
+
+def test_rescan_conserva_o_reubica():
+    nuevas = [est("A"), est("B")]
+    radio, rep, _, _ = crear(escanear=lambda: nuevas)
+    radio.sintonizar("B")
+    radio.rescan()
+    assert rep.sintonizadas() == ["B"]  # sigue existiendo: no se interrumpe
+    nuevas[:] = [est("A")]
+    radio.rescan()
+    assert rep.sintonizadas() == ["B", "A"]  # desapareció: pasa a la primera
+    nuevas[:] = []
+    radio.rescan()
+    assert not radio.encendida and rep.llamadas[-1] == ("detener",)
+
+
+def test_estado_dict():
+    radio, rep, _, _ = crear(estado=Estado(estacion="A", volumen=60))
+    assert radio.estado() == {"encendida": False, "estacion": "A", "pista": None,
+                              "volumen": 60, "estaciones": ["A", "B", "Regueton 2000"]}
+    radio.encender()
+    rep.pista_actual = est("A").pistas[0]
+    assert radio.estado()["pista"] == "tema de A"
+    assert radio.estado()["encendida"] is True
+
+
+def test_avisa_al_cambiar_pista():
+    avisos = []
+    radio, rep, _, _ = crear(avisar=lambda e, t: avisos.append((e, t)))
+    radio.sintonizar("A")
+    rep.al_cambiar_pista(est("A").pistas[0])
+    assert avisos == [("A", "tema de A")]
+
+
+def test_cambios_rapidos():
+    radio, rep, _, _ = crear()
+    hilos = [threading.Thread(target=radio.siguiente) for _ in range(10)]
+    for h in hilos:
+        h.start()
+    for h in hilos:
+        h.join()
+    assert len(rep.sintonizadas()) == 10
+    assert rep.sintonizadas()[-1] == radio.estado()["estacion"]
