@@ -196,6 +196,46 @@ def test_cargar_bien_reinicia_la_cuenta_de_errores(rep, mpv):
     assert caidas == []
 
 
+def _con_idle_activo(mpv, valor):
+    original = mpv.comando
+
+    def comando(*args, **kw):
+        if args[:2] == ("get_property", "idle-active"):
+            mpv.comandos.append((args, kw))
+            return valor
+        return original(*args, **kw)
+
+    mpv.comando = comando
+
+
+def test_idle_con_mpv_realmente_ocioso_detiene_y_avisa(rep, mpv):
+    caidas = []
+    rep.al_fallar = lambda: caidas.append(1)
+    rep.sintonizar(E)
+    _con_idle_activo(mpv, True)
+    rep.manejar_evento({"event": "idle"})
+    assert caidas == [1] and (("stop",), {}) in mpv.comandos
+    assert rep.pista_actual is None
+
+
+def test_idle_falso_con_mpv_sonando_se_ignora(rep, mpv):
+    caidas = []
+    rep.al_fallar = lambda: caidas.append(1)
+    rep.sintonizar(E)
+    _con_idle_activo(mpv, False)
+    mpv.comandos.clear()
+    rep.manejar_evento({"event": "idle"})
+    assert caidas == [] and (("stop",), {}) not in mpv.comandos
+
+
+def test_idle_sin_estacion_sintonizada_se_ignora(rep, mpv):
+    caidas = []
+    rep.al_fallar = lambda: caidas.append(1)
+    _con_idle_activo(mpv, True)
+    rep.manejar_evento({"event": "idle"})
+    assert caidas == []
+
+
 # --- integración con mpv real ---
 
 def esperar(condicion, timeout):

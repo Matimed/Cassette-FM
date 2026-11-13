@@ -114,6 +114,19 @@ class Reproductor:
                 if self.pista_actual and not self._avisada:
                     self._avisada = True
                     avisar = (self.pista_actual, self._estacion)
+            elif tipo == "idle" and self._estacion is not None:
+                # mpv se quedó sin playlist: si todos los temas encolados fallan, recorre la lista
+                # más rápido de lo que la rotamos. Se confirma con mpv para no confundirlo con el
+                # `idle` del arranque de un mpv recién relanzado.
+                try:
+                    ocioso = self._mpv.comando("get_property", "idle-active")
+                except ErrorMpv:
+                    ocioso = False
+                if ocioso:
+                    _log.error("mpv se quedó sin temas que reproducir en %r: se detiene",
+                               self._estacion.nombre)
+                    self._detener()
+                    fallo = True
             elif (tipo == "end-file" and evento.get("reason") == "error"
                   and evento.get("playlist_entry_id") in self._pistas):
                 self._fallos += 1
