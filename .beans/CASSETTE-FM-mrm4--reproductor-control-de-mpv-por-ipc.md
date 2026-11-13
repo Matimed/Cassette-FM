@@ -1,10 +1,11 @@
 ---
 # CASSETTE-FM-mrm4
 title: 'Reproductor: control de mpv por IPC'
-status: todo
+status: completed
 type: task
+priority: normal
 created_at: 2026-11-13T23:03:54Z
-updated_at: 2026-11-13T23:03:54Z
+updated_at: 2026-11-13T23:15:19Z
 parent: CASSETTE-FM-u2yr
 blocked_by:
     - CASSETTE-FM-cbtc
