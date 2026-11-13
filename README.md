@@ -38,6 +38,7 @@ El servicio arranca con la sesión **en silencio**: solo suena con `cassette on`
 raiz_musica = "~/Música"   # cada subcarpeta es una estación
 puerto = 7710              # la API escucha solo en 127.0.0.1
 avisos = true              # notificación de escritorio con estación y tema
+normalizar = true          # parejiza el volumen entre temas (filtro dynaudnorm de mpv)
 ```
 
 El estado (última estación y volumen) se guarda en `~/.local/state/cassette-fm/estado.json`.

@@ -56,3 +56,10 @@ def test_rutas_sin_xdg_usa_defaults(monkeypatch):
     assert r.estado == home / ".local" / "state" / "cassette-fm" / "estado.json"
     assert r.cache == home / ".cache" / "cassette-fm" / "duraciones.json"
     assert r.runtime == Path(f"/tmp/cassette-fm-{os.getuid()}")
+
+
+def test_normalizar_por_defecto_y_configurable(tmp_path):
+    assert Config().normalizar is True
+    archivo = tmp_path / "config.toml"
+    archivo.write_text("normalizar = false\n")
+    assert cargar_config(archivo).normalizar is False

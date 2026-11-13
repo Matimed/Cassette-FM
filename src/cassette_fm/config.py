@@ -10,6 +10,7 @@ class Config:
     raiz_musica: Path = Path.home() / "Música"
     puerto: int = 7710
     avisos: bool = True
+    normalizar: bool = True   # filtro dynaudnorm de mpv: parejiza el volumen entre temas
 
 
 @dataclass

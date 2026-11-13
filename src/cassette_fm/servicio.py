@@ -26,7 +26,8 @@ def servir(config: Config, rutas: Rutas, avisar: Callable[[str, str], None] | No
         return biblioteca.escanear(config.raiz_musica, rutas.cache)
 
     estado = cargar_estado(rutas.estado)
-    mpv = ClienteMpv(rutas.runtime / "mpv.sock", extra_args=extra_args_mpv)
+    args_mpv = (["--af=dynaudnorm"] if config.normalizar else []) + list(extra_args_mpv)
+    mpv = ClienteMpv(rutas.runtime / "mpv.sock", extra_args=args_mpv)
     radio = Radio(Reproductor(mpv), escanear(), estado,
                   guardar=lambda e: guardar_estado(rutas.estado, e),
                   escanear=escanear, avisar=avisar)

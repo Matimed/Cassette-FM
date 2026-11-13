@@ -63,3 +63,30 @@ def test_servir_sin_avisos_si_config_lo_desactiva(tmp_path, dir_corto, monkeypat
 
 def test_servir_con_avisos_usa_notificador(tmp_path, dir_corto, monkeypatch):
     assert isinstance(_servir_un_instante(tmp_path, dir_corto, monkeypatch, avisos=True), Notificador)
+
+
+def _args_de_mpv(tmp_path, dir_corto, monkeypatch, **config):
+    capturado = {}
+    real = servicio.ClienteMpv
+
+    class MpvEspia(real):
+        def __init__(self, socket, extra_args=(), **kw):
+            capturado["extra_args"] = list(extra_args)
+            super().__init__(socket, extra_args, **kw)
+
+    monkeypatch.setattr(servicio, "ClienteMpv", MpvEspia)
+    parar = threading.Event()
+    parar.set()
+    rutas = Rutas(tmp_path / "c.toml", tmp_path / "e.json", tmp_path / "d.json", dir_corto)
+    servicio.servir(Config(raiz_musica=tmp_path / "x", puerto=0, avisos=False, **config), rutas,
+                    parar=parar, extra_args_mpv=["--ao=null"])
+    return capturado["extra_args"]
+
+
+def test_servir_normaliza_el_volumen_con_dynaudnorm(tmp_path, dir_corto, monkeypatch):
+    args = _args_de_mpv(tmp_path, dir_corto, monkeypatch)
+    assert "--af=dynaudnorm" in args and "--ao=null" in args
+
+
+def test_servir_sin_normalizar_si_la_config_lo_desactiva(tmp_path, dir_corto, monkeypatch):
+    assert "--af=dynaudnorm" not in _args_de_mpv(tmp_path, dir_corto, monkeypatch, normalizar=False)
