@@ -173,8 +173,9 @@ la estación y el tema (de los tags ID3; si no hay, el nombre del archivo). Mien
    continuación. Ojo de diseño: rompe el determinismo del reloj virtual. Se modela como una "inserción" en la
    agenda de esa estación (un desvío que corre el reloj a partir de ese punto), guardada en el estado.
 
-Ideas sueltas para más adelante: normalizar el volumen entre estaciones (ReplayGain o `loudnorm`/`dynaudnorm` de
-mpv), estática entre estaciones también en la CLI, evitar repetir artistas seguidos.
+Ideas sueltas para más adelante: crear y borrar emisoras por la API (nombre + fuente: un directorio o el
+link de una playlist de Spotify), estática entre estaciones también en la CLI, evitar repetir artistas
+seguidos. El volumen entre temas ya se parejiza con el filtro `dynaudnorm` de mpv (opción `normalizar`).
 
 ## Decisiones del usuario
 
