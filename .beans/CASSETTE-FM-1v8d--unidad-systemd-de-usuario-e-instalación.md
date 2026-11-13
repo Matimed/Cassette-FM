@@ -1,10 +1,11 @@
 ---
 # CASSETTE-FM-1v8d
 title: Unidad systemd de usuario e instalación
-status: todo
+status: completed
 type: task
+priority: normal
 created_at: 2026-11-13T23:03:54Z
-updated_at: 2026-11-13T23:03:54Z
+updated_at: 2026-11-13T23:19:35Z
 parent: CASSETTE-FM-u2yr
 blocked_by:
     - CASSETTE-FM-5yhz

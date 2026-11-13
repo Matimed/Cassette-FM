@@ -1,0 +1,9 @@
+[Unit]
+Description=cassette-fm: radios continuas desde ~/Música
+
+[Service]
+ExecStart=@CASSETTE@ serve
+Restart=on-failure
+
+[Install]
+WantedBy=default.target
