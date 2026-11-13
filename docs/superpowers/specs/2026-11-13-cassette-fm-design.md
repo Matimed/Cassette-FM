@@ -168,6 +168,10 @@ la estación y el tema (de los tags ID3; si no hay, el nombre del archivo). Mien
 5. **UI selector estilo GTA:** rueda radial de estaciones, con sonido de estática al cambiar.
 6. **Clientes en otras máquinas:** exponer la API en la red y servir los archivos por HTTP (la agenda ya da
    "qué y desde qué segundo"). No hace falta sincronización exacta.
+7. **Pedidos al DJ (prioridad mínima, lo último):** pedirle a una estación que pase un tema aunque no esté en su
+   lista: un archivo de la biblioteca o, con Spotify, una búsqueda por nombre. El DJ lo anuncia y suena a
+   continuación. Ojo de diseño: rompe el determinismo del reloj virtual. Se modela como una "inserción" en la
+   agenda de esa estación (un desvío que corre el reloj a partir de ese punto), guardada en el estado.
 
 Ideas sueltas para más adelante: normalizar el volumen entre estaciones (ReplayGain o `loudnorm`/`dynaudnorm` de
 mpv), estática entre estaciones también en la CLI, evitar repetir artistas seguidos.
@@ -179,6 +183,8 @@ mpv), estática entre estaciones también en la CLI, evitar repetir artistas seg
 - Puede haber clientes en otra PC o en el celular algún día, sin sincronización exacta.
 - Arquitectura A.
 - Primero la radio sin DJ (ya decidido en el relevamiento). Voces Kokoro preferidas.
+- Desarrollo con **TDD** (skills de superpowers).
+- Pedidos al DJ como feature futura, la de menor prioridad.
 
 ## Decisiones tomadas en el diseño (a revisar por el usuario)
 
