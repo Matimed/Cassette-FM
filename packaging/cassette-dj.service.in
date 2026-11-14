@@ -1,0 +1,9 @@
+[Unit]
+Description=cassette-dj: servicio DJ (frases y voz) de cassette-fm
+
+[Service]
+ExecStart=@CASSETTE_DJ@ serve
+Restart=on-failure
+
+[Install]
+WantedBy=default.target

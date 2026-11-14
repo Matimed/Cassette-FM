@@ -82,6 +82,67 @@ Parámetros de la sección `[dj]` (todos opcionales; también se pueden pisar po
 y volvés con la voz todavía sonando, retoma la frase en el punto que corresponde; (c) bajar el volumen a 0 la corta;
 (d) `cassette dj estado` informa el desfase.
 
+## Servicio DJ
+
+Servicio aparte (`cassette-dj`) que escribe y sintetiza las frases del DJ. Puede correr en esta PC o en otra:
+la radio solo necesita su dirección. **No tiene autenticación**: para usarlo desde otra máquina hay que poner
+`host = "0.0.0.0"` y hacerlo en una red de confianza.
+
+**Instalación** (la hacés vos; instala el extra `[dj]` y el servicio de usuario `cassette-dj`):
+
+```bash
+scripts/instalar-dj.sh
+cassette-dj modelos        # baja los modelos de voz de Kokoro (~350 MB), una sola vez
+```
+
+**Configuración** en `~/.config/cassette-dj/config.toml` (todo opcional):
+
+| Clave | Por defecto | Qué es |
+|---|---|---|
+| `host` / `puerto` | `127.0.0.1` / `7720` | dónde escucha |
+| `trabajadores` | 1 | pedidos que se procesan a la vez |
+| `retencion_minutos` | 60 | cuánto se conserva un clip terminado |
+| `descargar_tras_minutos` | 5 | Kokoro se descarga de la memoria tras este tiempo sin trabajo |
+| `modelos_dir` | `~/.local/share/cassette-dj/modelos` | dónde están los modelos |
+| `palabras_maximas` | 45 | largo máximo de una frase |
+| `velocidad` | 1.05 | velocidad de la voz |
+| `pausa_oracion_segundos` / `pausa_coma_segundos` | 0.25 / 0.1 | pausas mínimas tras un punto y una coma |
+| `continuo` | `false` | síntesis continua de Kokoro (a probar con frases largas) |
+| `zona_horaria` | `America/Argentina/Buenos_Aires` | |
+
+El idioma con que se pronuncia cada nombre propio ("Daddy Yankee" en inglés, aunque la frase sea en español) se
+configura en `~/.config/cassette-dj/lexico.toml`:
+
+```toml
+[idiomas]
+"Daddy Yankee" = "en-us"
+```
+
+**Contrato HTTP** (JSON UTF-8; todo viaja en el pedido, el servicio no guarda estado entre pedidos):
+
+| Método y ruta | Qué hace |
+|---|---|
+| `POST /intervenciones` | encola un pedido; `202 {"id"}`; `400` si es inválido; repetir el `id` no lo vuelve a encolar |
+| `GET /intervenciones/<id>` | `{"estado": "pendiente\|trabajando\|listo\|error\|cancelado", "duracion", "texto", "ingredientes", "error"}` |
+| `GET /intervenciones/<id>/audio` | el WAV, cuando está `listo` (`409` si todavía no) |
+| `DELETE /intervenciones/<id>` | cancela si todavía no empezó: `{"cancelado": true\|false}` |
+| `GET /voces`, `GET /salud` | voces disponibles; estado del servicio (modelos que faltan, trabajos por estado) |
+
+```bash
+curl -s -X POST localhost:7720/intervenciones -d '{
+  "id": "prueba1", "estacion": "Lentos", "idioma": "es", "voz": "em_santa",
+  "momento": "2026-11-13T21:47:00-03:00",
+  "anterior": {"artista": "Whitesnake", "titulo": "Is This Love"},
+  "siguiente": {"artista": "Foreigner", "titulo": "Waiting for a Girl Like You"}}'
+curl -s localhost:7720/intervenciones/prueba1                       # estado y texto
+curl -s localhost:7720/intervenciones/prueba1/audio -o prueba1.wav   # el clip
+```
+
+**Guiones y pruebas de voz.** Todo lo que el DJ dice queda en `~/.local/state/cassette-dj/guiones.jsonl`, sin borrarse nunca.
+`cassette-dj guiones` los lista, y `cassette-dj voz-prueba --voz em_santa --voz em_alex` vuelve a sintetizar los últimos
+guiones **tal cual** con las voces que le pases (también acepta mezclas, `em_santa+em_alex`), para comparar voces con
+las mismas frases.
+
 ## Atajos de teclado (Cinnamon)
 
 `cassette atajos` (ya lo hace `instalar-todo.sh`) registra estas teclas (no pisa las que ya uses ni las que cambies a mano):

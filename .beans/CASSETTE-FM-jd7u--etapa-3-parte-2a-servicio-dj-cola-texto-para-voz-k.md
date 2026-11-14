@@ -1,10 +1,11 @@
 ---
 # CASSETTE-FM-jd7u
 title: 'Etapa 3, parte 2a: servicio DJ (cola, texto para voz, Kokoro, plantillas y guiones)'
-status: todo
+status: completed
 type: feature
+priority: normal
 created_at: 2026-11-14T01:57:49Z
-updated_at: 2026-11-14T01:57:49Z
+updated_at: 2026-11-14T02:24:06Z
 parent: CASSETTE-FM-p6zn
 ---
 
