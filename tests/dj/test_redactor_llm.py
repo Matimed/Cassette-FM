@@ -82,6 +82,17 @@ def test_el_prompt_da_el_titulo_sin_sufijos_de_version():
     assert "Version" not in u and "Radio Edit" not in u
 
 
+def test_la_estacion_sin_puntos_no_es_un_nombre_nuevo():
+    en = pedido("en")
+    assert ver("Good afternoon listeners, Whisper FM is bringing you Take On Me by a-ha, a lovely song.", p=en) is None
+    assert ver("Buenas tardes, Whisper FM les trae Take On Me de a-ha, una canción hermosa.") is None
+
+
+def test_el_prompt_prohibe_mencionar_momento_dia_o_clima_que_no_se_dieron():
+    assert "momento del día" in peticion(["cancion"]).sistema
+    assert "time of day" in peticion(["cancion"], p=pedido("en")).sistema
+
+
 def test_el_prompt_no_lleva_el_feat_del_titulo():
     p = pedido(siguiente=("Cardi B & 21 Savage", "Bartier Cardi (feat 21 Savage)"))
     u = peticion(["cancion", "anterior"], p=p).usuario

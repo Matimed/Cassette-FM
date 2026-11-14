@@ -311,6 +311,15 @@ def test_en_llm_usa_la_frase_del_llm_y_la_anota(montaje, hacer_pedido):
     assert "{es:Waiting for a Girl Like You}" in g["marcado"] and "{es:Foreigner}" in g["marcado"]
 
 
+def test_el_tope_de_palabras_del_llm_sale_de_la_duracion_maxima_del_pedido(montaje, hacer_pedido):
+    productor, _, _, _, guiones = llm_listo(montaje)
+    productor.producir(hacer_pedido("m3", duracion_maxima_segundos=25))
+    productor.producir(hacer_pedido("m4", duracion_maxima_segundos=15))
+    largo, corto = guiones.ultimos(5)[-2:]
+    assert "entre 37 y 75 palabras" in largo["sistema"]
+    assert "entre 22 y 45 palabras" in corto["sistema"]
+
+
 def test_el_texto_del_llm_pasa_por_numeros_y_marcado(montaje, hacer_pedido):
     from cassette_fm.dj.hechos.musicbrainz import DatosTema
     crear, _, guiones = montaje

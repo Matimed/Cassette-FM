@@ -128,6 +128,7 @@ def construir_peticion(pedido: Pedido, ingredientes: Sequence[str], hechos: Hech
                    "- Unilo todo en un solo discurso fluido: enlazá las ideas con conectores (\"y\", \"además\", "
                    "\"por cierto\", \"mientras tanto\") en vez de frases sueltas.\n"
                    "- No empieces con \"aquí tienes\" ni digas que sos una IA.\n"
+                   "- No menciones el momento del día, el día de la semana ni el clima si el mensaje no los da.\n"
                    "- Escribí los años con cifras (por ejemplo 1984).\n"
                    "- Si hay un dato de Wikipedia, usá a lo sumo uno y decilo con tus palabras en una frase corta."
                    + tono)
@@ -142,6 +143,7 @@ def construir_peticion(pedido: Pedido, ingredientes: Sequence[str], hechos: Hech
                    "- Make it one flowing speech: join the ideas with connectors (\"and\", \"also\", \"by the way\", "
                    "\"meanwhile\") instead of separate stand-alone sentences.\n"
                    "- Do not start with \"here is\" and never say you are an AI.\n"
+                   "- Do not mention the time of day, the day of the week or the weather unless the message gives it.\n"
                    "- Write years as digits (for example 1984).\n"
                    "- If there is a Wikipedia fact, use at most one, in your own words, in one short sentence."
                    + tono)
@@ -266,6 +268,8 @@ def verificar(texto: str, pedido: Pedido, peticion: Peticion, palabras_maximas: 
     if _ANIOS_EN_PALABRAS[idioma].search(hablado):
         return "año en palabras que no está en los hechos"
     vocabulario = set(_norm(peticion.permitido).split()) | set(_norm(pedido.estacion).split())
+    vocabulario |= set(_norm(peticion.permitido.replace(".", "")).split())        # "F.M." también como "FM"
+    vocabulario |= set(_norm(pedido.estacion.replace(".", "")).split())
     vocabulario |= {_norm(x) for x in _DIAS[idioma] + _MESES[idioma]} | _EXCEPCIONES
     for oracion in _oraciones(texto):
         for i, m in enumerate(_PALABRA.finditer(oracion)):

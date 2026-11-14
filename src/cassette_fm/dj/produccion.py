@@ -24,6 +24,7 @@ _ID = re.compile(r"[A-Za-z0-9_-]{1,64}")
 _log = logging.getLogger("cassette_fm")
 INTENTOS = 3
 _TIEMPO_MINIMO_LLM = 5.0     # si quedan menos segundos que esto, ni se le pregunta al LLM
+_PALABRAS_POR_SEGUNDO = 3     # lo que dice la voz por segundo: 45 palabras en un clip de 15 s
 
 
 @dataclass(frozen=True)
@@ -98,7 +99,7 @@ class Productor:
         """Intenta con el LLM; devuelve el Resultado o el motivo por el que hay que usar plantillas."""
         c = self._config
         maxima = pedido.duracion_maxima_segundos
-        palabras = c.palabras_maximas
+        palabras = int(maxima * _PALABRAS_POR_SEGUNDO) if maxima else c.palabras_maximas
         disponibles = ingredientes_disponibles(pedido, hechos)
         if hechos.wikipedia is not None:
             disponibles = disponibles | {"dato"}
