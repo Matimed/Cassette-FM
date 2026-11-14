@@ -363,3 +363,33 @@ def test_el_script_cita_las_variables_y_no_publica_el_puerto_afuera():
             assert not re.search(r'(?<!")\$\{?[A-Za-z_]+\}?(?!")', re.sub(r'"[^"]*"', "", linea)), linea
     assert "127.0.0.1:11434:11434" in texto and "0.0.0.0" not in texto
     assert "--restart unless-stopped" in texto and "ollama pull" in texto and "docker rm -f cassette-ollama" in texto
+    # `docker ps | grep -q` con pipefail da 141 si docker sigue escribiendo: se pregunta por el contenedor directo
+    assert "docker container inspect" in texto and "| grep -qx" not in texto
+    assert "command -v curl" in texto
+
+
+def test_guiones_muestra_la_fuente_y_el_motivo_de_los_del_llm(entorno, capsys):
+    cargar_guiones(entorno, [
+        {"id": "a", "estacion": "Power", "voz": "am_onyx", "idioma": "en", "fuente": "llm", "texto": None,
+         "descartado": True, "motivo": "nombre propio que no está en los hechos: Michael", "crudo": "x"},
+        {"id": "b", "estacion": "Power", "voz": "am_onyx", "idioma": "en", "fuente": "plantilla",
+         "texto": "Now playing something for everybody out there.", "motivo": "el LLM no responde en x"},
+        {"id": "c", "estacion": "Power", "voz": "am_onyx", "idioma": "en", "fuente": "llm",
+         "texto": "Now playing a song by somebody for you.", "marcado": "x"}])
+    assert cli.main(["guiones"]) == 0
+    lineas = capsys.readouterr().out.strip().splitlines()
+    assert "[llm] [descartado: nombre propio que no está en los hechos: Michael]" in lineas[0] 
+    assert "[plantilla: el LLM no responde en x]" in lineas[1]
+    assert lineas[2].endswith("[llm]")
+
+
+def test_cassette_dj_modo_avisa_si_falta_el_modelo(entorno, tmp_path, capsys, monkeypatch):
+    from cassette_fm.dj import servidor
+    parar, hilo = _servicio_en_marcha(entorno, tmp_path)
+    try:
+        assert cli.main(["modo", "llm"]) == 0
+        salida = capsys.readouterr().out
+        assert "Modo del DJ: llm" in salida
+    finally:
+        parar.set()
+        hilo.join(5)

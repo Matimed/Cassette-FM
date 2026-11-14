@@ -50,8 +50,15 @@ def _guiones(rutas, args) -> int:
             cuando = datetime.fromisoformat(r["ts"]).strftime("%Y-%m-%d %H:%M")
         except (KeyError, ValueError):
             cuando = "?"
-        texto = r.get("texto") or f"(error: {r.get('error', '?')})"
-        marca = " [descartado]" if r.get("descartado") else ""
+        texto = r.get("texto") or f"(error: {r.get('error') or r.get('motivo') or '?'})"
+        motivo = r.get("motivo")
+        marca = ""
+        if r.get("fuente") == "llm":
+            marca += " [llm]"
+        elif motivo:
+            marca += f" [plantilla: {motivo}]"
+        if r.get("descartado"):
+            marca += f" [descartado: {motivo}]" if motivo else " [descartado]"
         print(f"{cuando} · {r.get('estacion', '?')} · {r.get('voz', '?')} · {texto}{marca}")
     return 0
 
@@ -156,8 +163,10 @@ def _modo(config, args) -> int:
     modo = datos.get("modo")
     extra = ""
     if modo == "llm" and args.nuevo is not None:
-        extra = (" (el LLM responde)" if datos.get("llm") == "ok" else
-                 " (¡el LLM no responde! las frases van a salir por plantillas hasta que arranque Ollama)")
+        extra = {"ok": " (el LLM responde)",
+                 "falta el modelo": " (¡el modelo no está descargado! corré scripts/instalar-llm.sh; hasta entonces "
+                                    "las frases salen por plantillas)"}.get(
+            datos.get("llm"), " (¡el LLM no responde! las frases van a salir por plantillas hasta que arranque Ollama)")
     print(f"Modo del DJ: {modo}{extra}.")
     if modo == "llm":
         print("(vuelve a plantillas al reiniciar el servicio DJ)")

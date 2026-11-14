@@ -106,7 +106,9 @@ cassette-dj llm estado         # URL, modelo configurado, si el servidor respond
 Los modelos quedan en `~/.local/share/cassette-dj/ollama`. Para borrar todo: `docker rm -f cassette-ollama` y esa carpeta.
 Configuración en `~/.config/cassette-dj/config.toml` (todo opcional, con su valor por defecto): `llm_url`
 (`http://127.0.0.1:11434/v1`), `llm_modelo` (`gemma3:4b`), `llm_timeout_segundos` (240), `llm_intentos` (2: cuántas veces
-se le pide una frase antes de usar la plantilla), `llm_temperatura` (0.8), `wikipedia_dias` (90),
+se le pide una frase antes de usar la plantilla), `llm_temperatura` (0.8), `llm_margen_segundos` (45: lo que se reserva antes de la voz para sintetizar; el LLM solo se usa si
+quedan más de eso y de 5 s antes de que empiece la voz, así que con el LLM conviene `margen_minutos` de 3 o más en la radio),
+`wikipedia_dias` (90),
 `wikipedia_palabras_maximas` (120), `wikipedia_url` y `wikidata_url`.
 
 **Qué queda registrado:** cada frase que escribe el LLM, aceptada o descartada, queda en
@@ -116,7 +118,7 @@ y `motivo`. Los hechos usados y la URL de Wikipedia (texto CC BY-SA) van en `hec
 `cassette-dj voz-prueba`.
 
 **Verificación con el LLM real (la hacemos juntos):** (1) `scripts/instalar-llm.sh` (baja ~3 GB); (2) `cassette-dj llm
-estado`; (3) `cassette dj modo llm` y `cassette dj pedir --en 30` en varias estaciones; escuchar; (4) mirar `cassette-dj
+estado`; (3) `cassette dj modo llm` y `cassette dj pedir --en 180` en varias estaciones (con menos antelación el LLM no llega a tiempo y la frase sale por plantillas); escuchar; (4) mirar `cassette-dj
 guiones` y el `guiones.jsonl` (prompts, crudos, descartados y motivos); (5) medir cuánto tarda cada frase; (6)
 `cassette dj modo plantillas` para volver. Si `gemma3:4b` se queda corto, probar otro modelo con `llm_modelo`.
 

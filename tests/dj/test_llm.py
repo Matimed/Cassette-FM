@@ -86,3 +86,11 @@ def test_modelos_con_el_servidor_caido_o_basura_da_ErrorLLM(llm_falso):
         puerto = s.getsockname()[1]
     with pytest.raises(ErrorLLM, match="no responde"):
         ClienteLLM(ConfigServicioDJ(llm_url=f"http://127.0.0.1:{puerto}/v1")).modelos()
+
+
+def test_generar_acepta_un_timeout_mas_corto_por_llamada(llm_falso):
+    llm_falso.demora = 1.5
+    t0 = time.monotonic()
+    with pytest.raises(ErrorLLM, match="no responde"):
+        cliente(llm_falso, timeout=30).generar("s", "u", timeout=0.3)
+    assert time.monotonic() - t0 < 1.2

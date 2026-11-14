@@ -57,14 +57,15 @@ class Servicio:
 
 
 def montar(tmp_path, sintetizador, fonemizar=fon_falso, lexico=None, cola=None, modelos_dir=None, config=None,
-           timeout=10.0, modo=None, probar_llm=None, llm=None, hechos=None):
+           timeout=10.0, modo=None, probar_llm=None, llm=None, hechos=None, reloj=None):
     s = Servicio()
     s.rutas = RutasDJ(config=tmp_path / "cfg" / "config.toml", estado=tmp_path / "estado", clips=tmp_path / "clips")
     s.config = config or ConfigServicioDJ(modelos_dir=modelos_dir or tmp_path / "sin-modelos")
     s.guiones = RegistroGuiones(s.rutas.guiones)
     s.sint = sintetizador
     s.productor = Productor(s.config, s.rutas, sintetizador, fonemizar, lexico or Lexico(), s.guiones,
-                            azar=random.Random(1), modo=modo, llm=llm, hechos=hechos)
+                            azar=random.Random(1), modo=modo, llm=llm, hechos=hechos,
+                            **({"reloj": reloj} if reloj else {}))
     s.cola = cola or Cola(s.productor, trabajadores=1)
     s.srv = crear_servidor(s.cola, sintetizador, "127.0.0.1", 0, s.config.modelos_dir, timeout=timeout,
                            modo=modo, probar_llm=probar_llm)
@@ -356,6 +357,8 @@ def test_servicio_con_hechos_falsos_de_punta_a_punta(servicio, servidor_http):
 
 # --- modo plantillas / llm ---
 
+_MOMENTO_PRUEBA = __import__("datetime").datetime.fromisoformat("2026-11-13T21:47:00-03:00").timestamp()
+
 def test_get_modo(servicio):
     from cassette_fm.dj.modo import ModoDJ
     s = servicio(SintetizadorFalso(), modo=ModoDJ())
@@ -432,7 +435,8 @@ def test_de_punta_a_punta_en_modo_llm_con_servidores_falsos(servicio, servidor_h
                           wikipedia=ClienteWikipedia(cfg, cache))
     modo = ModoDJ()
     llm = ClienteLLM(cfg)
-    s = servicio(SintetizadorFalso(), config=cfg, modo=modo, probar_llm=llm.disponible, llm=llm, hechos=fuente)
+    s = servicio(SintetizadorFalso(), config=cfg, modo=modo, probar_llm=llm.disponible, llm=llm, hechos=fuente,
+                 reloj=lambda: _MOMENTO_PRUEBA - 600)
     assert json_de(pedir(s, "POST", "/modo", {"modo": "llm"})) == (200, {"modo": "llm", "llm": "ok"})
     assert json_de(pedir(s, "POST", "/intervenciones", pedido_json("llm1")))[0] == 202
     listo = esperar_estado(s, "llm1", timeout=10)
@@ -442,6 +446,10 @@ def test_de_punta_a_punta_en_modo_llm_con_servidores_falsos(servicio, servidor_h
     assert "Nueva York" in llm_falso.pedidos[0]["messages"][1]["content"]
     # vuelta a plantillas: ni el LLM ni Wikipedia reciben pedidos nuevos
     pedidos_llm, pedidos_http = len(llm_falso.pedidos), len(servidor_http.pedidos)
+    # cachés nuevas: si en plantillas se pidiera Wikipedia, se vería en los pedidos al servidor
+    cache2 = CacheHechos(None)
+    s.productor._hechos = FuenteHechos(None, ClienteMusicBrainz(cfg, cache2, dormir=lambda s: None), 3,
+                                       wikipedia=ClienteWikipedia(cfg, cache2))
     assert json_de(pedir(s, "POST", "/modo", {"modo": "plantillas"})) == (200, {"modo": "plantillas"})
     assert json_de(pedir(s, "POST", "/intervenciones", pedido_json("llm2")))[0] == 202
     assert esperar_estado(s, "llm2", timeout=10)["estado"] == "listo"
@@ -455,8 +463,15 @@ def test_en_modo_llm_con_el_llm_caido_igual_hay_frase(servicio, llm_falso):
     llm_falso.codigo = 503
     llm_falso.cuerpo_crudo = "ocupado"
     cfg = ConfigServicioDJ(llm_url=llm_falso.url, llm_timeout_segundos=2.0)
-    s = servicio(SintetizadorFalso(), config=cfg, modo=ModoDJ("llm"), llm=ClienteLLM(cfg))
+    s = servicio(SintetizadorFalso(), config=cfg, modo=ModoDJ("llm"), llm=ClienteLLM(cfg),
+                 reloj=lambda: _MOMENTO_PRUEBA - 600)
     assert json_de(pedir(s, "POST", "/intervenciones", pedido_json("llm3")))[0] == 202
     listo = esperar_estado(s, "llm3", timeout=10)
     assert listo["estado"] == "listo" and listo["texto"]
     assert s.guiones.ultimos(1)[0]["fuente"] == "plantilla" and "503" in s.guiones.ultimos(1)[0]["motivo"]
+
+
+def test_post_modo_llm_distingue_que_falte_el_modelo(servicio):
+    from cassette_fm.dj.modo import ModoDJ
+    s = servicio(SintetizadorFalso(), modo=ModoDJ(), probar_llm=lambda: "falta el modelo")
+    assert json_de(pedir(s, "POST", "/modo", {"modo": "llm"}))[1] == {"modo": "llm", "llm": "falta el modelo"}

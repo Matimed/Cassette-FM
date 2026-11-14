@@ -114,8 +114,10 @@ def _ejecutar_dj(args, puerto: int) -> None:
                     None if args.nuevo is None else {"modo": args.nuevo})
         extra = ""
         if args.nuevo == "llm":
-            extra = (" (el LLM responde)" if r.get("llm") == "ok" else
-                     " (¡el LLM no responde! las frases van a salir por plantillas hasta que arranque Ollama)")
+            extra = {"ok": " (el LLM responde)",
+                     "falta el modelo": " (¡el modelo no está descargado! corré scripts/instalar-llm.sh; hasta "
+                                        "entonces las frases salen por plantillas)"}.get(
+                r.get("llm"), " (¡el LLM no responde! las frases van a salir por plantillas hasta que arranque Ollama)")
         print(f"Modo del DJ: {r['modo']}{extra}.")
         if r["modo"] == "llm":
             print("(vuelve a plantillas al reiniciar el servicio DJ)")

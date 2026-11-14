@@ -11,6 +11,10 @@ if ! command -v docker >/dev/null 2>&1; then
     echo "No encuentro docker. Instalalo primero (por ejemplo: sudo apt install docker.io)." >&2
     exit 1
 fi
+if ! command -v curl >/dev/null 2>&1; then
+    echo "No encuentro curl (hace falta para esperar a Ollama): sudo apt install curl" >&2
+    exit 1
+fi
 if ! docker info >/dev/null 2>&1; then
     echo "Docker no responde con tu usuario. Si recién lo instalaste: sudo usermod -aG docker \"\$USER\" y volvé a iniciar sesión." >&2
     exit 1
@@ -23,7 +27,7 @@ else
 fi
 
 mkdir -p "$datos"
-if docker ps -a --format '{{.Names}}' | grep -qx "$contenedor"; then
+if docker container inspect "$contenedor" >/dev/null 2>&1; then
     docker start "$contenedor" >/dev/null
     echo "El contenedor $contenedor ya existía: se reutiliza."
 else

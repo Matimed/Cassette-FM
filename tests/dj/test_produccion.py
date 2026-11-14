@@ -240,6 +240,17 @@ from cassette_fm.dj.hechos.wikipedia import Resumen as _Resumen  # noqa: E402
 from cassette_fm.dj.llm import ErrorLLM  # noqa: E402
 from cassette_fm.dj.modo import ModoDJ  # noqa: E402
 
+MOMENTO = datetime.fromisoformat("2026-11-13T21:47:00-03:00").timestamp()
+
+
+class RelojFalso:
+    def __init__(self, t=MOMENTO - 600):
+        self.t = t
+
+    def __call__(self):
+        return self.t
+
+
 BUENA = "Ahora suena Waiting for a Girl Like You de Foreigner para todos ustedes esta noche."
 
 
@@ -247,9 +258,13 @@ class LLMFalso:
     def __init__(self, *respuestas):
         self.respuestas = list(respuestas) or [BUENA]
         self.llamadas = []
+        self.reloj, self.consume = None, 0
 
-    def generar(self, sistema, usuario):
+    def generar(self, sistema, usuario, timeout=None):
         self.llamadas.append((sistema, usuario))
+        self.timeouts = getattr(self, "timeouts", []) + [timeout]
+        if self.reloj is not None and self.consume:
+            self.reloj.t += self.consume
         r = self.respuestas.pop(0) if len(self.respuestas) > 1 else self.respuestas[0]
         if isinstance(r, Exception):
             raise r
@@ -273,7 +288,7 @@ def llm_listo(montaje, *respuestas, modo="llm", config=None):
     crear, rutas, guiones = montaje
     llm = LLMFalso(*respuestas)
     fuente = FuenteWiki()
-    productor, sint = crear(config=config, modo=ModoDJ(modo), llm=llm, hechos=fuente)
+    productor, sint = crear(config=config, modo=ModoDJ(modo), llm=llm, hechos=fuente, reloj=RelojFalso())
     return productor, sint, llm, fuente, guiones
 
 
@@ -303,7 +318,7 @@ def test_el_texto_del_llm_pasa_por_numeros_y_marcado(montaje, hacer_pedido):
     cfg = ConfigServicioDJ(pesos_ingredientes={"estacion": 0.0, "hora": 0.0, "momento": 0.0, "album": 0.0,
                                                "anterior": 0.0, "clima": 0.0, "dato": 1.0})
     productor, _ = crear(config=cfg, modo=ModoDJ("llm"), llm=llm,
-                         hechos=FuenteWiki(DatosTema(1984, "GB", 1976, True, "u", "Q1")))
+                         hechos=FuenteWiki(DatosTema(1984, "GB", 1976, True, "u", "Q1")), reloj=RelojFalso())
     r = productor.producir(hacer_pedido("m3"))
     assert "mil novecientos ochenta y cuatro" in r.texto and "1984" not in r.texto
     (g,) = guiones.ultimos(5)
@@ -362,7 +377,7 @@ def test_el_aviso_se_rearma_despues_de_un_exito(montaje, hacer_pedido, caplog):
 
 def test_llm_pedido_sin_cliente_usa_plantillas(montaje, hacer_pedido):
     crear, _, guiones = montaje
-    productor, _ = crear(modo=ModoDJ("llm"), llm=None, hechos=FuenteWiki())
+    productor, _ = crear(modo=ModoDJ("llm"), llm=None, hechos=FuenteWiki(), reloj=RelojFalso())
     productor.producir(hacer_pedido("m11"))
     g = guiones.ultimos(1)[0]
     assert g["fuente"] == "plantilla" and "LLM" in g["motivo"]
@@ -375,7 +390,7 @@ def test_un_clip_largo_del_llm_se_reintenta_mas_corto(montaje, hacer_pedido):
     crear, _, guiones = montaje
     llm = LLMFalso(BUENA, CORTA)
     productor, _ = crear(sintetizador=SintetizadorFalso(duraciones=(30.0, 4.0)), modo=ModoDJ("llm"), llm=llm,
-                         hechos=FuenteWiki())
+                         hechos=FuenteWiki(), reloj=RelojFalso())
     r = productor.producir(hacer_pedido("m12", duracion_maxima_segundos=10.0))
     assert r.duracion == 4.0 and r.texto == CORTA
     g = guiones.ultimos(5)
@@ -386,7 +401,7 @@ def test_un_clip_largo_del_llm_se_reintenta_mas_corto(montaje, hacer_pedido):
 def test_si_el_clip_del_llm_sigue_largo_cae_a_plantillas(montaje, hacer_pedido):
     crear, _, guiones = montaje
     productor, _ = crear(sintetizador=SintetizadorFalso(duraciones=(30.0, 30.0, 4.0)), modo=ModoDJ("llm"),
-                         llm=LLMFalso(BUENA, CORTA), hechos=FuenteWiki())
+                         llm=LLMFalso(BUENA, CORTA), hechos=FuenteWiki(), reloj=RelojFalso())
     r = productor.producir(hacer_pedido("m12b", duracion_maxima_segundos=10.0))
     assert r.duracion == 4.0
     g = guiones.ultimos(5)
@@ -400,12 +415,12 @@ def test_el_modo_se_lee_una_sola_vez_por_pedido(montaje, hacer_pedido):
     llm = LLMFalso(BUENA)
     original = llm.generar
 
-    def cambia_el_modo(sistema, usuario):
+    def cambia_el_modo(sistema, usuario, timeout=None):
         modo.poner("plantillas")                     # a mitad del pedido
-        return original(sistema, usuario)
+        return original(sistema, usuario, timeout)
 
     llm.generar = cambia_el_modo
-    productor, _ = crear(modo=modo, llm=llm, hechos=FuenteWiki())
+    productor, _ = crear(modo=modo, llm=llm, hechos=FuenteWiki(), reloj=RelojFalso())
     productor.producir(hacer_pedido("m13"))
     assert guiones.ultimos(1)[0]["fuente"] == "llm"          # terminó como empezó
     productor.producir(hacer_pedido("m14"))                  # el siguiente ya usa el modo nuevo
@@ -428,3 +443,50 @@ def test_los_guiones_descartados_no_entran_en_voz_prueba(montaje, hacer_pedido):
     productor.producir(hacer_pedido("m16"))
     validos = [g for g in guiones.ultimos(10) if not g.get("descartado") and g.get("marcado") and g.get("texto")]
     assert len(validos) == 1 and validos[0]["fuente"] == "plantilla"
+
+
+# --- presupuesto de tiempo y orden de las conversiones (revisión final) ---
+
+def test_sin_tiempo_para_el_llm_va_directo_a_plantillas(montaje, hacer_pedido):
+    crear, _, guiones = montaje
+    llm = LLMFalso()
+    productor, _ = crear(modo=ModoDJ("llm"), llm=llm, hechos=FuenteWiki(), reloj=RelojFalso(MOMENTO - 20))
+    productor.producir(hacer_pedido("t1"))
+    assert llm.llamadas == []
+    g = guiones.ultimos(1)[0]
+    assert g["fuente"] == "plantilla" and "tiempo" in g["motivo"]
+
+
+def test_cada_llamada_al_llm_tiene_a_lo_sumo_el_tiempo_que_queda(montaje, hacer_pedido):
+    crear, _, _ = montaje
+    llm = LLMFalso()
+    cfg = ConfigServicioDJ(llm_timeout_segundos=240.0, llm_margen_segundos=45.0)
+    productor, _ = crear(config=cfg, modo=ModoDJ("llm"), llm=llm, hechos=FuenteWiki(), reloj=RelojFalso(MOMENTO - 100))
+    productor.producir(hacer_pedido("t2"))
+    assert llm.timeouts == [pytest.approx(55.0)]
+    llm2 = LLMFalso()
+    productor, _ = crear(config=cfg, modo=ModoDJ("llm"), llm=llm2, hechos=FuenteWiki(), reloj=RelojFalso(MOMENTO - 600))
+    productor.producir(hacer_pedido("t3"))
+    assert llm2.timeouts == [pytest.approx(240.0)]
+
+
+def test_si_el_primer_intento_gasta_el_tiempo_no_hay_segundo(montaje, hacer_pedido):
+    crear, _, guiones = montaje
+    reloj = RelojFalso(MOMENTO - 120)
+    llm = LLMFalso("Hola.", "Hola otra vez.")
+    llm.reloj, llm.consume = reloj, 75.0                  # la primera llamada gasta 75 s: no queda tiempo
+    productor, _ = crear(config=ConfigServicioDJ(llm_margen_segundos=45.0), modo=ModoDJ("llm"), llm=llm,
+                         hechos=FuenteWiki(), reloj=reloj)
+    productor.producir(hacer_pedido("t4"))
+    assert len(llm.llamadas) == 1
+    assert guiones.ultimos(1)[0]["fuente"] == "plantilla" and "tiempo" in guiones.ultimos(1)[0]["motivo"]
+
+
+def test_un_nombre_con_numero_llega_marcado_y_sin_convertir(montaje, hacer_pedido):
+    crear, _, guiones = montaje
+    llm = LLMFalso("Ahora suena With or Without You de U2 para todos ustedes esta noche.")
+    productor, _ = crear(modo=ModoDJ("llm"), llm=llm, hechos=FuenteWiki(), reloj=RelojFalso(),
+                         lexico=Lexico({"U2": "en-us"}))
+    r = productor.producir(hacer_pedido("t5", siguiente={"artista": "U2", "titulo": "With or Without You"}))
+    assert "U2" in r.texto and "Udos" not in r.texto
+    assert "{en-us:U2}" in guiones.ultimos(1)[0]["marcado"]

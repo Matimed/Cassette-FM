@@ -300,3 +300,10 @@ def test_dj_modo_error_de_la_api_da_codigo_1(servicio, capsys):
 def test_dj_modo_argumento_invalido(servicio):
     with pytest.raises(SystemExit):
         main(["dj", "modo", "otro", "--puerto", servicio.puerto])
+
+
+def test_dj_modo_llm_avisa_si_falta_el_modelo(servicio, capsys):
+    servicio.radio.llm = "falta el modelo"
+    assert main(["dj", "modo", "llm", "--puerto", servicio.puerto]) == 0
+    salida = capsys.readouterr().out
+    assert "no está descargado" in salida and "instalar-llm.sh" in salida

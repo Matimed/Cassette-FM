@@ -70,11 +70,12 @@ def test_el_resumen_de_wikipedia_solo_si_el_ingrediente_dato():
     assert "A-ha es una banda noruega" not in peticion(["cancion", "dato"], hechos=sin_wiki).usuario
 
 
-def test_los_datos_de_musicbrainz_van_en_palabras():
+def test_los_anios_de_musicbrainz_van_con_cifras_y_el_pais_con_nombre():
     sin_wiki = Hechos(None, HECHOS.tema, None)
     u = peticion(["cancion", "dato"], hechos=sin_wiki).usuario
-    assert "mil novecientos ochenta y cuatro" in u and "Noruega" in u and "mil novecientos ochenta y tres" in u
-    assert not re.search(r"\d{4}", u)
+    assert "salió en 1984" in u and "empezó en 1983" in u and "Noruega" in u
+    assert "mil novecientos" not in u
+    assert "convertir" not in u and "1984" in peticion(["cancion", "dato"], hechos=sin_wiki).permitido
 
 
 def test_permitido_incluye_nombres_hechos_y_las_cifras():
@@ -164,8 +165,8 @@ def test_las_excepciones_de_nombres_comunes():
     assert ver("This Saturday we play Take On Me by a-ha and I hope you enjoy it.", p=en) is None
 
 
-def test_inicio_de_oracion_no_cuenta_como_nombre():
-    assert ver("Madrugada tranquila. Ahora suena Take On Me de a-ha. Disfruten.") is None
+def test_inicio_de_oracion_comun_no_cuenta_como_nombre():
+    assert ver("Madrugada tranquila. Ahora suena Take On Me de a-ha. Gracias por escuchar.") is None
 
 
 def test_demasiadas_oraciones():
@@ -249,3 +250,95 @@ def test_un_nombre_dentro_de_otro_no_se_marca_adentro():
     p = pedido(siguiente=("Ken", "Ken Y Down"))
     m = marcar_nombres("Suena Ken Y Down de Ken.", p, Hechos(), Lexico())
     assert m == "Suena {es:Ken Y Down} de {es:Ken}."
+
+
+# --- revisión final ---
+
+@pytest.mark.parametrize("texto", ["Madonna grabó Take On Me de a-ha. Ahora suena en la radio.",
+                                   "Suena Take On Me de a-ha. Prince la adoraba, eso dicen.",
+                                   "Ahora suena Take On Me de a-ha. Elton compuso el estribillo famoso."])
+def test_un_nombre_inventado_al_inicio_de_una_oracion_no_pasa(texto):
+    assert "nombre propio" in ver(texto)
+
+
+def test_arranques_comunes_y_palabras_del_prompt_pasan_al_inicio_de_una_oracion():
+    assert ver("Ahora suena Take On Me de a-ha. Seguimos con la música. Gracias por estar.") is None
+    en = pedido("en")
+    assert ver("Now playing Take On Me by a-ha. This is Whisper F.M. Thanks for listening.", p=en) is None
+
+
+def test_los_anios_en_palabras_inventados_no_pasan():
+    assert "año" in ver("Suena Take On Me de a-ha que salió en mil novecientos ochenta y seis para todos.")
+    assert ver("Suena Take On Me de a-ha que salió en mil novecientos ochenta y cuatro para todos.") is None
+    assert "año" in ver("Suena Take On Me de a-ha que salió en dos mil diez para todos ustedes.")
+    en = pedido("en")
+    assert "año" in ver("Now playing Take On Me by a-ha which came out in nineteen eighty six for all.", p=en)
+    assert ver("Now playing Take On Me by a-ha which came out in nineteen eighty four for all.", p=en) is None
+
+
+@pytest.mark.parametrize("texto, idioma", [
+    ("Sure! Here is your announcement: Take On Me by a-ha is next on the air tonight.", "es"),
+    ("Ahora suena Take On Me de a-ha para vos y para todos los que nos escuchan, amigo.", "en"),
+])
+def test_el_idioma_equivocado_no_pasa(texto, idioma):
+    assert ver(texto, p=pedido(idioma)).startswith("no está en ")
+
+
+def test_un_titulo_en_otro_idioma_no_hace_fallar_el_idioma():
+    p = pedido("es", siguiente=("Foreigner", "Waiting for a Girl Like You"))
+    pet = construir_peticion(p, ["cancion"], Hechos(), campos_de_voz(p, Hechos()), 45)
+    assert verificar("Ahora suena Waiting for a Girl Like You de Foreigner para todos ustedes.", p, pet, 45) is None
+
+
+@pytest.mark.parametrize("crudo, esperado", [
+    ("¡Claro! Aquí va la intervención: suena Take On Me de a-ha.", "suena Take On Me de a-ha."),
+    ("Sure! Here's the announcement: Now playing Take On Me.", "Now playing Take On Me."),
+    ("Por supuesto. Aquí tienes: Ahora suena Take On Me.", "Ahora suena Take On Me."),
+])
+def test_los_preambulos_con_interjeccion_se_sacan(crudo, esperado):
+    assert limpiar_salida(crudo) == esperado
+
+
+@pytest.mark.parametrize("texto", ["Visitá es.wikipedia.org/wiki/A-ha para más. Suena Take On Me de a-ha.",
+                                   "Más en wikipedia.org. Suena Take On Me de a-ha ahora mismo.",
+                                   "Suena Take On Me de a-ha. Escuchanos en radio.com.ar todo el día."])
+def test_una_url_sin_esquema_no_pasa(texto):
+    assert "enlaces" in ver(texto)
+
+
+def test_los_numeros_dentro_de_los_nombres_no_cuentan_ni_se_convierten():
+    p = pedido(siguiente=("U2", "With or Without You"))
+    pet = construir_peticion(p, ["cancion"], Hechos(), campos_de_voz(p, Hechos()), 45)
+    assert verificar("Ahora suena With or Without You de U2 para todos ustedes.", p, pet, 45) is None
+    m = marcar_nombres("Ahora suena With or Without You de U2 con 22 grados.", p, Hechos(), Lexico({"U2": "en-us"}))
+    assert numeros_a_palabras(m, "es") == ("Ahora suena {es:With or Without You} de {en-us:U2} con veintidós grados.")
+    p2 = pedido(siguiente=("Blink-182", "All the Small Things"))
+    pet2 = construir_peticion(p2, ["cancion"], Hechos(), campos_de_voz(p2, Hechos()), 45)
+    assert verificar("Ahora suena All the Small Things de Blink-182 para todos ustedes.", p2, pet2, 45) is None
+
+
+def test_un_numero_inventado_junto_a_un_nombre_con_numero_sigue_sin_pasar():
+    p = pedido(siguiente=("U2", "With or Without You"))
+    pet = construir_peticion(p, ["cancion"], Hechos(), campos_de_voz(p, Hechos()), 45)
+    assert "número" in verificar("Ahora suena With or Without You de U2 que salió en 1987 para todos.", p, pet, 45)
+
+
+@pytest.mark.parametrize("texto, idioma, esperado", [
+    ("hay -3 grados", "es", "hay menos tres grados"), ("hay −3 grados", "es", "hay menos tres grados"),
+    ("it is -3 degrees", "en", "it is minus three degrees"),
+])
+def test_los_grados_bajo_cero_dicen_menos(texto, idioma, esperado):
+    assert numeros_a_palabras(texto, idioma) == esperado
+
+
+def test_los_marcadores_no_se_tocan_al_convertir():
+    assert numeros_a_palabras("de {en-us:Maroon 5} en 1984", "es") == "de {en-us:Maroon 5} en mil novecientos ochenta y cuatro"
+
+
+@pytest.mark.parametrize("crudo, esperado", [
+    ("¡Claro! Suena Take On Me de a-ha.", "Suena Take On Me de a-ha."),
+    ("Sure, now playing Take On Me.", "now playing Take On Me."),
+    ("Dale! Ahora suena Take On Me.", "Ahora suena Take On Me."),
+])
+def test_una_interjeccion_suelta_al_principio_se_saca(crudo, esperado):
+    assert limpiar_salida(crudo) == esperado

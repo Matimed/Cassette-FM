@@ -69,14 +69,13 @@ def _hechos_del_tema(hechos: Hechos, idioma: str) -> list[str]:
         return []
     frases = []
     if t.anio is not None and 1900 <= t.anio <= 2099:
-        frases.append(("El tema salió en %s." if idioma == "es" else "The song came out in %s.")
-                      % anio_en_palabras(t.anio, idioma))
+        frases.append(("El tema salió en %s." if idioma == "es" else "The song came out in %s.") % t.anio)
     pais = nombre_de_pais(t.pais, idioma) if t.pais else None
     if pais:
         frases.append(("El artista viene de %s." if idioma == "es" else "The artist comes from %s.") % pais)
     if t.es_grupo and t.anio_inicio_artista is not None and 1900 <= t.anio_inicio_artista <= 2099:
         frases.append(("La banda empezó en %s." if idioma == "es" else "The band started in %s.")
-                      % anio_en_palabras(t.anio_inicio_artista, idioma))
+                      % t.anio_inicio_artista)
     return frases
 
 
@@ -125,6 +124,7 @@ def construir_peticion(pedido: Pedido, ingredientes: Sequence[str], hechos: Hech
                    "- Hablá natural, con frases cortas. Sin exclamaciones, emojis, comillas, listas, títulos ni "
                    "explicaciones.\n"
                    "- No empieces con \"aquí tienes\" ni digas que sos una IA.\n"
+                   "- Escribí los años con cifras (por ejemplo 1984).\n"
                    "- Si hay un dato de Wikipedia, usá a lo sumo uno y decilo con tus palabras en una frase corta."
                    + tono)
     else:
@@ -136,6 +136,7 @@ def construir_peticion(pedido: Pedido, ingredientes: Sequence[str], hechos: Hech
                    "- Sound natural, with short sentences. No exclamation marks, emojis, quotes, lists, headings or "
                    "explanations.\n"
                    "- Do not start with \"here is\" and never say you are an AI.\n"
+                   "- Write years as digits (for example 1984).\n"
                    "- If there is a Wikipedia fact, use at most one, in your own words, in one short sentence."
                    + tono)
     usuario = "\n".join(lineas)
@@ -147,7 +148,9 @@ def construir_peticion(pedido: Pedido, ingredientes: Sequence[str], hechos: Hech
 # --- limpieza ---
 
 _EMOJI = re.compile("[\U0001F000-\U0001FFFF\U00002600-\U000027BF\U0000FE0F\U0000200D\U00002B00-\U00002BFF]")
-_PREFIJO = re.compile(r"^\s*(?:aqu[ií]|ac[aá]|here|this)\b[^:\n]{0,50}:\s*", re.I)
+_PREFIJO = re.compile(r"^[^:\n]{0,80}?\b(?:aqu[ií]|ac[aá]|here)\b[^:\n]{0,50}:\s*", re.I)
+_INTERJECCION = re.compile(r"^[¡¿]?(?:claro|por supuesto|dale|listo|sure|of course|certainly|okay|ok|absolutely)\b"
+                           r"[!.,¡]*\s*", re.I)
 
 
 def limpiar_salida(crudo: str) -> str:
@@ -160,6 +163,7 @@ def limpiar_salida(crudo: str) -> str:
     if len(lineas) > 1 and re.match(r"(?i)^(aqu[ií]|ac[aá]|here)\b.*:$", lineas[0]):
         lineas = lineas[1:]
     t = " ".join(lineas)
+    t = _INTERJECCION.sub("", t)
     t = _PREFIJO.sub("", t)
     t = _EMOJI.sub("", t)
     t = re.sub(r"[*_`#{}]", "", t)
@@ -167,6 +171,56 @@ def limpiar_salida(crudo: str) -> str:
     t = re.sub(r"\s+([.,;:?!])", r"\1", t)
     return re.sub(r"\s+", " ", t).strip()
 
+
+def _nombres_del_pedido(pedido: Pedido) -> list[str]:
+    """Los nombres propios del pedido que el LLM puede repetir (artistas, tema, estación, álbum, tema anterior)."""
+    nombres = list(artistas_del_tag(pedido.siguiente.artista))
+    nombres += [pedido.siguiente.titulo, _titulo_limpio(pedido.siguiente.titulo), pedido.estacion]
+    if pedido.siguiente.album:
+        nombres.append(pedido.siguiente.album)
+    if pedido.anterior is not None:
+        nombres += artistas_del_tag(pedido.anterior.artista)
+        nombres += [pedido.anterior.titulo, _titulo_limpio(pedido.anterior.titulo)]
+    return sorted(dict.fromkeys(n for n in nombres if n.strip()), key=len, reverse=True)
+
+
+def _sin_nombres(texto: str, pedido: Pedido) -> str:
+    for nombre in _nombres_del_pedido(pedido):
+        texto = re.sub(r"(?<![\w])" + re.escape(nombre) + r"(?![\w])", " ", texto, flags=re.I)
+    return texto
+
+
+# palabras funcionales para reconocer el idioma, y arranques comunes de oración (ya sin acentos ni mayúsculas)
+_FUNCIONALES = {
+    "es": set("de la que el en y a los las un una por con para se su es del al lo como mas pero sus le ya o fue "
+              "muy sin sobre entre vos nos te mi tu todo todos esta este eso".split()),
+    "en": set("the and of is to in for with by on it this that you your are we our here next now at as be was an or "
+              "from there they have has not but all".split()),
+}
+_ARRANQUES = {
+    "es": set("ahora suena sonando sigue seguimos llega esto esta este es son y e o pero hoy con de del desde para por "
+              "en el la los las un una unos unas que como asi aca aqui ahi alli bienvenidos bienvenida bienvenido "
+              "mientras tras antes despues tambien si no vamos dale listo gracias atencion musica radio madrugada "
+              "noche tarde manana mediodia fin semana buenas buen buenos hola saludos nos te les se lo le tema "
+              "cancion tu su mi todo toda todos todas cada siempre nunca ya sin sobre entre hacia hasta segun durante "
+              "vuelve volvemos quedate quedense escuchas escuchamos escuchando escucha disfruta disfruten "
+              "disfrutamos viene vienen tenemos tienen tiene hay estamos estas estan estar soy somos fue era "
+              "algo alguien nada nadie cuando donde quien cual otro otra otros mas menos muy tan bien mejor "
+              "primero ultimo nuevo gran ese esa eso un dejamos dejate sumate acompanamos acompana juntos "
+              "seguro claro obvio recien veniamos terminamos terminaba arrancamos arranca suenan sonaba".split()),
+    "en": set("now playing here comes coming up next this that these it its the a an and but or so we you your our let "
+              "lets stay with for from by on in at to of thanks thank welcome good hello hi enjoy tonight today "
+              "morning afternoon evening night weekend there they he she i me my as if when while after before then "
+              "still just only all every some one no not yes keep keeps going listening listen music radio song "
+              "track time down out back more what who how why where which last first new old great nice smooth "
+              "special right well oh ah wow that was just heard stick sit relax turn sounds sounding up".split()),
+}
+_ANIOS_EN_PALABRAS = {
+    "es": re.compile(r"\b(?:mil novecientos|dos mil)\b"),
+    "en": re.compile(r"\b(?:nineteen (?:hundred|oh|twenty|thirty|forty|fifty|sixty|seventy|eighty|ninety)|two thousand|"
+                     r"twenty (?:ten|eleven|twelve|thirteen|fourteen|fifteen|sixteen|seventeen|eighteen|nineteen|"
+                     r"twenty|oh))\b"),
+}
 
 # --- verificación ---
 
@@ -183,30 +237,44 @@ def verificar(texto: str, pedido: Pedido, peticion: Peticion, palabras_maximas: 
         return "demasiado largo"
     if len(palabras) < 4:
         return "demasiado corto"
-    if re.search(r"https?://|www\.|[@#]", texto):
+    if re.search(r"https?://|www\.|[@#]|\b[\w-]+\.(?:org|com|net|ar|io|fm|es|co|uk|tv|me|info)\b", texto, re.I):
         return "tiene enlaces o etiquetas"
     plano = _norm(texto)
     primer_artista = artistas_del_tag(pedido.siguiente.artista)[0]
     if _norm(_titulo_limpio(pedido.siguiente.titulo)) not in plano or _norm(primer_artista) not in plano:
         return "no nombra el tema o el artista"
+    idioma = _idioma(pedido)
+    resto = _sin_nombres(texto, pedido)                    # lo que dijo el LLM fuera de los nombres del pedido
+    propias = _FUNCIONALES[idioma]
+    ajenas = _FUNCIONALES["en" if idioma == "es" else "es"]
+    fichas = _norm(resto).split()
+    n_propias, n_ajenas = sum(f in propias for f in fichas), sum(f in ajenas for f in fichas)
+    if n_ajenas >= 2 and n_ajenas > n_propias:
+        return f"no está en {'español' if idioma == 'es' else 'inglés'}"
     permitidos = {int(n) for n in re.findall(r"\d+", peticion.permitido)}
-    for numero in _NUMERO.findall(texto):
+    for numero in _NUMERO.findall(resto):
         if not numero.isdigit():
             return "número que no se puede decir"
         if int(numero) not in permitidos:
             return "número que no está en los hechos"
         if not (0 <= int(numero) <= 99 or 1900 <= int(numero) <= 2099):
             return "número que no se puede decir"
+    hablado = _norm(resto)
+    for anio in (n for n in permitidos if 1900 <= n <= 2099):
+        hablado = hablado.replace(_norm(anio_en_palabras(anio, idioma)), " ")
+    if _ANIOS_EN_PALABRAS[idioma].search(hablado):
+        return "año en palabras que no está en los hechos"
     vocabulario = set(_norm(peticion.permitido).split()) | set(_norm(pedido.estacion).split())
-    idioma = _idioma(pedido)
     vocabulario |= {_norm(x) for x in _DIAS[idioma] + _MESES[idioma]} | _EXCEPCIONES
+    arranques = _ARRANQUES[idioma] | set(_norm(peticion.sistema).split()) | vocabulario
     for oracion in _oraciones(texto):
         for i, m in enumerate(_PALABRA.finditer(oracion)):
             palabra = m.group(0)
-            if i == 0 or not palabra[0].isupper() or len(palabra) == 1:
+            if not palabra[0].isupper() or len(palabra) == 1:
                 continue
+            conocidas = arranques if i == 0 else vocabulario
             partes = [p for p in re.split(r"['’-]", _sin_acentos(palabra)) if p]
-            if not all(p in vocabulario or len(p) == 1 for p in partes):
+            if not all(p in conocidas or len(p) == 1 for p in partes):
                 return f"nombre propio que no está en los hechos: {palabra}"
     if len(_oraciones(texto)) > 3:
         return "demasiadas oraciones"
@@ -214,13 +282,12 @@ def verificar(texto: str, pedido: Pedido, peticion: Peticion, palabras_maximas: 
 
 
 def numeros_a_palabras(texto: str, idioma: str) -> str:
-    """Pasa las cifras a palabras (años 1900–2099, 0–99); ValueError si hay una que no se puede decir."""
+    """Pasa las cifras a palabras (años 1900–2099, 0–99); ValueError si hay una que no se puede decir.
+    Lo que está dentro de una marca {idioma:Nombre} (U2, Blink-182…) no se toca."""
     idioma = "es" if idioma == "es" else "en"
 
     def grados(m: re.Match) -> str:
-        return grados_en_palabras(int(m.group(1)), idioma)
-
-    texto = re.sub(r"\b(\d{1,2})\s+(?:grados?|degrees?)\b", grados, texto)
+        return grados_en_palabras(int(m.group(1).replace("−", "-")), idioma)
 
     def numero(m: re.Match) -> str:
         crudo = m.group(0)
@@ -233,7 +300,12 @@ def numeros_a_palabras(texto: str, idioma: str) -> str:
             return en_palabras(n, idioma)
         raise ValueError(f"número que no se puede decir: {crudo}")
 
-    return _NUMERO.sub(numero, texto)
+    def convertir(trozo: str) -> str:
+        trozo = re.sub(r"(?<![\w-])([-−]?\d{1,2})\s+(?:grados?|degrees?)\b", grados, trozo)
+        return _NUMERO.sub(numero, trozo)
+
+    return "".join(p if p.startswith("{") and p.endswith("}") else convertir(p)
+                   for p in re.split(r"(\{[^{}]*\})", texto))
 
 
 # --- marcado de nombres ---
@@ -242,19 +314,8 @@ def marcar_nombres(texto: str, pedido: Pedido, hechos: Hechos, lexico: Lexico) -
     """El texto con {idioma:Nombre} en cada aparición exacta de los nombres del pedido (con la pronunciación del
     léxico y su idioma, como las plantillas)."""
     lang = pedido.lang
-    nombres: list[str] = []
-    for a in artistas_del_tag(pedido.siguiente.artista):
-        nombres.append(a)
-    for t in (pedido.siguiente.titulo, _titulo_limpio(pedido.siguiente.titulo)):
-        nombres.append(t)
-    nombres.append(pedido.estacion)
-    if pedido.siguiente.album:
-        nombres.append(pedido.siguiente.album)
-    if pedido.anterior is not None:
-        nombres += artistas_del_tag(pedido.anterior.artista)
-        nombres += [pedido.anterior.titulo, _titulo_limpio(pedido.anterior.titulo)]
     ocupado: list[tuple[int, int, str]] = []
-    for nombre in sorted(dict.fromkeys(n for n in nombres if n.strip()), key=len, reverse=True):
+    for nombre in _nombres_del_pedido(pedido):
         patron = re.compile(r"(?<![\w])" + re.escape(nombre) + r"(?![\w])", re.I)
         for m in patron.finditer(texto):
             if any(m.start() < f and i < m.end() for i, f, _ in ocupado):

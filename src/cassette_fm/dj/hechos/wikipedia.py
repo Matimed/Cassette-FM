@@ -109,6 +109,7 @@ class ClienteWikipedia:
             base = c.wikipedia_url.format(idioma=idioma).rstrip("/")
             pagina = self._pedir(f"{base}/api/rest_v1/page/summary/{urllib.parse.quote(titulo, safe='')}", None)
             if (isinstance(pagina, dict) and pagina.get("type") == "standard"
+                    and pagina.get("wikibase_item", wikidata) == wikidata      # si apunta a otro Q (redirección), no
                     and isinstance(pagina.get("extract"), str) and pagina["extract"].strip()):
                 url = ((pagina.get("content_urls") or {}).get("desktop") or {}).get("page")
                 return {"texto": _recortar(pagina["extract"], c.wikipedia_palabras_maximas),

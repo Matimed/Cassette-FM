@@ -204,3 +204,16 @@ def test_valores_invalidos_del_llm(tmp_path, contenido):
     with pytest.raises(ErrorConfig) as e:
         cargar_config_dj(archivo)
     assert str(archivo) in str(e.value)
+
+
+def test_margen_del_llm(tmp_path):
+    assert ConfigServicioDJ().llm_margen_segundos == 45.0
+    archivo = tmp_path / "config.toml"
+    archivo.write_text("llm_margen_segundos = 90\n")
+    assert cargar_config_dj(archivo).llm_margen_segundos == 90.0
+    archivo.write_text("llm_margen_segundos = -1\n")
+    with pytest.raises(ErrorConfig):
+        cargar_config_dj(archivo)
+    archivo.write_text('wikipedia_url = "https://{lang}.wikipedia.org"\n')
+    with pytest.raises(ErrorConfig):
+        cargar_config_dj(archivo)

@@ -151,3 +151,19 @@ def test_user_agent_con_el_contacto(servidor_http):
     c.resumen("Q156305", ["es"])
     for _, headers in servidor_http.pedidos:
         assert headers["User-Agent"] == "cassette-dj/9.9 (yo@example.com)"
+
+
+def test_si_la_pagina_es_de_otra_entidad_no_se_usa(servidor_http):
+    servidor_http.responder("/w", sitelinks(es="A-ha", en="A-ha"))
+    servidor_http.responder("/es/api/rest_v1/page/summary/", dict(resumen_json(), wikibase_item="Q999"))
+    servidor_http.responder("/en/api/rest_v1/page/summary/", dict(resumen_json("A-ha is a band."), wikibase_item="Q156305"))
+    c, _ = montar(servidor_http)
+    res = c.resumen("Q156305", ["es", "en"])
+    assert res.idioma == "en" and res.texto == "A-ha is a band."          # la de es apunta a otro Q: se descarta
+
+
+def test_sin_wikibase_item_en_la_respuesta_se_acepta(servidor_http):
+    servidor_http.responder("/w", sitelinks(es="A-ha"))
+    servidor_http.responder("/es/api/rest_v1/page/summary/", resumen_json())
+    c, _ = montar(servidor_http)
+    assert c.resumen("Q156305", ["es"]) is not None

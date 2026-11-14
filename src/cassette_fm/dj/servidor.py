@@ -33,7 +33,7 @@ _MANTENIMIENTO_SEGUNDOS = 30.0
 
 def crear_servidor(cola: Cola, sintetizador, host: str, puerto: int, modelos_dir: Path,
                    timeout: float = 10.0, modo: ModoDJ | None = None,
-                   probar_llm: Callable[[], bool] | None = None) -> ThreadingHTTPServer:
+                   probar_llm: Callable[[], bool | str] | None = None) -> ThreadingHTTPServer:
     modo = modo or ModoDJ()
     if host not in ("127.0.0.1", "localhost", "::1"):
         _log.warning("el servicio DJ escucha en %s sin autenticación: usalo solo en una red de confianza", host)
@@ -137,7 +137,8 @@ def crear_servidor(cola: Cola, sintetizador, host: str, puerto: int, modelos_dir
                 return self._error(400, f"campo 'modo': {e}")
             respuesta = {"modo": nuevo}
             if nuevo == "llm" and probar_llm is not None:
-                respuesta["llm"] = "ok" if probar_llm() else "no responde"
+                estado = probar_llm()
+                respuesta["llm"] = estado if isinstance(estado, str) else ("ok" if estado else "no responde")
             self._json(200, respuesta)
 
         def _post(self, ruta: str) -> None:
@@ -202,7 +203,7 @@ def servir(config: ConfigServicioDJ, rutas: RutasDJ, parar: threading.Event | No
                           RegistroGuiones(rutas.guiones), hechos=hechos, modo=modo, llm=llm)
     cola = Cola(productor, trabajadores=config.trabajadores, retencion_segundos=config.retencion_minutos * 60)
     servidor = crear_servidor(cola, sintetizador, config.host, config.puerto, config.modelos_dir, modo=modo,
-                              probar_llm=llm.disponible)
+                              probar_llm=llm.estado)
     threading.Thread(target=lambda: servidor.serve_forever(poll_interval=0.05), daemon=True,
                      name="dj-http").start()
     faltan = faltan_modelos(config.modelos_dir)

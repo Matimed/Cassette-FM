@@ -16,7 +16,7 @@ class ClienteLLM:
         self._config = config
         self._base = config.llm_url.rstrip("/")
 
-    def generar(self, sistema: str, usuario: str) -> str:
+    def generar(self, sistema: str, usuario: str, timeout: float | None = None) -> str:
         c = self._config
         cuerpo = json.dumps({"model": c.llm_modelo, "temperature": c.llm_temperatura, "max_tokens": 300,
                              "stream": False,
@@ -25,7 +25,8 @@ class ClienteLLM:
         req = urllib.request.Request(f"{self._base}/chat/completions", data=cuerpo, method="POST",
                                      headers={"Content-Type": "application/json"})
         try:
-            with urllib.request.urlopen(req, timeout=c.llm_timeout_segundos) as r:
+            with urllib.request.urlopen(req, timeout=min(c.llm_timeout_segundos, timeout) if timeout else
+                                    c.llm_timeout_segundos) as r:
                 datos = json.loads(r.read().decode("utf-8"))
         except urllib.error.HTTPError as e:
             raise ErrorLLM(f"el LLM en {self._base} contestó {e.code}") from None
@@ -60,3 +61,11 @@ class ClienteLLM:
         if not isinstance(lista, list):
             raise ErrorLLM(f"la respuesta del LLM en {self._base} no tiene el formato esperado")
         return [m["id"] for m in lista if isinstance(m, dict) and isinstance(m.get("id"), str)]
+
+    def estado(self) -> str:
+        """"ok" | "no responde" | "falta el modelo" (responde pero el modelo configurado no está descargado)."""
+        try:
+            descargados = self.modelos()
+        except ErrorLLM:
+            return "no responde"
+        return "ok" if self._config.llm_modelo in descargados else "falta el modelo"

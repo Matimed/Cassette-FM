@@ -48,6 +48,7 @@ class ConfigServicioDJ:
     llm_timeout_segundos: float = 240.0                # tope por llamada al LLM
     llm_intentos: int = 2                              # cuántas veces se pide una frase antes de usar la plantilla
     llm_temperatura: float = 0.8
+    llm_margen_segundos: float = 45.0                  # lo que se reserva antes de la voz para sintetizar y registrar
     wikipedia_dias: float = 90.0                       # vigencia en caché de un resumen encontrado
     wikipedia_palabras_maximas: int = 120              # el resumen se recorta (en un fin de oración) a esto
     wikipedia_url: str = "https://{idioma}.wikipedia.org"
@@ -209,8 +210,16 @@ def _validar(archivo: Path, c: dict) -> None:
         error("wikipedia_dias", "no puede ser negativo")
     if "wikipedia_palabras_maximas" in c and c["wikipedia_palabras_maximas"] < 20:
         error("wikipedia_palabras_maximas", "tiene que ser al menos 20")
-    if "wikipedia_url" in c and "{idioma}" not in c["wikipedia_url"]:
-        error("wikipedia_url", "tiene que llevar {idioma} (por ejemplo https://{idioma}.wikipedia.org)")
+    if "llm_margen_segundos" in c and c["llm_margen_segundos"] < 0:
+        error("llm_margen_segundos", "no puede ser negativo")
+    if "wikipedia_url" in c:
+        try:
+            ok = "{idioma}" in c["wikipedia_url"] and bool(c["wikipedia_url"].format(idioma="es"))
+        except (KeyError, IndexError, ValueError):
+            ok = False
+        if not ok:
+            error("wikipedia_url", "tiene que llevar {idioma} y ningún otro marcador (por ejemplo "
+                                   "https://{idioma}.wikipedia.org)")
     for clave in ("llm_url", "wikidata_url", "wikipedia_url"):
         if clave in c and not re.fullmatch(r"https?://\S+", c[clave]):
             error(clave, "tiene que empezar con http:// o https://")
