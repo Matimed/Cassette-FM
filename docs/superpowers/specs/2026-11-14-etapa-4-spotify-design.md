@@ -61,7 +61,10 @@ aprovecha.
   código 10); requiere una API key de desarrollador (el usuario la guardó en `~/.config/cassette-fm/soloist.key`, modo
   600; no se loguea ni se imprime) y **emparejarse una vez** desde la app de Spotify en la misma red (`--pair`); la
   sesión queda en su directorio de datos. API WebSocket local (`-w 127.0.0.1:PUERTO`, sin autenticación: solo
-  loopback). Sale de audio por PipeWire (o PulseAudio); su stream se llama "Spotify" y no trae el PID.
+  loopback). Visto en vivo en el spike (`soloist ctl trace`): `playback_changed`/`playback_state` con `buffering` →
+  `playing`, `track_changed`, `position_sync`, `device_changed` con `is_active`, `options_changed`, `queue_changed`
+  (entradas con `source`: `context`, `queue` o `autoplay`) y `volume_changed`. Lo no visto (p. ej. el comportamiento de
+  una lista `uris` muy larga) se verifica al empezar 4c. Sale de audio por PipeWire (o PulseAudio); su stream se llama "Spotify" y no trae el PID.
   Docs: <https://developer.spotify.com/documentation/soloist>.
 - **Premium reproduce en un dispositivo a la vez.**
 - La PC tiene 13 GiB de RAM con ~2 GiB libres cuando corre el LLM: el reproductor tiene que ser liviano.
@@ -172,9 +175,18 @@ era el plan desde el diseño general).
   3. Cuando el WebSocket de Soloist avisa `playing` del tema esperado, la estática baja con un fundido corto
      (~0,3 s) y mpv se detiene.
   4. Si en ~10 s no suena: se considera falla (ver más abajo).
-- **Mientras suena**: se mantiene la cola con unos pocos temas de la agenda por delante (`add_to_queue` del WebSocket o
-  de la Web API), de modo que Spotify nunca se quede sin siguiente. Cada `track_changed` actualiza `pista_actual` y
-  dispara `al_cambiar_pista` (eso ancla al locutor y mide el desfase, como con mpv).
+- **Mientras suena**: la radio **no usa la cola de Spotify** (es de la cuenta, no del dispositivo, y no se puede vaciar
+  por la API). En la sintonía se manda una lista `uris` larga (del orden de 100 temas, unas horas de música; el máximo
+  real se verifica en 4c) y, si alguna vez se acerca al final, se vuelve a mandar en un borde de tema (lista nueva +
+  posición 0). Cada `track_changed` actualiza `pista_actual` y dispara `al_cambiar_pista` (eso ancla al locutor y mide
+  el desfase, como con mpv).
+- **La cola queda para el usuario** (decisión del usuario, 14/11): si mientras suena una emisora de Spotify agrega un
+  tema a la cola desde la app, Spotify lo toca a continuación y la radio **lo deja sonar** (no lo corta ni re-sintoniza
+  en el medio). Un tema que no es el que espera la agenda no dispara intervenciones del DJ (el locutor ya se ancla a la
+  clave del tema destino). Cuando la lista sigue, el desfase acumulado se corrige en el borde como cualquier desfase.
+  *Futuro (etapa de pedidos, no ahora)*: tratar esos temas como **peticiones del público** — una inserción en la agenda
+  que corre el reloj de esa emisora y descarta las intervenciones planificadas que pisa; al cambiar de emisora lo
+  encolado se pierde. Por eso se eligió no usar la cola: este diseño lo deja servido.
 - **Desfase**: al empezar cada tema se compara con el reloj virtual (la función `desfase` de la agenda). Si supera una
   tolerancia (unos pocos segundos; valor del constructor), se re-sintoniza en ese borde con la Web API (lista nueva +
   posición), sin estática. Es raro: Spotify encadena con precisión.
@@ -183,15 +195,23 @@ era el plan desde el diseño general).
   local al mismo volumen, se usa una **tabla de calibración** volumen-de-radio → volumen-de-Soloist, medida durante la
   implementación con la misma técnica del spike (grabar el stream y comparar dB) contra una emisora local normalizada.
   La normalización de volumen propia de Spotify queda como esté en la cuenta; la calibración se hace con ella activa.
+  *Decisión de diseño*: si Soloist al 100 suena más bajo que una local, primero se sube el volumen del stream "Spotify"
+  en PipeWire por encima del 100 % hasta donde no sature; si aun así no alcanza, se acepta que en volúmenes muy altos
+  Spotify quede algo más bajo. Las emisoras locales no se tocan.
 - **Ducking del DJ**: `atenuar` hace la misma rampa que el `Reproductor` local (pasos de ~50 ms; bajada ~0,4 s, subida
   ~1 s) mandando `set_volume` por el WebSocket. `nivel_musica_con_voz` (hoy en escala de mpv, 0,6 ≈ −13 dB) se traduce
   con la misma calibración para que la caída en dB sea la misma.
 - **Control de la cuenta**:
   - Si **otro dispositivo toma la reproducción** mientras suena una emisora de Spotify (`device_changed` con
-    `is_active: false`, o la Web API muestra otro dispositivo activo), la radio **se apaga** y avisa ("Spotify se está
-    escuchando en otro dispositivo"). No pelea por el control.
+    `is_active: false`), la radio **se apaga** y avisa ("Spotify se está escuchando en otro dispositivo"). No pelea por
+    el control.
   - Si el usuario **sintoniza** una emisora de Spotify, la radio toma el control aunque otro dispositivo esté sonando
     (fue su decisión).
+  - Si alguien elige "cassette-fm" como parlante desde la app de Spotify sin que la radio lo haya pedido: **no se
+    controla** (el usuario no lo va a usar así). La radio solo escucha a Soloist mientras tiene sintonizada una emisora
+    de Spotify; lo único que importa es que al sintonizar recupere el control.
+  - Que lo que suena en la radio entre al historial, las recomendaciones y el resumen anual de la cuenta **es aceptable**
+    (usuario, 14/11).
 - **Fallas** (sin red, token vencido sin refresh posible, Soloist caído o vencido, playlist vacía, no suena en ~10 s):
   `al_fallar` → la radio se apaga y avisa con el motivo, como hoy. El reproductor intenta reconectar el WebSocket en la
   próxima sintonía.
