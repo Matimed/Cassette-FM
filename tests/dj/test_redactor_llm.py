@@ -498,3 +498,13 @@ def test_salvar_no_puede_sacar_la_oracion_que_nombra_el_tema_ni_dos_oraciones_ma
 
 def test_salvar_no_deja_una_frase_demasiado_corta():
     assert _salvar("Ahora suena Take On Me. De a-ha. Salió en 1986 y la escuchó todo el mundo.") is None
+
+
+def test_de_wikipedia_solo_van_las_dos_primeras_oraciones():
+    largo = Resumen("Roxette es un dúo sueco. Lo formaron Gessle y Fredriksson en 1986. Gessle venía de Gyllene "
+                    "Tider. Hoy sigue con Lena Philipsson.", "Roxette", "es", "https://x")
+    pet = peticion(["cancion", "dato"], hechos=Hechos(None, None, largo))
+    assert "Roxette es un dúo sueco. Lo formaron Gessle y Fredriksson en 1986." in pet.usuario
+    assert "Gyllene" not in pet.usuario and "Philipsson" not in pet.usuario
+    assert "Gyllene" in ver("Ahora suena Take On Me de a-ha, y Gessle venía de Gyllene Tider.",
+                            ingredientes=("cancion", "dato"), hechos=Hechos(None, None, largo))

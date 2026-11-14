@@ -115,7 +115,7 @@ def construir_peticion(pedido: Pedido, ingredientes: Sequence[str], hechos: Hech
     if "dato" in ingredientes:
         if hechos.wikipedia is not None:
             lineas.append(f"{'Dato del artista (Wikipedia; usá a lo sumo uno, con tus palabras)' if es else 'Artist fact (Wikipedia; use at most one, in your own words)'}: "
-                          f"{hechos.wikipedia.texto}")
+                          f"{_primeras_oraciones(hechos.wikipedia.texto, 2)}")
         for frase in _hechos_del_tema(hechos, idioma):
             lineas.append(f"{'Dato' if es else 'Fact'}: {frase}")
         if hechos.tema is not None:
@@ -245,6 +245,11 @@ _ANIOS_EN_PALABRAS = {
 }
 
 # --- verificación ---
+
+def _primeras_oraciones(texto: str, n: int) -> str:
+    """Con todo el resumen el modelo mezcla datos (a quién le pasó qué); las primeras oraciones son lo central."""
+    return " ".join(_oraciones(texto)[:n])
+
 
 def _oraciones(texto: str) -> list[str]:
     return [o for o in re.split(r"(?<=[.!?])[\"”’»)]*\s+", texto) if o.strip()]
