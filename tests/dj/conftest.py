@@ -46,3 +46,22 @@ def modelos_reales() -> Path:
     if faltan_modelos(ruta):
         pytest.skip("faltan los modelos de Kokoro (cassette-dj modelos o CASSETTE_DJ_MODELOS)")
     return ruta
+
+
+@pytest.fixture
+def hacer_pedido():
+    """Fábrica de pedidos válidos: hacer_pedido("id1", idioma="en", voz="am_michael", ...)."""
+    from cassette_fm.dj.pedido import leer_pedido
+
+    def hacer(id_="p1", **cambios):
+        datos = {
+            "id": id_, "estacion": "Lentos", "idioma": "es", "voz": "em_santa",
+            "momento": "2026-11-13T21:47:00-03:00",
+            "anterior": {"artista": "Whitesnake", "titulo": "Is This Love", "album": "Slip of the Tongue"},
+            "siguiente": {"artista": "Foreigner", "titulo": "Waiting for a Girl Like You"},
+            "recientes": [],
+        }
+        datos.update(cambios)
+        return leer_pedido(datos)
+
+    return hacer
