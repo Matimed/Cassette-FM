@@ -464,8 +464,15 @@ def test_en_modo_llm_con_el_llm_caido_igual_hay_frase(servicio, llm_falso):
     from cassette_fm.dj.modo import ModoDJ
     llm_falso.codigo = 503
     llm_falso.cuerpo_crudo = "ocupado"
+    from cassette_fm.dj.hechos import Hechos
+    from cassette_fm.dj.hechos.wikipedia import Resumen
+
+    class ConDato:                       # sin ningún dato el LLM ni se consulta
+        def reunir(self, pedido, con_wikipedia=False):
+            return Hechos(wikipedia=Resumen("Foreigner es una banda.", "Foreigner", "es", "https://x")), None
+
     cfg = ConfigServicioDJ(llm_url=llm_falso.url, llm_timeout_segundos=2.0)
-    s = servicio(SintetizadorFalso(), config=cfg, modo=ModoDJ("llm"), llm=ClienteLLM(cfg),
+    s = servicio(SintetizadorFalso(), config=cfg, modo=ModoDJ("llm"), llm=ClienteLLM(cfg), hechos=ConDato(),
                  reloj=lambda: _MOMENTO_PRUEBA - 600)
     assert json_de(pedir(s, "POST", "/intervenciones", pedido_json("llm3")))[0] == 202
     listo = esperar_estado(s, "llm3", timeout=10)

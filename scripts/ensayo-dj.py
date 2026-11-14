@@ -55,7 +55,7 @@ def linea_guion(r: dict, color: bool) -> str:
     texto = r.get("texto") or r.get("crudo") or f"(sin texto: {r.get('error') or r.get('motivo') or '?'})"
     motivo = r.get("motivo")
     if clase == "ok":
-        marca = pintar("ok", "[llm]", color)
+        marca = pintar("ok", f"[llm, recortada: {r['recortado']}]" if r.get("recortado") else "[llm]", color)
     elif clase == "descartado":
         marca = pintar("descartado", f"[descartado: {motivo}]" if motivo else "[descartado]", color)
     else:

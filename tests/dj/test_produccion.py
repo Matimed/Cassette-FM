@@ -509,3 +509,33 @@ def test_un_nombre_con_numero_llega_marcado_y_sin_convertir(montaje, hacer_pedid
     r = productor.producir(hacer_pedido("t5", siguiente={"artista": "U2", "titulo": "With or Without You"}))
     assert "U2" in r.texto and "Udos" not in r.texto
     assert "{en-us:U2}" in guiones.ultimos(1)[0]["marcado"]
+
+
+class FuenteSinDatos:
+    def __init__(self):
+        self.llamadas = []
+
+    def reunir(self, pedido, con_wikipedia=False):
+        self.llamadas.append(con_wikipedia)
+        return _Hechos(tema=None, wikipedia=None), {"clima": None, "musicbrainz": None, "wikipedia": None}
+
+
+def test_sin_ningun_dato_real_no_se_llama_al_llm_y_sale_la_plantilla(montaje, hacer_pedido):
+    crear, _, guiones = montaje
+    llm = LLMFalso()
+    productor, _ = crear(modo=ModoDJ("llm"), llm=llm, hechos=FuenteSinDatos(), reloj=RelojFalso())
+    r = productor.producir(hacer_pedido("sd1"))
+    assert llm.llamadas == [] and r.texto
+    g = guiones.ultimos(1)[0]
+    assert g["fuente"] == "plantilla" and "sin datos" in g["motivo"]
+
+
+def test_una_oracion_con_un_dato_inventado_se_saca_y_la_frase_se_usa(montaje, hacer_pedido):
+    mala = ("Ahora suena Waiting for a Girl Like You de Foreigner. Salió en 1981 y la escuchó todo el mundo. "
+            "Seguimos con más música para todos ustedes esta noche.")
+    productor, _, llm, _, guiones = llm_listo(montaje, mala)
+    r = productor.producir(hacer_pedido("sv1"))
+    assert len(llm.llamadas) == 1 and "1981" not in r.texto and "mil" not in r.texto
+    assert r.texto.startswith("Ahora suena Waiting for a Girl Like You de Foreigner.")
+    g = guiones.ultimos(1)[0]
+    assert g["fuente"] == "llm" and "descartado" not in g and g["recortado"].startswith("número")

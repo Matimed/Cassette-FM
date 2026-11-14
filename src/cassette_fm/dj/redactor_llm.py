@@ -120,8 +120,14 @@ def construir_peticion(pedido: Pedido, ingredientes: Sequence[str], hechos: Hech
             lineas.append(f"{'Dato' if es else 'Fact'}: {frase}")
         if hechos.tema is not None:
             cifras += [str(x) for x in (hechos.tema.anio, hechos.tema.anio_inicio_artista) if x is not None]
+    n_hechos = len(lineas) - 1           # lo que hay para contar además del tema
+    t = hechos.tema
+    if not ("dato" in ingredientes and t is not None and t.anio is not None and 1900 <= t.anio <= 2099):
+        # sin año el modelo lo completa de memoria (y suele errar): decírselo explícito funciona mejor que la regla
+        lineas.append("Año de la canción: desconocido (no digas cuándo salió)" if es
+                      else "Song year: unknown (do not say when it came out)")
     # con pocos hechos no hay de qué hablar: un rango largo lo empuja a rellenar inventando años y datos
-    tope = min(palabras_maximas, 20 + 15 * (len(lineas) - 1))
+    tope = min(palabras_maximas, 20 + 15 * n_hechos)
     minimo = max(8, tope // 2)
     tono = (f"\nTono: {pedido.personalidad}" if pedido.personalidad else "")
     if es:
@@ -300,6 +306,20 @@ def verificar(texto: str, pedido: Pedido, peticion: Peticion, palabras_maximas: 
             if not all(p in vocabulario or len(p) == 1 or difflib.get_close_matches(p, vocabulario, 1, 0.85)
                        for p in partes):
                 return f"nombre propio que no está en los hechos: {palabra}"
+    return None
+
+
+def salvar(texto: str, pedido: Pedido, peticion: Peticion, palabras_maximas: int,
+           zona: tzinfo | None = None) -> str | None:
+    """Si sacando UNA oración la frase pasa la verificación (y le quedan al menos 8 palabras), la devuelve sin
+    esa oración: casi siempre el modelo escribe bien y agrega una sola oración con un dato inventado."""
+    oraciones = _oraciones(texto)
+    if len(oraciones) < 2:
+        return None
+    for i in range(len(oraciones)):
+        resto = " ".join(o for j, o in enumerate(oraciones) if j != i)
+        if len(resto.split()) >= 8 and verificar(resto, pedido, peticion, palabras_maximas, zona) is None:
+            return resto
     return None
 
 

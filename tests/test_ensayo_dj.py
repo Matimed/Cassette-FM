@@ -63,3 +63,8 @@ def test_los_pares_son_consecutivos_y_saltean_temas_sin_nombre():
     pares = ensayo.armar_pares(Estacion("E", pistas), 3, 1_800_000_000.0)
     assert len(pares) == 3
     assert all(s.artista for _, s in pares) and all(a is not s for a, s in pares)
+
+
+def test_una_frase_recortada_se_marca():
+    r = {"ts": "2026-11-14T12:50:07-03:00", "fuente": "llm", "texto": "Bien.", "recortado": "número que no está"}
+    assert "[llm, recortada: número que no está]" in ensayo.linea_guion(r, color=False)

@@ -16,7 +16,7 @@ from cassette_fm.dj.lexico import Lexico
 from cassette_fm.dj.pedido import Pedido
 from cassette_fm.dj.plantillas import ingredientes_disponibles, redactar
 from cassette_fm.dj.redactor_llm import (campos_de_voz, construir_peticion, limpiar_salida, marcar_nombres,
-                                         numeros_a_palabras, verificar)
+                                         numeros_a_palabras, salvar, verificar)
 from cassette_fm.dj.selector import elegir_ingredientes
 from cassette_fm.dj.texto_voz import preparar, texto_para_piper
 
@@ -103,8 +103,11 @@ class Productor:
         disponibles = ingredientes_disponibles(pedido, hechos)
         if hechos.wikipedia is not None:
             disponibles = disponibles | {"dato"}
-        # el dato (Wikipedia o MusicBrainz) va siempre que haya uno: sin hechos el LLM rellena inventando
-        con_dato = "dato" in disponibles
+        # el dato (Wikipedia o MusicBrainz) va siempre que haya uno; sin ninguno el LLM no tiene qué agregar a
+        # la plantilla y rellena con frases vacías o inventadas: mejor la plantilla
+        if "dato" not in disponibles:
+            return "sin datos del tema ni de Wikipedia para el LLM"
+        con_dato = True
         elegidos = elegir_ingredientes(disponibles - {"dato"}, c.pesos_ingredientes, pedido.recientes, self._azar,
                                        max(1, c.ingredientes_max - 1) if con_dato else c.ingredientes_max,
                                        c.penalizacion_reciente)
@@ -135,6 +138,11 @@ class Productor:
             guion["crudo"] = crudo
             texto = limpiar_salida(crudo)
             motivo = verificar(texto, pedido, peticion, palabras, self._zona)
+            if motivo is not None:
+                salvado = salvar(texto, pedido, peticion, palabras, self._zona)
+                if salvado is not None:
+                    guion["recortado"] = motivo
+                    texto, motivo = salvado, None
             marcado = None
             if motivo is None:
                 try:       # primero se marcan los nombres: los números que llevan (U2, Blink-182) no se convierten

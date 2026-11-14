@@ -11,7 +11,7 @@ from cassette_fm.dj.hechos.wikipedia import Resumen
 from cassette_fm.dj.lexico import Lexico
 from cassette_fm.dj.pedido import Pedido, Tema
 from cassette_fm.dj.redactor_llm import (campos_de_voz, construir_peticion, limpiar_salida, marcar_nombres,
-                                         numeros_a_palabras, verificar)
+                                         numeros_a_palabras, salvar, verificar)
 from cassette_fm.dj.texto_voz import preparar
 
 ZONA = timezone(timedelta(hours=-3))
@@ -469,3 +469,32 @@ def test_los_marcadores_no_se_tocan_al_convertir():
 ])
 def test_una_interjeccion_suelta_al_principio_se_saca(crudo, esperado):
     assert limpiar_salida(crudo) == esperado
+
+
+def test_sin_anio_del_tema_el_prompt_dice_que_es_desconocido():
+    assert "Año de la canción: desconocido" in peticion(["cancion"]).usuario
+    sin_anio = Hechos(None, DatosTema(None, "NO", 1983, True, "u", "Q1"), WIKI)
+    assert "Song year: unknown" in peticion(["cancion", "dato"], hechos=sin_anio, p=pedido("en")).usuario
+    con_anio = peticion(["cancion", "dato"]).usuario
+    assert "desconocido" not in con_anio and "Año de la canción (no del álbum): 1984" in con_anio
+
+
+def _salvar(texto, ingredientes=("cancion", "clima", "dato"), p=None):
+    p = p or pedido()
+    pet = construir_peticion(p, list(ingredientes), HECHOS, campos_de_voz(p, HECHOS), 45)
+    return salvar(texto, p, pet, 45)
+
+
+def test_salvar_saca_la_unica_oracion_con_un_dato_inventado():
+    texto = "Ahora suena Take On Me de a-ha. Salió en 1986 y la escuchó todo el mundo. Seguimos con más música para vos."
+    assert ver(texto) is not None
+    assert _salvar(texto) == "Ahora suena Take On Me de a-ha. Seguimos con más música para vos."
+
+
+def test_salvar_no_puede_sacar_la_oracion_que_nombra_el_tema_ni_dos_oraciones_malas():
+    assert _salvar("Ahora suena Take On Me de a-ha, que salió en 1986 y la escuchó todo el mundo.") is None
+    assert _salvar("Ahora suena Take On Me de a-ha. Salió en 1986 y gustó. Y en 1987 llegó a Madonna.") is None
+
+
+def test_salvar_no_deja_una_frase_demasiado_corta():
+    assert _salvar("Ahora suena Take On Me. De a-ha. Salió en 1986 y la escuchó todo el mundo.") is None
