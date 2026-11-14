@@ -5,7 +5,7 @@ from datetime import datetime
 IDIOMAS = {"es": "es", "en": "en-us", "en-us": "en-us", "en-gb": "en-gb"}   # idioma del pedido -> `lang` de Kokoro
 
 _ID = re.compile(r"[A-Za-z0-9_-]{1,64}")
-_VOZ = re.compile(r"[A-Za-z0-9_+.-]+")
+_VOZ = re.compile(r"[A-Za-z0-9_+.:-]+")
 _MAX_TEXTO = 300
 
 

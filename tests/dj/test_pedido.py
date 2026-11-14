@@ -178,3 +178,9 @@ def test_velocidad_opcional_y_validada():
         d["velocidad"] = malo
         with pytest.raises(ValueError, match="velocidad"):
             leer_pedido(d)
+
+
+def test_voz_de_piper_vale():
+    d = pedido_valido()
+    d["voz"] = "piper:es_AR-daniela-high"
+    assert leer_pedido(d).voz == "piper:es_AR-daniela-high"

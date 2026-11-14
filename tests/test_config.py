@@ -239,3 +239,10 @@ def test_velocidad_por_estacion(tmp_path):
         archivo.write_text(f"[dj]\nvelocidad = {malo}\n")
         with pytest.raises(ErrorConfig):
             cargar_config(archivo)
+
+
+def test_voz_de_piper_y_alias_validos_en_la_config_de_la_radio(tmp_path):
+    archivo = tmp_path / "config.toml"
+    archivo.write_text('[dj]\nvoz = "piper:es_AR-daniela-high"\n[dj.estaciones."X"]\nvoz = "alex_santa"\n')
+    cfg = cargar_config(archivo)
+    assert cfg.dj.voz == "piper:es_AR-daniela-high" and configuracion_dj(cfg, "X").voz == "alex_santa"

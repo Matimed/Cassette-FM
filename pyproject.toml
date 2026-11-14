@@ -12,6 +12,7 @@ dependencies = ["mutagen"]
 [project.optional-dependencies]
 dev = ["pytest"]
 dj = ["kokoro-onnx", "soundfile"]
+piper = ["piper-tts"]
 
 [project.scripts]
 cassette = "cassette_fm.cli:main"

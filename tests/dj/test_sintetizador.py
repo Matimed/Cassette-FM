@@ -280,3 +280,96 @@ def test_la_velocidad_del_pedido_pisa_a_la_del_servicio(tmp_path, fabrica_falsa)
     s.sintetizar("fon", "em_santa", "es", tmp_path / "a.wav", velocidad=1.3)
     s.sintetizar("fon", "em_santa", "es", tmp_path / "b.wav")
     assert [l["speed"] for l in fabrica_falsa.estado.llamadas] == [1.3, 1.05]
+
+
+# --- voces con nombre y motor Piper ---
+
+class PiperFalso:
+    """Imita a piper.PiperVoice: escribe `largo` segundos de silencio con el length_scale recibido."""
+
+    def __init__(self, ruta, registro):
+        self.ruta = ruta
+        self.registro = registro
+
+    def synthesize_wav(self, texto, wav_file, syn_config=None):
+        self.registro.append((self.ruta.name, texto, syn_config.length_scale if syn_config else None))
+        wav_file.setnchannels(1)
+        wav_file.setsampwidth(2)
+        wav_file.setframerate(22050)
+        wav_file.writeframes(b"\x00\x00" * 22050)           # 1 s
+
+
+def sint_piper(tmp_path, fabrica_falsa, voces=None):
+    registro, cargas = [], []
+    cfg = ConfigServicioDJ(modelos_dir=tmp_path, voces=voces or {})
+
+    def fabrica_piper(ruta):
+        cargas.append(ruta.name)
+        return PiperFalso(ruta, registro)
+
+    (tmp_path / "piper").mkdir(exist_ok=True)
+    for nombre in ("es_AR-daniela-high", "es_MX-claude-high"):
+        (tmp_path / "piper" / f"{nombre}.onnx").write_bytes(b"x")
+    s = Sintetizador(cfg, fabrica=fabrica_falsa, reloj=Reloj(), fabrica_piper=fabrica_piper)
+    return s, registro, cargas
+
+
+def test_una_voz_con_nombre_se_resuelve_antes_de_sintetizar(tmp_path, fabrica_falsa):
+    cfg = ConfigServicioDJ(voces={"alex_santa": "em_alex+em_santa"})
+    sint(fabrica_falsa, cfg).sintetizar("fon", "alex_santa", "es", tmp_path / "a.wav")
+    (llamada,) = fabrica_falsa.estado.llamadas
+    assert llamada["voice"].shape == (4, 1, 3) and float(llamada["voice"][0, 0, 0]) == 4.0   # promedio de 3 y 5
+
+
+def test_piper_usa_el_texto_y_la_velocidad_como_length_scale(tmp_path, fabrica_falsa):
+    s, registro, cargas = sint_piper(tmp_path, fabrica_falsa)
+    salida = tmp_path / "out" / "a.wav"
+    dur = s.sintetizar("fon-de-kokoro", "piper:es_AR-daniela-high", "es", salida, velocidad=0.8, texto="Hola gente.")
+    assert registro == [("es_AR-daniela-high.onnx", "Hola gente.", pytest.approx(1 / 0.8))]
+    assert dur == pytest.approx(1.0) and mutagen.File(salida).info.length == pytest.approx(1.0, abs=0.02)
+    assert fabrica_falsa.estado.cargas == 0 and not list(salida.parent.glob("*.part"))   # Kokoro ni se cargó
+    s.sintetizar("x", "piper:es_AR-daniela-high", "es", tmp_path / "b.wav", texto="Otra.")
+    assert registro[1][2] == 1.0 and cargas == ["es_AR-daniela-high.onnx"]               # sin velocidad: natural, y se reusa
+
+
+def test_piper_por_alias(tmp_path, fabrica_falsa):
+    s, registro, _ = sint_piper(tmp_path, fabrica_falsa, {"daniela": "piper:es_AR-daniela-high"})
+    s.sintetizar("x", "daniela", "es", tmp_path / "a.wav", texto="Hola.")
+    assert registro[0][0] == "es_AR-daniela-high.onnx"
+
+
+@pytest.mark.parametrize("voz, texto, mensaje", [("piper:no_existe", "Hola.", "no_existe"),
+                                                 ("piper:../x", "Hola.", "inválido"),
+                                                 ("piper:es_AR-daniela-high", "", "texto")])
+def test_piper_con_datos_invalidos(tmp_path, fabrica_falsa, voz, texto, mensaje):
+    s, _, _ = sint_piper(tmp_path, fabrica_falsa)
+    with pytest.raises((ErrorModelos, ValueError), match=mensaje):
+        s.sintetizar("x", voz, "es", tmp_path / "a.wav", texto=texto)
+
+
+def test_voces_lista_alias_y_piper(tmp_path, fabrica_falsa):
+    s, _, _ = sint_piper(tmp_path, fabrica_falsa, {"alex_santa": "em_alex+em_santa"})
+    s.sintetizar("x", "em_santa", "es", tmp_path / "a.wav")     # carga Kokoro para que voces() no lea el archivo
+    assert s.voces() == ["alex_santa", "am_michael", "em_alex", "em_santa",
+                         "piper:es_AR-daniela-high", "piper:es_MX-claude-high"]
+
+
+def test_piper_se_descarga_por_ocio(tmp_path, fabrica_falsa):
+    reloj = Reloj()
+    s, _, cargas = sint_piper(tmp_path, fabrica_falsa)
+    s._reloj = reloj
+    s.sintetizar("x", "piper:es_AR-daniela-high", "es", tmp_path / "a.wav", texto="Hola.")
+    assert s.cargado
+    reloj.t += 10_000
+    assert s.descargar_si_ocioso() is True and not s.cargado
+
+
+def test_integracion_con_piper_real(tmp_path, modelos_reales):
+    pytest.importorskip("piper")
+    if not (modelos_reales / "piper" / "es_AR-daniela-high.onnx").is_file():
+        pytest.skip("falta el modelo de Piper es_AR-daniela-high")
+    s = Sintetizador(ConfigServicioDJ(modelos_dir=modelos_reales))
+    normal = s.sintetizar("", "piper:es_AR-daniela-high", "es", tmp_path / "n.wav", texto="Estamos en Reguetón dos mil.")
+    lento = s.sintetizar("", "piper:es_AR-daniela-high", "es", tmp_path / "l.wav", velocidad=0.8,
+                         texto="Estamos en Reguetón dos mil.")
+    assert 1.0 < normal < 8.0 and lento == pytest.approx(normal / 0.8, rel=0.1)

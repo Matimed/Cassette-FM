@@ -24,11 +24,13 @@ class SintetizadorFalso:
         self.duraciones = list(duraciones)
         self.llamadas = []
         self.velocidades = []
+        self.textos = []
         self.error = error
 
-    def sintetizar(self, fonemas, voz, lang, salida, velocidad=None):
+    def sintetizar(self, fonemas, voz, lang, salida, velocidad=None, texto=None):
         self.llamadas.append((fonemas, voz, lang, Path(salida)))
         self.velocidades.append(velocidad)
+        self.textos.append(texto)
         if self.error:
             raise self.error
         dur = self.duraciones.pop(0) if len(self.duraciones) > 1 else self.duraciones[0]
@@ -156,3 +158,10 @@ def test_la_velocidad_del_pedido_llega_al_sintetizador(montaje, hacer_pedido):
     productor.producir(hacer_pedido("v1", velocidad=1.2))
     productor.producir(hacer_pedido("v2"))
     assert [v for v in sint.velocidades] == [1.2, None]
+
+
+def test_el_texto_limpio_llega_al_sintetizador_para_los_motores_que_no_usan_fonemas(montaje, hacer_pedido):
+    crear, _, _ = montaje
+    productor, sint = crear()
+    r = productor.producir(hacer_pedido("t1"))
+    assert sint.textos == [r.texto]

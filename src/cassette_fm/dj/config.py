@@ -1,7 +1,9 @@
 import os
+import re
+from collections.abc import Mapping
 import tomllib
 import zoneinfo
-from dataclasses import dataclass, fields, replace
+from dataclasses import dataclass, field, fields, replace
 from pathlib import Path
 
 from cassette_fm.config import ErrorConfig
@@ -21,6 +23,7 @@ class ConfigServicioDJ:
     pausa_coma_segundos: float = 0.1         # `clause_pause` de Kokoro
     continuo: bool = False                   # `continuous` de Kokoro
     zona_horaria: str = "America/Argentina/Buenos_Aires"
+    voces: Mapping[str, str] = field(default_factory=dict)   # voces con nombre: alias -> voz o mezcla ("em_alex+em_santa")
 
 
 @dataclass(frozen=True)
@@ -66,6 +69,7 @@ def cargar_config_dj(archivo: Path) -> ConfigServicioDJ:
         return ConfigServicioDJ()
     except (tomllib.TOMLDecodeError, OSError) as e:
         raise ErrorConfig(f"{archivo}: {e}")
+    voces = _leer_voces(archivo, datos.pop("voces", {}))
     campos = {}
     for clave, valor in datos.items():
         tipo = _TIPOS.get(clave)
@@ -83,7 +87,25 @@ def cargar_config_dj(archivo: Path) -> ConfigServicioDJ:
     _validar(archivo, campos)
     if "modelos_dir" in campos:
         campos["modelos_dir"] = Path(campos["modelos_dir"]).expanduser()
-    return replace(ConfigServicioDJ(), **campos)
+    return replace(ConfigServicioDJ(), voces=voces, **campos)
+
+
+_NOMBRE_VOZ = re.compile(r"[A-Za-z0-9_.-]+")
+_ESPECIFICACION_VOZ = re.compile(r"[A-Za-z0-9_+.:-]+")
+
+
+def _leer_voces(archivo: Path, tabla) -> dict[str, str]:
+    if not isinstance(tabla, dict):
+        raise ErrorConfig(f"{archivo}: 'voces' tiene que ser una tabla de nombre = voz")
+    for nombre, voz in tabla.items():
+        if not _NOMBRE_VOZ.fullmatch(nombre):
+            raise ErrorConfig(f"{archivo}: el nombre de voz {nombre!r} solo puede tener letras, números, _ . -")
+        if not isinstance(voz, str) or not _ESPECIFICACION_VOZ.fullmatch(voz) or ".." in voz:
+            raise ErrorConfig(f"{archivo}: la voz {nombre!r} tiene que ser una voz de Kokoro, una mezcla (a+b) "
+                              f"o piper:<modelo>")
+        if any(parte in tabla for parte in voz.split("+")):
+            raise ErrorConfig(f"{archivo}: la voz {nombre!r} no puede apuntar a otra voz con nombre")
+    return dict(tabla)
 
 
 def _validar(archivo: Path, c: dict) -> None:

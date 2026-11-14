@@ -86,3 +86,21 @@ def test_modelos_dir_acepta_absoluta_y_tilde(tmp_path):
     assert cargar_config_dj(archivo).modelos_dir == Path("/opt/modelos")
     archivo.write_text('modelos_dir = "~/modelos"\n')
     assert cargar_config_dj(archivo).modelos_dir == Path.home() / "modelos"
+
+
+def test_voces_con_nombre(tmp_path):
+    assert ConfigServicioDJ().voces == {}
+    archivo = tmp_path / "config.toml"
+    archivo.write_text('[voces]\nalex_santa = "em_alex+em_santa"\ndaniela = "piper:es_AR-daniela-high"\n')
+    assert cargar_config_dj(archivo).voces == {"alex_santa": "em_alex+em_santa",
+                                               "daniela": "piper:es_AR-daniela-high"}
+
+
+@pytest.mark.parametrize("contenido", ['voces = 3', '[voces]\na = 3', '[voces]\n"a b" = "x"', '[voces]\na = "../x"',
+                                       '[voces]\n"a+b" = "x"', '[voces]\na = "b"\nb = "em_alex"'])
+def test_voces_con_nombre_invalidas(tmp_path, contenido):
+    archivo = tmp_path / "config.toml"
+    archivo.write_text(contenido + "\n")
+    with pytest.raises(ErrorConfig) as e:
+        cargar_config_dj(archivo)
+    assert str(archivo) in str(e.value)

@@ -2,7 +2,9 @@ import ctypes
 import gc
 import http.client
 import os
+import re
 import threading
+import wave
 import time
 import urllib.request
 from collections.abc import Callable
@@ -13,6 +15,9 @@ from cassette_fm.dj.config import ConfigServicioDJ
 
 ARCHIVOS_MODELO = ("kokoro-v1.0.onnx", "voices-v1.0.bin")
 URL_MODELOS = "https://github.com/thewh1teagle/kokoro-onnx/releases/download/model-files-v1.0/"
+
+
+_MODELO_PIPER = re.compile(r"[A-Za-z0-9_.-]+")
 
 
 class ErrorModelos(Exception):
@@ -85,9 +90,11 @@ class Sintetizador:
     """Kokoro con carga a demanda: se carga al primer uso y se descarga tras un rato sin trabajo."""
 
     def __init__(self, config: ConfigServicioDJ, fabrica: Callable[[], Any] | None = None,
-                 reloj: Callable[[], float] = time.monotonic):
+                 reloj: Callable[[], float] = time.monotonic, fabrica_piper: Callable[[Path], Any] | None = None):
         self._config = config
         self._fabrica = fabrica or self._cargar_kokoro
+        self._fabrica_piper = fabrica_piper or self._cargar_piper
+        self._piper: dict[str, Any] = {}
         self._reloj = reloj
         self._lock = threading.Lock()
         self._kokoro = None
@@ -95,7 +102,50 @@ class Sintetizador:
 
     @property
     def cargado(self) -> bool:
-        return self._kokoro is not None
+        return self._kokoro is not None or bool(self._piper)
+
+    def _cargar_piper(self, ruta: Path):
+        try:
+            from piper import PiperVoice
+        except ImportError as e:
+            raise ErrorModelos("falta instalar Piper (pip install -e '.[piper]')") from e
+        try:
+            return PiperVoice.load(ruta)
+        except Exception as e:
+            raise ErrorModelos(f"el modelo de Piper {ruta.name} está corrupto o incompleto "
+                               f"({type(e).__name__}): volvé a bajarlo") from e
+
+    def _sintetizar_piper(self, nombre: str, texto: str | None, velocidad: float | None, salida: Path) -> float:
+        if not _MODELO_PIPER.fullmatch(nombre) or ".." in nombre:
+            raise ValueError(f"el nombre del modelo de Piper es inválido: {nombre!r}")
+        if not texto or not texto.strip():
+            raise ValueError("Piper necesita el texto de la frase")
+        ruta = self._config.modelos_dir / "piper" / f"{nombre}.onnx"
+        if not ruta.is_file():
+            raise ErrorModelos(f"falta el modelo de Piper {nombre} en {ruta.parent}: bajalo con "
+                               f"`python -m piper.download_voices --download-dir {ruta.parent} {nombre}`")
+        from types import SimpleNamespace
+        modelo = self._piper.get(nombre)
+        if modelo is None:
+            modelo = self._piper[nombre] = self._fabrica_piper(ruta)
+        try:
+            from piper import SynthesisConfig
+            ajustes = SynthesisConfig(length_scale=1.0 / (velocidad or 1.0))
+        except ImportError:
+            ajustes = SimpleNamespace(length_scale=1.0 / (velocidad or 1.0))
+        salida.parent.mkdir(parents=True, exist_ok=True)
+        parcial = salida.with_name(salida.name + ".part")
+        try:
+            with wave.open(str(parcial), "wb") as w:
+                modelo.synthesize_wav(texto, w, syn_config=ajustes)
+            with wave.open(str(parcial)) as w:
+                duracion = w.getnframes() / w.getframerate()
+            os.replace(parcial, salida)
+        except BaseException:
+            parcial.unlink(missing_ok=True)
+            raise
+        self._ultimo_uso = self._reloj()
+        return duracion
 
     def _cargar_kokoro(self):
         faltan = faltan_modelos(self._config.modelos_dir)
@@ -119,6 +169,11 @@ class Sintetizador:
         return self._kokoro
 
     def voces(self) -> list[str]:
+        extra = list(self._config.voces) + [f"piper:{p.stem}" for p in
+                                             sorted((self._config.modelos_dir / "piper").glob("*.onnx"))]
+        return sorted(self._voces_de_kokoro() + extra)
+
+    def _voces_de_kokoro(self) -> list[str]:
         with self._lock:
             if self._kokoro is not None:
                 return sorted(self._kokoro.get_voices())
@@ -133,8 +188,14 @@ class Sintetizador:
             raise ErrorModelos(f"el archivo de voces está corrupto ({type(e).__name__}): borralo y corré "
                                "`cassette-dj modelos`") from e
 
-    def sintetizar(self, fonemas: str, voz: str, lang: str, salida: Path, velocidad: float | None = None) -> float:
+    def sintetizar(self, fonemas: str, voz: str, lang: str, salida: Path, velocidad: float | None = None,
+                   texto: str | None = None) -> float:
+        """Kokoro habla con `fonemas`; Piper (voz `piper:<modelo>`) con `texto`. `voz` puede ser un alias."""
         salida = Path(salida)
+        voz = self._config.voces.get(voz, voz)
+        if voz.startswith("piper:"):
+            with self._lock:
+                return self._sintetizar_piper(voz[len("piper:"):], texto, velocidad, salida)
         with self._lock:
             kokoro = self._modelo()
             try:
@@ -165,10 +226,11 @@ class Sintetizador:
 
     def descargar_si_ocioso(self) -> bool:
         with self._lock:
-            if self._kokoro is None:
+            if self._kokoro is None and not self._piper:
                 return False
             if self._reloj() - self._ultimo_uso < self._config.descargar_tras_minutos * 60:
                 return False
             self._kokoro = None
+            self._piper = {}
         _devolver_memoria()
         return True

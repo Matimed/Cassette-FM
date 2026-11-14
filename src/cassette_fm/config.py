@@ -136,7 +136,7 @@ _POSITIVOS = {"duracion_maxima_segundos", "tolerancia_desfase_segundos", "desfas
               "timeout_http_segundos", "espera_reintento_segundos", "espera_reintento_maxima_segundos",
               "espera_trabajo_maxima_segundos"}
 _IDIOMAS = ("es", "en", "en-us", "en-gb")
-_VOZ = re.compile(r"^[A-Za-z0-9_+.-]+$")
+_VOZ = re.compile(r"^[A-Za-z0-9_+.:-]+$")
 _PERSONALIDAD_MAXIMA = 300
 
 
@@ -212,7 +212,7 @@ def _campos_dj(archivo: Path, tabla: dict, donde: str, base: ConfigDJ) -> dict:
         elif clave == "voz":
             valor = _texto(archivo, nombre, valor)
             if not _VOZ.match(valor):
-                raise ErrorConfig(f"{archivo}: '{nombre}' solo puede tener letras, números y _ + . -")
+                raise ErrorConfig(f"{archivo}: '{nombre}' solo puede tener letras, números y _ + . : -")
             campos[clave] = valor
         elif clave == "idioma":
             valor = _texto(archivo, nombre, valor)

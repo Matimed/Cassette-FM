@@ -70,7 +70,7 @@ class Productor:
             redaccion = redactar(pedido, self._lexico, self._azar, palabras, self._zona)
             prep = preparar(redaccion.marcado, pedido.lang, self._fonemizar)
             duracion = self._sintetizador.sintetizar(prep.fonemas, pedido.voz, pedido.lang, ruta,
-                                                   velocidad=pedido.velocidad)
+                                                   velocidad=pedido.velocidad, texto=prep.texto)
             guion = dict(self._base(pedido), ingredientes=list(redaccion.ingredientes), texto=prep.texto,
                          marcado=prep.marcado, fonemas=prep.fonemas, duracion=duracion)
             if maxima is None or duracion <= maxima:
