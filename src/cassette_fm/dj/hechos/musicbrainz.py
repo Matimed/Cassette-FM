@@ -34,6 +34,7 @@ class DatosTema:
     anio_inicio_artista: int | None    # solo si es un grupo
     es_grupo: bool
     fuente: str                        # URL del artista en MusicBrainz
+    wikidata: str | None = None        # el Q… del artista en Wikidata (relación de MusicBrainz), si lo tiene
 
 
 class _Fallo(Exception):
@@ -72,6 +73,23 @@ def _limpiar_titulo(titulo: str) -> str:
         if t == previo:
             break
     return t or titulo.strip()
+
+
+_WIKIDATA = re.compile(r"https?://www\.wikidata\.org/wiki/(Q\d+)")
+
+
+def _wikidata(artista: dict) -> str | None:
+    """El Q… de la relación `wikidata` del artista (solo si la URL es de wikidata.org)."""
+    relaciones = artista.get("relations")
+    if not isinstance(relaciones, list):
+        return None
+    for r in relaciones:
+        if isinstance(r, dict) and r.get("type") == "wikidata" and isinstance(r.get("url"), dict):
+            recurso = r["url"].get("resource")
+            m = _WIKIDATA.fullmatch(recurso) if isinstance(recurso, str) else None
+            if m:
+                return m.group(1)
+    return None
 
 
 def _escapar(texto: str) -> str:
@@ -122,7 +140,7 @@ class ClienteMusicBrainz:
         if not n_artista or not n_titulo:
             return None            # sin letras con que comparar: no se puede verificar nada
         n_album = normalizar(album) if album else ""
-        clave = f"mb:isrc:{isrc}" if isrc else f"mb:{n_artista}|{n_titulo}|{n_album}"
+        clave = f"mb2:isrc:{isrc}" if isrc else f"mb2:{n_artista}|{n_titulo}|{n_album}"
         fallo: list[Exception] = []
 
         buscado = []
@@ -156,7 +174,7 @@ class ClienteMusicBrainz:
             return None
         try:
             return DatosTema(valor["anio"], valor["pais"], valor["anio_inicio_artista"], bool(valor["es_grupo"]),
-                             str(valor["fuente"]))
+                             str(valor["fuente"]), valor.get("wikidata"))
         except KeyError:
             return None
 
@@ -189,7 +207,7 @@ class ClienteMusicBrainz:
         id_artista = ids.pop()
         anios = [a for a in (_anio(g.get("first-release-date")) for g in grabaciones) if a is not None]
         anio = min(anios) if anios else None
-        datos = self._pedir(f"/artist/{id_artista}", {"fmt": "json"})
+        datos = self._pedir(f"/artist/{id_artista}", {"inc": "url-rels", "fmt": "json"})
         if not isinstance(datos, dict) or not ("id" in datos or "name" in datos):
             raise _Fallo("la respuesta del artista no es un artista")
         pais = datos.get("country")
@@ -204,7 +222,7 @@ class ClienteMusicBrainz:
         if anio is None and pais is None and inicio is None:
             return None
         return {"anio": anio, "pais": pais, "anio_inicio_artista": inicio, "es_grupo": es_grupo,
-                "fuente": f"https://musicbrainz.org/artist/{id_artista}"}
+                "fuente": f"https://musicbrainz.org/artist/{id_artista}", "wikidata": _wikidata(datos)}
 
     def _grabaciones(self, ruta: str, parametros: dict) -> list:
         datos = self._pedir(ruta, parametros)

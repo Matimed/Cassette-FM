@@ -311,3 +311,29 @@ def test_la_consulta_escapa_la_barra_y_las_comillas(servidor_http):
     c.datos_del_tema('Tito "El Bambino"', "Algo")
     consulta = urllib.parse.parse_qs(urllib.parse.urlparse(servidor_http.pedidos[1][0]).query)["query"][0]
     assert 'artist:"Tito \\"El Bambino\\""' in consulta
+
+
+# --- wikidata (parte 4) ---
+
+def test_el_artista_se_pide_con_url_rels_y_devuelve_el_wikidata(servidor_http):
+    rels = [{"type": "official homepage", "url": {"resource": "https://a-ha.com"}},
+            {"type": "wikidata", "url": {"resource": "https://www.wikidata.org/wiki/Q156305"}}]
+    c, _ = montar(servidor_http, grabaciones=[grabacion(fecha="1984")], artista=dict(artista_json(), relations=rels))
+    assert c.datos_del_tema("a-ha", "Take On Me").wikidata == "Q156305"
+    assert any("inc=url-rels" in ruta for ruta, _ in servidor_http.pedidos if "/artist/" in ruta)
+
+
+@pytest.mark.parametrize("rels", [None, [], [{"type": "wikidata", "url": {"resource": "https://www.wikidata.org/wiki/Lexeme:L1"}}],
+                                  [{"type": "wikidata", "url": {"resource": ""}}], [{"type": "wikidata"}],
+                                  [{"type": "wikidata", "url": {"resource": "https://evil.example/wiki/Q1"}}], "no"])
+def test_sin_relacion_wikidata_valida_es_None(servidor_http, rels):
+    artista = artista_json() if rels is None else dict(artista_json(), relations=rels)
+    c, _ = montar(servidor_http, grabaciones=[grabacion(fecha="1984")], artista=artista)
+    assert c.datos_del_tema("a-ha", "Take On Me").wikidata is None
+
+
+def test_las_entradas_viejas_de_cache_no_se_usan(servidor_http):
+    c, _ = montar(servidor_http, grabaciones=[grabacion(fecha="1984")])
+    c._cache.guardar("mb:a ha|take on me|", {"anio": 1, "pais": "XX", "anio_inicio_artista": None, "es_grupo": False,
+                                              "fuente": "viejo"}, 10_000)
+    assert c.datos_del_tema("a-ha", "Take On Me").anio == 1984

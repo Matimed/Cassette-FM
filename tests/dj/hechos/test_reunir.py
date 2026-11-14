@@ -8,7 +8,7 @@ from cassette_fm.dj.hechos.musicbrainz import DatosTema
 from cassette_fm.dj.pedido import Pedido, Tema
 
 CLIMA = Clima(22, "nublado", True)
-TEMA = DatosTema(1984, "NO", 1983, True, "https://musicbrainz.org/artist/x")
+TEMA = DatosTema(1984, "NO", 1983, True, "https://musicbrainz.org/artist/x", "Q156305")
 
 
 def pedido():
@@ -56,7 +56,7 @@ def test_un_cliente_que_falla_no_afecta_al_otro():
 
 
 def test_clientes_none_dan_hechos_vacios():
-    assert FuenteHechos(None, None).reunir(pedido()) == (Hechos(), {"clima": None, "musicbrainz": None})
+    assert FuenteHechos(None, None).reunir(pedido()) == (Hechos(), {"clima": None, "musicbrainz": None, "wikipedia": None})
 
 
 def test_si_un_cliente_se_cuelga_se_sigue_sin_su_dato():
@@ -71,3 +71,64 @@ def test_fuentes_para_el_guion_incluye_la_url_de_musicbrainz():
     assert fuentes["musicbrainz"] == {"fuente": "https://musicbrainz.org/artist/x", "anio": 1984, "pais": "NO",
                                       "anio_inicio_artista": 1983, "es_grupo": True}
     assert fuentes["clima"] == {"temperatura": 22, "cielo": "nublado", "es_de_dia": True}
+
+
+# --- Wikipedia (parte 4) ---
+
+from cassette_fm.dj.hechos.wikipedia import Resumen  # noqa: E402
+
+RESUMEN = Resumen("A-ha es una banda noruega.", "A-ha", "es", "https://es.wikipedia.org/wiki/A-ha")
+
+
+class WikiFalsa:
+    def __init__(self, valor=RESUMEN):
+        self.valor = valor
+        self.llamadas = []
+
+    def resumen(self, wikidata, idiomas):
+        self.llamadas.append((wikidata, list(idiomas)))
+        return self.valor
+
+
+def test_sin_con_wikipedia_no_se_pide_nada():
+    w = WikiFalsa()
+    hechos, fuentes = FuenteHechos(ClimaFalso(), MBFalso(), 2, wikipedia=w).reunir(pedido())
+    assert w.llamadas == [] and hechos.wikipedia is None and fuentes["wikipedia"] is None
+
+
+def test_con_wikipedia_se_pide_despues_de_musicbrainz_y_se_anota_en_las_fuentes():
+    w = WikiFalsa()
+    hechos, fuentes = FuenteHechos(ClimaFalso(), MBFalso(), 2, wikipedia=w).reunir(pedido(), con_wikipedia=True)
+    assert w.llamadas == [("Q156305", ["es", "en"])] and hechos.wikipedia == RESUMEN
+    assert fuentes["wikipedia"] == {"url": RESUMEN.url, "titulo": "A-ha", "idioma": "es"}
+
+
+def test_sin_wikidata_no_hay_resumen():
+    w = WikiFalsa()
+    sin = DatosTema(1984, "NO", 1983, True, "u", None)
+    hechos, fuentes = FuenteHechos(ClimaFalso(), MBFalso(sin), 2, wikipedia=w).reunir(pedido(), con_wikipedia=True)
+    assert w.llamadas == [] and hechos.wikipedia is None and fuentes["wikipedia"] is None
+
+
+def test_idiomas_del_pedido_y_ingles_sin_repetir():
+    w = WikiFalsa()
+    p = pedido()
+    p = p.__class__(**{**p.__dict__, "idioma": "en"})
+    FuenteHechos(None, MBFalso(), 2, wikipedia=w).reunir(p, con_wikipedia=True)
+    assert w.llamadas == [("Q156305", ["en"])]
+
+
+def test_un_cliente_de_wikipedia_roto_no_afecta():
+    w = WikiFalsa()
+    w.resumen = lambda *a: (_ for _ in ()).throw(RuntimeError("boom"))
+    hechos, _ = FuenteHechos(ClimaFalso(), MBFalso(), 2, wikipedia=w).reunir(pedido(), con_wikipedia=True)
+    assert hechos.wikipedia is None and hechos.tema == TEMA
+
+
+def test_una_wikipedia_colgada_no_pasa_del_tope():
+    import time as _t
+    w = WikiFalsa()
+    w.resumen = lambda *a: _t.sleep(5)
+    t0 = _t.monotonic()
+    hechos, _ = FuenteHechos(None, MBFalso(), 0.3, wikipedia=w).reunir(pedido(), con_wikipedia=True)
+    assert _t.monotonic() - t0 < 1.0 and hechos.wikipedia is None
