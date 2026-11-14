@@ -57,14 +57,14 @@ class Servicio:
 
 
 def montar(tmp_path, sintetizador, fonemizar=fon_falso, lexico=None, cola=None, modelos_dir=None, config=None,
-           timeout=10.0, modo=None, probar_llm=None):
+           timeout=10.0, modo=None, probar_llm=None, llm=None, hechos=None):
     s = Servicio()
     s.rutas = RutasDJ(config=tmp_path / "cfg" / "config.toml", estado=tmp_path / "estado", clips=tmp_path / "clips")
     s.config = config or ConfigServicioDJ(modelos_dir=modelos_dir or tmp_path / "sin-modelos")
     s.guiones = RegistroGuiones(s.rutas.guiones)
     s.sint = sintetizador
     s.productor = Productor(s.config, s.rutas, sintetizador, fonemizar, lexico or Lexico(), s.guiones,
-                            azar=random.Random(1))
+                            azar=random.Random(1), modo=modo, llm=llm, hechos=hechos)
     s.cola = cola or Cola(s.productor, trabajadores=1)
     s.srv = crear_servidor(s.cola, sintetizador, "127.0.0.1", 0, s.config.modelos_dir, timeout=timeout,
                            modo=modo, probar_llm=probar_llm)
@@ -399,3 +399,64 @@ def test_post_modo_invalido_400(servicio, cuerpo):
 def test_post_modo_con_json_roto_400(servicio):
     s = servicio(SintetizadorFalso())
     assert json_de(pedir(s, "POST", "/modo", crudo=b"{no es json"))[0] == 400
+
+
+def test_de_punta_a_punta_en_modo_llm_con_servidores_falsos(servicio, servidor_http, llm_falso):
+    from cassette_fm.dj.hechos import FuenteHechos
+    from cassette_fm.dj.hechos.cache import CacheHechos
+    from cassette_fm.dj.hechos.musicbrainz import ClienteMusicBrainz
+    from cassette_fm.dj.hechos.wikipedia import ClienteWikipedia
+    from cassette_fm.dj.llm import ClienteLLM
+    from cassette_fm.dj.modo import ModoDJ
+
+    aha = "7364dea6-0000-4000-8000-000000000001"
+    servidor_http.responder("/ws/2/recording", {"recordings": [{
+        "id": "r1", "title": "Waiting for a Girl Like You", "first-release-date": "1981-09-02",
+        "artist-credit": [{"name": "Foreigner", "artist": {"id": aha, "name": "Foreigner"}}]}]})
+    servidor_http.responder(f"/ws/2/artist/{aha}", {"id": aha, "name": "Foreigner", "type": "Group", "country": "GB",
+                                                    "life-span": {"begin": "1976"},
+                                                    "relations": [{"type": "wikidata", "url": {
+                                                        "resource": "https://www.wikidata.org/wiki/Q156305"}}]})
+    servidor_http.responder("/w", {"entities": {"Q156305": {"sitelinks": {"eswiki": {"title": "Foreigner"}}}}})
+    servidor_http.responder("/es/api/rest_v1/page/summary/Foreigner", {
+        "type": "standard", "title": "Foreigner", "extract": "Foreigner es una banda de rock formada en Nueva York.",
+        "content_urls": {"desktop": {"page": "https://es.wikipedia.org/wiki/Foreigner"}}})
+    llm_falso.respuestas = ["Ahora suena Waiting for a Girl Like You de Foreigner, una banda formada en Nueva York."]
+    cfg = ConfigServicioDJ(contacto="t@example.com", musicbrainz_url=servidor_http.url + "/ws/2",
+                           wikidata_url=servidor_http.url + "/w", wikipedia_url=servidor_http.url + "/{idioma}",
+                           llm_url=llm_falso.url, timeout_hechos_segundos=1.0, llm_timeout_segundos=5.0,
+                           pesos_ingredientes={"estacion": 0.0, "hora": 0.0, "momento": 0.0, "album": 0.0,
+                                               "anterior": 0.0, "clima": 0.0, "dato": 1.0}, ingredientes_max=2)
+    cache = CacheHechos(None)
+    fuente = FuenteHechos(None, ClienteMusicBrainz(cfg, cache, dormir=lambda s: None), 3,
+                          wikipedia=ClienteWikipedia(cfg, cache))
+    modo = ModoDJ()
+    llm = ClienteLLM(cfg)
+    s = servicio(SintetizadorFalso(), config=cfg, modo=modo, probar_llm=llm.disponible, llm=llm, hechos=fuente)
+    assert json_de(pedir(s, "POST", "/modo", {"modo": "llm"})) == (200, {"modo": "llm", "llm": "ok"})
+    assert json_de(pedir(s, "POST", "/intervenciones", pedido_json("llm1")))[0] == 202
+    listo = esperar_estado(s, "llm1", timeout=10)
+    assert listo["estado"] == "listo" and "Nueva York" in listo["texto"] and "dato" in listo["ingredientes"]
+    guion = s.guiones.ultimos(1)[0]
+    assert guion["fuente"] == "llm" and guion["hechos"]["wikipedia"]["url"] == "https://es.wikipedia.org/wiki/Foreigner"
+    assert "Nueva York" in llm_falso.pedidos[0]["messages"][1]["content"]
+    # vuelta a plantillas: ni el LLM ni Wikipedia reciben pedidos nuevos
+    pedidos_llm, pedidos_http = len(llm_falso.pedidos), len(servidor_http.pedidos)
+    assert json_de(pedir(s, "POST", "/modo", {"modo": "plantillas"})) == (200, {"modo": "plantillas"})
+    assert json_de(pedir(s, "POST", "/intervenciones", pedido_json("llm2")))[0] == 202
+    assert esperar_estado(s, "llm2", timeout=10)["estado"] == "listo"
+    assert len(llm_falso.pedidos) == pedidos_llm and s.guiones.ultimos(1)[0]["fuente"] == "plantilla"
+    assert not any("/w?" in r or "summary" in r for r, _ in servidor_http.pedidos[pedidos_http:])
+
+
+def test_en_modo_llm_con_el_llm_caido_igual_hay_frase(servicio, llm_falso):
+    from cassette_fm.dj.llm import ClienteLLM
+    from cassette_fm.dj.modo import ModoDJ
+    llm_falso.codigo = 503
+    llm_falso.cuerpo_crudo = "ocupado"
+    cfg = ConfigServicioDJ(llm_url=llm_falso.url, llm_timeout_segundos=2.0)
+    s = servicio(SintetizadorFalso(), config=cfg, modo=ModoDJ("llm"), llm=ClienteLLM(cfg))
+    assert json_de(pedir(s, "POST", "/intervenciones", pedido_json("llm3")))[0] == 202
+    listo = esperar_estado(s, "llm3", timeout=10)
+    assert listo["estado"] == "listo" and listo["texto"]
+    assert s.guiones.ultimos(1)[0]["fuente"] == "plantilla" and "503" in s.guiones.ultimos(1)[0]["motivo"]

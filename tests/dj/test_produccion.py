@@ -47,10 +47,10 @@ def montaje(tmp_path):
     rutas = RutasDJ(config=tmp_path / "cfg" / "config.toml", estado=tmp_path / "estado", clips=tmp_path / "clips")
     guiones = RegistroGuiones(rutas.guiones)
 
-    def crear(sintetizador=None, lexico=None):
+    def crear(sintetizador=None, lexico=None, config=None, **kw):
         s = sintetizador or SintetizadorFalso()
-        return Productor(ConfigServicioDJ(), rutas, s, fonemizar, lexico or Lexico({"Daddy Yankee": "en-us"}),
-                         guiones, azar=random.Random(1)), s
+        return Productor(config or ConfigServicioDJ(), rutas, s, fonemizar,
+                         lexico or Lexico({"Daddy Yankee": "en-us"}), guiones, azar=random.Random(1), **kw), s
 
     return crear, rutas, guiones
 
@@ -176,7 +176,7 @@ def test_el_guion_anota_los_hechos_y_sus_fuentes(montaje, hacer_pedido):
     from cassette_fm.dj.hechos.musicbrainz import DatosTema
 
     class Fuente:
-        def reunir(self, pedido):
+        def reunir(self, pedido, con_wikipedia=False):
             return (Hechos(Clima(22, "lluvia", True), DatosTema(1984, "NO", 1983, True, "https://mb/x")),
                     {"clima": {"temperatura": 22}, "musicbrainz": {"fuente": "https://mb/x"}})
 
@@ -204,7 +204,7 @@ def test_los_reintentos_por_duracion_no_vuelven_a_pedir_hechos(montaje, hacer_pe
     class Fuente:
         llamadas = 0
 
-        def reunir(self, pedido):
+        def reunir(self, pedido, con_wikipedia=False):
             Fuente.llamadas += 1
             return Hechos(), {"clima": None, "musicbrainz": None}
 
@@ -230,3 +230,201 @@ def test_los_recientes_del_pedido_llegan_al_selector(montaje, hacer_pedido, monk
     productor._config = ConfigServicioDJ(ingredientes_max=2, penalizacion_reciente=0.5)
     productor.producir(hacer_pedido("h4", recientes=["hora", "clima"]))
     assert vistos == [(("hora", "clima"), 2, 0.5)]
+
+
+
+# --- modo llm (parte 4) ---
+
+from cassette_fm.dj.hechos import Hechos as _Hechos  # noqa: E402
+from cassette_fm.dj.hechos.wikipedia import Resumen as _Resumen  # noqa: E402
+from cassette_fm.dj.llm import ErrorLLM  # noqa: E402
+from cassette_fm.dj.modo import ModoDJ  # noqa: E402
+
+BUENA = "Ahora suena Waiting for a Girl Like You de Foreigner para todos ustedes esta noche."
+
+
+class LLMFalso:
+    def __init__(self, *respuestas):
+        self.respuestas = list(respuestas) or [BUENA]
+        self.llamadas = []
+
+    def generar(self, sistema, usuario):
+        self.llamadas.append((sistema, usuario))
+        r = self.respuestas.pop(0) if len(self.respuestas) > 1 else self.respuestas[0]
+        if isinstance(r, Exception):
+            raise r
+        return r
+
+
+class FuenteWiki:
+    def __init__(self, tema=None):
+        self.llamadas = []
+        self.tema = tema
+
+    def reunir(self, pedido, con_wikipedia=False):
+        self.llamadas.append(con_wikipedia)
+        wiki = _Resumen("Foreigner es una banda de rock.", "Foreigner", "es", "https://es.wikipedia.org/wiki/Foreigner") \
+            if con_wikipedia else None
+        return _Hechos(tema=self.tema, wikipedia=wiki), {"clima": None, "musicbrainz": None,
+                                         "wikipedia": {"url": wiki.url, "titulo": wiki.titulo, "idioma": "es"} if wiki else None}
+
+
+def llm_listo(montaje, *respuestas, modo="llm", config=None):
+    crear, rutas, guiones = montaje
+    llm = LLMFalso(*respuestas)
+    fuente = FuenteWiki()
+    productor, sint = crear(config=config, modo=ModoDJ(modo), llm=llm, hechos=fuente)
+    return productor, sint, llm, fuente, guiones
+
+
+def test_en_plantillas_no_se_llama_al_llm_ni_a_wikipedia(montaje, hacer_pedido):
+    productor, _, llm, fuente, guiones = llm_listo(montaje, modo="plantillas")
+    productor.producir(hacer_pedido("m1"))
+    assert llm.llamadas == [] and fuente.llamadas == [False]
+    assert guiones.ultimos(1)[0]["fuente"] == "plantilla" and "motivo" not in guiones.ultimos(1)[0]
+
+
+def test_en_llm_usa_la_frase_del_llm_y_la_anota(montaje, hacer_pedido):
+    productor, sint, llm, fuente, guiones = llm_listo(montaje)
+    r = productor.producir(hacer_pedido("m2"))
+    assert fuente.llamadas == [True] and len(llm.llamadas) == 1
+    assert r.texto == BUENA and "cancion" in r.ingredientes
+    (g,) = guiones.ultimos(5)
+    assert g["fuente"] == "llm" and g["crudo"] == BUENA and g["modelo"] == "gemma3:4b" and g["intento"] == 1
+    assert g["sistema"] and "Waiting for a Girl Like You" in g["usuario"] and "descartado" not in g
+    assert g["hechos"]["wikipedia"]["url"] == "https://es.wikipedia.org/wiki/Foreigner"
+    assert "{es:Waiting for a Girl Like You}" in g["marcado"] and "{es:Foreigner}" in g["marcado"]
+
+
+def test_el_texto_del_llm_pasa_por_numeros_y_marcado(montaje, hacer_pedido):
+    from cassette_fm.dj.hechos.musicbrainz import DatosTema
+    crear, _, guiones = montaje
+    llm = LLMFalso("Ahora suena Waiting for a Girl Like You de Foreigner que salió en 1984 para todos ustedes.")
+    cfg = ConfigServicioDJ(pesos_ingredientes={"estacion": 0.0, "hora": 0.0, "momento": 0.0, "album": 0.0,
+                                               "anterior": 0.0, "clima": 0.0, "dato": 1.0})
+    productor, _ = crear(config=cfg, modo=ModoDJ("llm"), llm=llm,
+                         hechos=FuenteWiki(DatosTema(1984, "GB", 1976, True, "u", "Q1")))
+    r = productor.producir(hacer_pedido("m3"))
+    assert "mil novecientos ochenta y cuatro" in r.texto and "1984" not in r.texto
+    (g,) = guiones.ultimos(5)
+    assert "1984" in g["crudo"] and "{es:Foreigner}" in g["marcado"]
+
+
+def test_un_numero_inventado_se_descarta_y_se_anota(montaje, hacer_pedido):
+    productor, _, _, _, guiones = llm_listo(
+        montaje, "Ahora suena Waiting for a Girl Like You de Foreigner con 22 grados afuera esta noche.")
+    productor._config = ConfigServicioDJ(pesos_ingredientes={k: 0.0 for k in ("estacion", "hora", "momento", "album",
+                                                                                "anterior", "clima", "dato")})
+    productor.producir(hacer_pedido("m3b"))
+    assert any(x.get("motivo", "").startswith("número") for x in guiones.ultimos(5))
+
+
+def test_si_la_frase_no_pasa_la_verificacion_se_pide_otra_y_se_anota_la_descartada(montaje, hacer_pedido):
+    inventada = "Ahora suena Waiting for a Girl Like You de Foreigner, como Michael Jackson en esa época dorada."
+    productor, _, llm, _, guiones = llm_listo(montaje, inventada, BUENA)
+    r = productor.producir(hacer_pedido("m4"))
+    assert len(llm.llamadas) == 2 and r.texto == BUENA
+    primero, segundo = guiones.ultimos(5)
+    assert primero["descartado"] is True and "nombre propio" in primero["motivo"] and primero["intento"] == 1
+    assert "descartado" not in segundo and segundo["intento"] == 2
+
+
+def test_agotados_los_intentos_sale_la_plantilla_con_el_motivo(montaje, hacer_pedido):
+    productor, _, llm, _, guiones = llm_listo(montaje, "Hola.", "Hola de nuevo.")
+    r = productor.producir(hacer_pedido("m5"))
+    assert len(llm.llamadas) == 2 and r.texto
+    *descartados, ultimo = guiones.ultimos(5)
+    assert [d["fuente"] for d in descartados] == ["llm", "llm"] and all(d["descartado"] for d in descartados)
+    assert ultimo["fuente"] == "plantilla" and ultimo["motivo"] and "descartado" not in ultimo
+
+
+def test_error_del_llm_cae_a_plantillas_y_avisa_una_vez(montaje, hacer_pedido, caplog):
+    import logging
+    productor, _, llm, _, guiones = llm_listo(montaje, ErrorLLM("el LLM no responde en x"))
+    with caplog.at_level(logging.WARNING, logger="cassette_fm"):
+        productor.producir(hacer_pedido("m6"))
+        productor.producir(hacer_pedido("m7"))
+    assert len([r for r in caplog.records if r.levelno == logging.WARNING and "LLM" in r.getMessage()]) == 1
+    ultimo = guiones.ultimos(1)[0]
+    assert ultimo["fuente"] == "plantilla" and "no responde" in ultimo["motivo"]
+
+
+def test_el_aviso_se_rearma_despues_de_un_exito(montaje, hacer_pedido, caplog):
+    import logging
+    productor, _, llm, _, _ = llm_listo(montaje, ErrorLLM("el LLM caído"), BUENA, ErrorLLM("el LLM otra vez"))
+    llm.respuestas = [ErrorLLM("el LLM caído"), BUENA, ErrorLLM("el LLM de nuevo")]
+    with caplog.at_level(logging.WARNING, logger="cassette_fm"):
+        productor.producir(hacer_pedido("m8"))       # falla: aviso 1
+        productor.producir(hacer_pedido("m9"))       # éxito
+        productor.producir(hacer_pedido("m10"))      # falla: aviso 2
+    assert len([r for r in caplog.records if r.levelno == logging.WARNING and "LLM" in r.getMessage()]) == 2
+
+
+def test_llm_pedido_sin_cliente_usa_plantillas(montaje, hacer_pedido):
+    crear, _, guiones = montaje
+    productor, _ = crear(modo=ModoDJ("llm"), llm=None, hechos=FuenteWiki())
+    productor.producir(hacer_pedido("m11"))
+    g = guiones.ultimos(1)[0]
+    assert g["fuente"] == "plantilla" and "LLM" in g["motivo"]
+
+
+CORTA = "Suena Waiting for a Girl Like You de Foreigner."
+
+
+def test_un_clip_largo_del_llm_se_reintenta_mas_corto(montaje, hacer_pedido):
+    crear, _, guiones = montaje
+    llm = LLMFalso(BUENA, CORTA)
+    productor, _ = crear(sintetizador=SintetizadorFalso(duraciones=(30.0, 4.0)), modo=ModoDJ("llm"), llm=llm,
+                         hechos=FuenteWiki())
+    r = productor.producir(hacer_pedido("m12", duracion_maxima_segundos=10.0))
+    assert r.duracion == 4.0 and r.texto == CORTA
+    g = guiones.ultimos(5)
+    assert [x["fuente"] for x in g] == ["llm", "llm"] and g[0]["descartado"] and g[0]["motivo"].startswith("el clip dura")
+    assert llm.llamadas[1][0] != llm.llamadas[0][0]            # el segundo pedido pide menos palabras
+
+
+def test_si_el_clip_del_llm_sigue_largo_cae_a_plantillas(montaje, hacer_pedido):
+    crear, _, guiones = montaje
+    productor, _ = crear(sintetizador=SintetizadorFalso(duraciones=(30.0, 30.0, 4.0)), modo=ModoDJ("llm"),
+                         llm=LLMFalso(BUENA, CORTA), hechos=FuenteWiki())
+    r = productor.producir(hacer_pedido("m12b", duracion_maxima_segundos=10.0))
+    assert r.duracion == 4.0
+    g = guiones.ultimos(5)
+    assert [x["fuente"] for x in g] == ["llm", "llm", "plantilla"]
+    assert g[0]["descartado"] and g[1]["descartado"] and g[2]["motivo"].startswith("el clip dura")
+
+
+def test_el_modo_se_lee_una_sola_vez_por_pedido(montaje, hacer_pedido):
+    modo = ModoDJ("llm")
+    crear, _, guiones = montaje
+    llm = LLMFalso(BUENA)
+    original = llm.generar
+
+    def cambia_el_modo(sistema, usuario):
+        modo.poner("plantillas")                     # a mitad del pedido
+        return original(sistema, usuario)
+
+    llm.generar = cambia_el_modo
+    productor, _ = crear(modo=modo, llm=llm, hechos=FuenteWiki())
+    productor.producir(hacer_pedido("m13"))
+    assert guiones.ultimos(1)[0]["fuente"] == "llm"          # terminó como empezó
+    productor.producir(hacer_pedido("m14"))                  # el siguiente ya usa el modo nuevo
+    assert guiones.ultimos(1)[0]["fuente"] == "plantilla" and len(llm.llamadas) == 1
+
+
+def test_los_ingredientes_reales_se_devuelven(montaje, hacer_pedido):
+    productor, _, llm, _, _ = llm_listo(montaje)
+    productor._config = ConfigServicioDJ(pesos_ingredientes={"estacion": 1.0, "hora": 1.0, "momento": 0.0,
+                                                              "album": 0.0, "anterior": 0.0, "clima": 0.0, "dato": 0.0},
+                                         ingredientes_max=3)
+    r = productor.producir(hacer_pedido("m15"))
+    sistema, usuario = llm.llamadas[0]
+    assert set(r.ingredientes) == {"cancion", "estacion", "hora"}
+    assert "Estación" in usuario and "Hora" in usuario and "Álbum" not in usuario
+
+
+def test_los_guiones_descartados_no_entran_en_voz_prueba(montaje, hacer_pedido):
+    productor, _, _, _, guiones = llm_listo(montaje, "Hola.", "Hola otra vez.")
+    productor.producir(hacer_pedido("m16"))
+    validos = [g for g in guiones.ultimos(10) if not g.get("descartado") and g.get("marcado") and g.get("texto")]
+    assert len(validos) == 1 and validos[0]["fuente"] == "plantilla"
