@@ -5,7 +5,7 @@ import json
 import logging
 
 from cassette_fm.agenda import EPOCA, secuencia
-from cassette_fm.biblioteca import carpetas_de_estaciones, escanear, escanear_carpetas, leer_pista
+from cassette_fm.biblioteca import Pista, carpetas_de_estaciones, escanear, escanear_carpetas, leer_pista
 
 
 def test_leer_pista_con_tags(tmp_path, crear_mp3):
@@ -246,3 +246,9 @@ def test_una_sola_cache_para_todas(tmp_path, crear_mp3):
     cache = tmp_path / "cache.json"
     escanear_carpetas([("A", tmp_path / "A"), ("B", tmp_path / "B")], cache)
     assert set(json.loads(cache.read_text())) == {str(a), str(b)}
+
+
+def test_la_clave_de_una_pista_de_spotify_es_su_uri():
+    p = Pista(ruta=None, duracion=185.877, titulo="Elvis Presley - Can't Help Falling in Love", fuente="spotify",
+              artista="Elvis Presley", cancion="Can't Help Falling in Love", uri="spotify:track:44AyOl4qVkzS48vBsbNXaC")
+    assert p.clave == "spotify:track:44AyOl4qVkzS48vBsbNXaC"

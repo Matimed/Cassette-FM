@@ -69,66 +69,6 @@ def hacer_pedido():
 
 
 @pytest.fixture
-def servidor_http():
-    """Servidor HTTP de pruebas: `s.responder(prefijo, cuerpo, codigo=200, tipo="application/json", demora=0)`
-    (cuerpo: str/bytes/objeto JSON/callable(ruta_con_query) -> lo mismo o (código, cuerpo)). `s.pedidos`: [(ruta_con_query, headers)]."""
-    import json
-    import threading
-    import time
-    from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
-
-    class S:
-        def __init__(self):
-            self.reglas = []
-            self.pedidos = []
-            self.lock = threading.Lock()
-
-        def responder(self, prefijo, cuerpo, codigo=200, tipo="application/json", demora=0.0):
-            self.reglas.append((prefijo, cuerpo, codigo, tipo, demora))
-
-    s = S()
-
-    class H(BaseHTTPRequestHandler):
-        def log_message(self, *a):
-            pass
-
-        def do_GET(self):
-            with s.lock:
-                s.pedidos.append((self.path, dict(self.headers)))
-            for prefijo, cuerpo, codigo, tipo, demora in s.reglas:
-                if self.path.startswith(prefijo):
-                    if demora:
-                        time.sleep(demora)
-                    if callable(cuerpo):
-                        cuerpo = cuerpo(self.path)
-                        if isinstance(cuerpo, tuple):        # (código, cuerpo): respuestas que cambian
-                            codigo, cuerpo = cuerpo
-                    if not isinstance(cuerpo, (str, bytes)):
-                        cuerpo = json.dumps(cuerpo)
-                    datos = cuerpo.encode() if isinstance(cuerpo, str) else cuerpo
-                    try:
-                        self.send_response(codigo)
-                        self.send_header("Content-Type", tipo)
-                        self.send_header("Content-Length", str(len(datos)))
-                        self.end_headers()
-                        self.wfile.write(datos)
-                    except OSError:
-                        pass
-                    return
-            self.send_response(404)
-            self.send_header("Content-Length", "0")
-            self.end_headers()
-
-    srv = ThreadingHTTPServer(("127.0.0.1", 0), H)
-    srv.daemon_threads = True
-    threading.Thread(target=lambda: srv.serve_forever(poll_interval=0.02), daemon=True).start()
-    s.url = f"http://127.0.0.1:{srv.server_address[1]}"
-    yield s
-    srv.shutdown()
-    srv.server_close()
-
-
-@pytest.fixture
 def llm_falso():
     """Servidor que imita la API de OpenAI de Ollama: `POST /v1/chat/completions` y `GET /v1/models`.
 

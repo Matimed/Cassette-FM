@@ -127,3 +127,75 @@ def servicio_dj(tmp_path):
         s.servidor.shutdown()
         s.servidor.server_close()
         s.cola.detener(2)
+
+
+@pytest.fixture
+def servidor_http():
+    """Servidor HTTP de pruebas: `s.responder(prefijo, cuerpo, codigo=200, tipo="application/json", demora=0)`
+    (cuerpo: str/bytes/objeto JSON/callable(ruta_con_query) -> lo mismo o (código, cuerpo)). `s.pedidos`: [(ruta_con_query, headers)];
+    `s.cuerpos`: [(ruta, cuerpo)] de los POST."""
+    import json
+    import threading
+    import time
+    from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+
+    class S:
+        def __init__(self):
+            self.reglas = []
+            self.pedidos = []
+            self.cuerpos = []          # (ruta, cuerpo) de cada POST
+            self.lock = threading.Lock()
+
+        def responder(self, prefijo, cuerpo, codigo=200, tipo="application/json", demora=0.0, encabezados=None):
+            self.reglas.append((prefijo, cuerpo, codigo, tipo, demora, encabezados or {}))
+
+    s = S()
+
+    class H(BaseHTTPRequestHandler):
+        def log_message(self, *a):
+            pass
+
+        def do_POST(self):
+            largo = int(self.headers.get("Content-Length") or 0)
+            datos = self.rfile.read(largo) if largo else b""
+            with s.lock:
+                s.cuerpos.append((self.path, datos))
+            self.do_GET()
+
+        def do_GET(self):
+            with s.lock:
+                s.pedidos.append((self.path, dict(self.headers)))
+            for prefijo, cuerpo, codigo, tipo, demora, *resto in s.reglas:   # hay tests que insertan reglas sin encabezados
+                encabezados = resto[0] if resto else {}
+                if self.path.startswith(prefijo):
+                    if demora:
+                        time.sleep(demora)
+                    if callable(cuerpo):
+                        cuerpo = cuerpo(self.path)
+                        if isinstance(cuerpo, tuple):        # (código, cuerpo): respuestas que cambian
+                            codigo, cuerpo = cuerpo
+                    if not isinstance(cuerpo, (str, bytes)):
+                        cuerpo = json.dumps(cuerpo)
+                    datos = cuerpo.encode() if isinstance(cuerpo, str) else cuerpo
+                    try:
+                        self.send_response(codigo)
+                        self.send_header("Content-Type", tipo)
+                        self.send_header("Content-Length", str(len(datos)))
+                        for clave, valor in encabezados.items():
+                            self.send_header(clave, valor)
+                        self.end_headers()
+                        self.wfile.write(datos)
+                    except OSError:
+                        pass
+                    return
+            self.send_response(404)
+            self.send_header("Content-Length", "0")
+            self.end_headers()
+
+    srv = ThreadingHTTPServer(("127.0.0.1", 0), H)
+    srv.daemon_threads = True
+    threading.Thread(target=lambda: srv.serve_forever(poll_interval=0.02), daemon=True).start()
+    s.url = f"http://127.0.0.1:{srv.server_address[1]}"
+    yield s
+    srv.shutdown()
+    srv.server_close()

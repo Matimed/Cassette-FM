@@ -15,7 +15,7 @@ EXTENSIONES = frozenset({".mp3", ".flac", ".ogg", ".m4a"})
 
 @dataclass(frozen=True)
 class Pista:
-    ruta: Path
+    ruta: Path | None          # None en las de Spotify
     duracion: float
     titulo: str
     fuente: str = "local"
@@ -23,11 +23,13 @@ class Pista:
     cancion: str | None = None  # solo el título del tag; `titulo` es "Artista - Título"
     album: str | None = None
     isrc: str | None = None
+    uri: str | None = None     # spotify:track:… (solo las de Spotify)
 
     @property
     def clave(self) -> str:
-        """Identidad de la pista en la agenda, el planificador y el locutor (para las locales, su ruta)."""
-        return str(self.ruta)
+        """Identidad de la pista en la agenda, el planificador y el locutor: la URI en las de Spotify, la ruta en
+        las locales."""
+        return self.uri if self.fuente == "spotify" and self.uri else str(self.ruta)
 
 
 @dataclass(frozen=True)
