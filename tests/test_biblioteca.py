@@ -1,7 +1,11 @@
 import os
 
 from cassette_fm import biblioteca
-from cassette_fm.biblioteca import carpetas_de_estaciones, escanear, leer_pista
+import json
+import logging
+
+from cassette_fm.agenda import EPOCA, secuencia
+from cassette_fm.biblioteca import carpetas_de_estaciones, escanear, escanear_carpetas, leer_pista
 
 
 def test_leer_pista_con_tags(tmp_path, crear_mp3):
@@ -200,3 +204,45 @@ def test_carpetas_de_estaciones(tmp_path, crear_mp3):
     (tmp_path / "solo-texto" / "notas.txt").write_text("x")
     assert [c.name for c in carpetas_de_estaciones(tmp_path)] == ["Árbol", "b"]
     assert carpetas_de_estaciones(tmp_path / "no-existe") == []
+
+
+def secuencia_nombres(estacion):
+    s = secuencia(estacion, EPOCA + 12345)
+    return [next(s)[0].titulo for _ in range(10)]
+
+
+def test_escanear_carpetas_es_igual_que_la_raiz(tmp_path, crear_mp3):
+    crear_mp3(tmp_path / "A" / "1.mp3", titulo="uno")
+    crear_mp3(tmp_path / "A" / "2.mp3", titulo="dos")
+    crear_mp3(tmp_path / "A" / "3.mp3", titulo="tres")
+    crear_mp3(tmp_path / "B" / "4.mp3")
+    viejo = escanear(tmp_path)
+    nuevo = escanear_carpetas([("A", tmp_path / "A"), ("B", tmp_path / "B")])
+    assert nuevo == viejo                      # mismas pistas, mismo orden: la agenda no cambia
+    assert [e.fuente for e in nuevo] == ["carpeta", "carpeta"]
+    assert [secuencia_nombres(e) for e in nuevo] == [secuencia_nombres(e) for e in viejo]
+
+
+def test_respeta_el_orden_y_permite_carpetas_fuera_de_la_raiz(tmp_path, crear_mp3):
+    crear_mp3(tmp_path / "x" / "a.mp3")
+    crear_mp3(tmp_path / "otra" / "y" / "b.mp3")
+    estaciones = escanear_carpetas([("Zeta", tmp_path / "x"), ("Alfa", tmp_path / "otra" / "y")])
+    assert [e.nombre for e in estaciones] == ["Zeta", "Alfa"]
+
+
+def test_carpeta_inexistente_o_vacia_se_omite_y_avisa(tmp_path, crear_mp3, caplog):
+    crear_mp3(tmp_path / "buena" / "a.mp3")
+    (tmp_path / "vacia").mkdir()
+    with caplog.at_level(logging.WARNING, logger="cassette_fm"):
+        estaciones = escanear_carpetas([("Buena", tmp_path / "buena"), ("Fantasma", tmp_path / "no-existe"),
+                                        ("Vacía", tmp_path / "vacia")])
+    assert [e.nombre for e in estaciones] == ["Buena"]
+    assert "Fantasma" in caplog.text and "Vacía" in caplog.text
+
+
+def test_una_sola_cache_para_todas(tmp_path, crear_mp3):
+    a = crear_mp3(tmp_path / "A" / "a.mp3")
+    b = crear_mp3(tmp_path / "B" / "b.mp3")
+    cache = tmp_path / "cache.json"
+    escanear_carpetas([("A", tmp_path / "A"), ("B", tmp_path / "B")], cache)
+    assert set(json.loads(cache.read_text())) == {str(a), str(b)}

@@ -2,6 +2,7 @@ import json
 import logging
 import os
 import unicodedata
+from collections.abc import Sequence
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -33,6 +34,7 @@ class Pista:
 class Estacion:
     nombre: str
     pistas: tuple[Pista, ...]
+    fuente: str = "carpeta"   # "carpeta" o "spotify": define qué reproductor la hace sonar
 
 
 def _tag(tags, clave: str) -> str | None:
@@ -145,15 +147,26 @@ def carpetas_de_estaciones(raiz: Path) -> list[Path]:
     return sorted(elegidas, key=lambda c: clave_orden(c.name))
 
 
-def escanear(raiz: Path, cache: Path | None = None) -> list[Estacion]:
+def escanear_carpetas(pares: Sequence[tuple[str, Path]], cache: Path | None = None) -> list[Estacion]:
+    """Una estación por (nombre, carpeta), en el orden recibido; una carpeta ilegible o sin música se omite."""
     previa = _cargar_cache(cache)
     nueva: dict = {}
     estaciones = []
-    for carpeta in carpetas_de_estaciones(raiz):
+    for nombre, carpeta in pares:
+        carpeta = Path(carpeta)
+        if not carpeta.is_dir():
+            _log.warning("la emisora %r: no se puede leer %s", nombre, carpeta)
+            continue
         pistas = [p for r in _archivos_de_audio(carpeta)
                   if (p := _pista_con_cache(r, previa, nueva)) is not None]
-        if pistas:
-            pistas.sort(key=lambda p: p.clave)
-            estaciones.append(Estacion(carpeta.name, tuple(pistas)))
+        if not pistas:
+            _log.warning("la emisora %r no tiene música en %s", nombre, carpeta)
+            continue
+        pistas.sort(key=lambda p: p.clave)
+        estaciones.append(Estacion(nombre, tuple(pistas)))
     _guardar_cache(cache, nueva)
     return estaciones
+
+
+def escanear(raiz: Path, cache: Path | None = None) -> list[Estacion]:
+    return escanear_carpetas([(c.name, c) for c in carpetas_de_estaciones(raiz)], cache)
