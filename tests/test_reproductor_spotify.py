@@ -201,3 +201,147 @@ def test_si_se_corta_soloist_y_vuelve_sigue():
     soloist.conectado = True
     tempo.disparar()
     assert r.eventos["fallas"] == []
+
+
+# --- volumen, rampas, desfase y control de la cuenta (tarea 5) ---
+
+import time as _time
+
+from cassette_fm.agenda import transiciones
+
+
+def armar_vol(ajuste_db=0.0, **kw):
+    subidas = []
+    r, control, soloist, reloj, tempo = armar(**kw)
+    r._ganancia = 10 ** (ajuste_db / 60)
+    r._subir_stream = subidas.append
+    return r, soloist, subidas
+
+
+def volumenes(soloist):
+    return [c["volume"] for n, c in soloist.comandos if n == "set_volume"]
+
+
+def test_volumen_y_atenuar_sin_rampa():
+    r, soloist, _ = armar_vol()
+    r.volumen(80)
+    r.atenuar(0.6)
+    assert volumenes(soloist) == [80, 48]
+
+
+def test_el_ajuste_en_db_sigue_la_curva_cubica():
+    r, soloist, _ = armar_vol(ajuste_db=6)
+    r.volumen(50)
+    assert volumenes(soloist) == [63]
+
+
+def test_pasarse_de_100_sube_el_stream_de_pipewire_y_despues_lo_vuelve_a_100():
+    r, soloist, subidas = armar_vol(ajuste_db=6)
+    r.volumen(90)
+    assert volumenes(soloist) == [100] and subidas == [113]
+    r.volumen(50)
+    assert volumenes(soloist)[-1] == 63 and subidas == [113, 100]
+    r.volumen(40)
+    assert subidas == [113, 100]               # ya estaba en 100: no se repite
+
+
+def test_rampa_llega_al_destino_pasando_por_el_medio():
+    r, soloist, _ = armar_vol()
+    r.volumen(80)
+    r.atenuar(0.5, 0.3)
+    _time.sleep(0.6)
+    v = volumenes(soloist)
+    assert v[-1] == 40 and any(40 < x < 80 for x in v)
+
+
+def test_una_rampa_nueva_reemplaza_a_la_anterior():
+    r, soloist, _ = armar_vol()
+    r.volumen(80)
+    r.atenuar(0.5, 1.0)
+    _time.sleep(0.2)
+    r.atenuar(1.0, 0.2)
+    _time.sleep(1.2)
+    assert volumenes(soloist)[-1] == 80
+
+
+def proximo(e, t):
+    return next(transiciones(e, t))
+
+
+def sonando(r, control):
+    r.manejar_evento(cambio(control.llamadas[-1][0][0]))
+    r.manejar_evento(SONANDO)
+
+
+def test_desfase_grande_resintoniza_en_el_borde_y_chico_no():
+    for atraso, resintoniza in ((5.0, True), (2.0, False)):
+        r, control, _, reloj, _ = armar()
+        e = estacion()
+        r.sintonizar(e)
+        sonando(r, control)
+        pista, inicio = proximo(e, reloj())
+        reloj.t = inicio + atraso
+        r.manejar_evento(cambio(pista.uri))
+        assert (len(control.llamadas) == 2) is resintoniza
+        assert r.eventos["sonar"] == 1           # sin estática ni al_sonar de nuevo
+
+
+def test_un_tema_ajeno_no_resintoniza_y_al_volver_la_agenda_si():
+    r, control, _, reloj, _ = armar()
+    e = estacion()
+    r.sintonizar(e)
+    sonando(r, control)
+    reloj.t += 400
+    r.manejar_evento(cambio("spotify:track:ajeno0000000000000000", "Encolado"))
+    assert len(control.llamadas) == 1
+    pista, _ = proximo(e, reloj())
+    r.manejar_evento(cambio(pista.uri))
+    assert len(control.llamadas) == 2
+
+
+def test_se_vuelve_a_mandar_la_lista_antes_de_que_se_acabe():
+    r, control, _, reloj, _ = armar(uris=12)
+    e = estacion()
+    r.sintonizar(e)
+    sonando(r, control)                       # 1.º de 12: quedan 11 por delante
+    pista, inicio = proximo(e, reloj())
+    reloj.t = inicio + 0.1
+    r.manejar_evento(cambio(pista.uri))       # 2.º: quedan 10
+    assert len(control.llamadas) == 1
+    pista, inicio = proximo(e, reloj())
+    reloj.t = inicio + 0.1
+    r.manejar_evento(cambio(pista.uri))       # 3.º: quedan 9 → se manda la lista de nuevo
+    assert len(control.llamadas) == 2
+
+
+def test_otro_dispositivo_toma_spotify():
+    r, control, *_ = armar()
+    r.sintonizar(estacion())
+    r.manejar_evento({"type": "device_changed", "is_active": False, "device_name": "cassette-fm"})
+    assert r.eventos["fallas"] == []            # todavía no había tomado el control
+    r.manejar_evento({"type": "device_changed", "is_active": True, "device_name": "cassette-fm"})
+    sonando(r, control)
+    r.manejar_evento({"type": "device_changed", "is_active": False, "device_name": "cassette-fm"})
+    assert r.eventos["fallas"] == [("Sing", "Spotify se está escuchando en otro dispositivo")]
+
+
+def test_despues_de_detener_perder_el_control_no_falla():
+    r, control, *_ = armar()
+    r.sintonizar(estacion())
+    r.manejar_evento({"type": "device_changed", "is_active": True, "device_name": "cassette-fm"})
+    r.detener()
+    r.manejar_evento({"type": "device_changed", "is_active": False, "device_name": "cassette-fm"})
+    assert r.eventos["fallas"] == []
+
+
+def test_la_resintonia_no_avisa_dos_veces_el_mismo_tema():
+    r, control, _, reloj, _ = armar()
+    e = estacion()
+    r.sintonizar(e)
+    sonando(r, control)
+    pista, inicio = proximo(e, reloj())
+    reloj.t = inicio + 5
+    r.manejar_evento(cambio(pista.uri))           # desfase de 5 s → se re-sintoniza
+    assert len(control.llamadas) == 2
+    r.manejar_evento(cambio(control.llamadas[-1][0][0]))   # Spotify vuelve a empezar ese mismo tema
+    assert [c for c, _ in r.eventos["cambios"]].count(pista.uri) == 1
