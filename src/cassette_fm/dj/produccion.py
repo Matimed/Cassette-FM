@@ -24,7 +24,8 @@ _ID = re.compile(r"[A-Za-z0-9_-]{1,64}")
 _log = logging.getLogger("cassette_fm")
 INTENTOS = 3
 _TIEMPO_MINIMO_LLM = 5.0     # si quedan menos segundos que esto, ni se le pregunta al LLM
-_PALABRAS_POR_SEGUNDO = 3     # lo que dice la voz por segundo: 45 palabras en un clip de 15 s
+_PALABRAS_POR_SEGUNDO = 3     # lo que dice una voz sin clips medidos: 45 palabras en un clip de 15 s
+_GUIONES_PARA_RITMO = 500     # cuántos guiones viejos se miran al arrancar para medir cada voz
 
 
 @dataclass(frozen=True)
@@ -58,6 +59,29 @@ class Productor:
         self._llm_avisado = False
         self._reloj = reloj
         self._zona = ZoneInfo(config.zona_horaria)
+        self._ritmos: dict[str, float] = {}          # palabras por segundo de cada voz, medidas en sus clips
+        for g in guiones.ultimos(_GUIONES_PARA_RITMO):
+            self._medir(g.get("voz"), g.get("texto"), g.get("duracion"))
+
+    def _medir(self, voz, texto, duracion) -> None:
+        if not isinstance(voz, str) or not isinstance(texto, str) or not isinstance(duracion, (int, float)):
+            return
+        palabras = len(texto.split())
+        if palabras == 0 or duracion <= 0:
+            return
+        medido = palabras / duracion
+        previo = self._ritmos.get(voz)
+        self._ritmos[voz] = medido if previo is None else previo * 0.7 + medido * 0.3
+
+    def _palabras_para(self, pedido: Pedido) -> int:
+        """Cuántas palabras entran en la duración máxima con lo que de verdad habla esa voz (con 5 % de margen)."""
+        maxima = pedido.duracion_maxima_segundos
+        if not maxima:
+            return self._config.palabras_maximas
+        ritmo = self._ritmos.get(pedido.voz)
+        if ritmo is None:
+            return int(maxima * _PALABRAS_POR_SEGUNDO)
+        return max(15, int(maxima * ritmo * 0.95))
 
     def producir(self, pedido: Pedido) -> Resultado:
         if not _ID.fullmatch(pedido.id):
@@ -99,7 +123,7 @@ class Productor:
         """Intenta con el LLM; devuelve el Resultado o el motivo por el que hay que usar plantillas."""
         c = self._config
         maxima = pedido.duracion_maxima_segundos
-        palabras = int(maxima * _PALABRAS_POR_SEGUNDO) if maxima else c.palabras_maximas
+        palabras = self._palabras_para(pedido)
         disponibles = ingredientes_disponibles(pedido, hechos)
         if hechos.wikipedia is not None:
             disponibles = disponibles | {"dato"}
@@ -156,6 +180,7 @@ class Productor:
             prep = preparar(marcado, pedido.lang, self._fonemizar)
             duracion = self._sintetizador.sintetizar(prep.fonemas, pedido.voz, pedido.lang, ruta,
                                                    velocidad=pedido.velocidad, texto=texto_para_piper(prep.marcado))
+            self._medir(pedido.voz, prep.texto, duracion)
             guion.update(texto=prep.texto, marcado=prep.marcado, fonemas=prep.fonemas, duracion=duracion)
             if maxima is None or duracion <= maxima:
                 self._guiones.anotar(**guion, audio=str(ruta))
@@ -179,6 +204,7 @@ class Productor:
             prep = preparar(redaccion.marcado, pedido.lang, self._fonemizar)
             duracion = self._sintetizador.sintetizar(prep.fonemas, pedido.voz, pedido.lang, ruta,
                                                    velocidad=pedido.velocidad, texto=texto_para_piper(prep.marcado))
+            self._medir(pedido.voz, prep.texto, duracion)
             guion = dict(self._base(pedido), ingredientes=list(redaccion.ingredientes), texto=prep.texto,
                          marcado=prep.marcado, fonemas=prep.fonemas, duracion=duracion)
             if fuentes is not None:

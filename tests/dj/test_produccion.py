@@ -324,7 +324,7 @@ def test_el_tope_de_palabras_del_llm_sale_de_la_duracion_maxima_del_pedido(monta
                                                   "anterior": 1.0, "clima": 1.0, "dato": 1.0}, ingredientes_max=8)
     productor, _, _, _, guiones = llm_listo(montaje, config=muchos)
     productor.producir(hacer_pedido("m3", duracion_maxima_segundos=25))
-    productor.producir(hacer_pedido("m4", duracion_maxima_segundos=15))
+    productor.producir(hacer_pedido("m4", duracion_maxima_segundos=15, voz="af_heart"))   # voz sin clips medidos
     largo, corto = guiones.ultimos(5)[-2:]
     assert "entre 37 y 75 palabras" in largo["sistema"]
     assert "entre 22 y 45 palabras" in corto["sistema"]
@@ -539,3 +539,30 @@ def test_una_oracion_con_un_dato_inventado_se_saca_y_la_frase_se_usa(montaje, ha
     assert r.texto.startswith("Ahora suena Waiting for a Girl Like You de Foreigner.")
     g = guiones.ultimos(1)[0]
     assert g["fuente"] == "llm" and "descartado" not in g and g["recortado"].startswith("número")
+
+
+_MUCHOS = ConfigServicioDJ(pesos_ingredientes={"estacion": 1.0, "hora": 1.0, "momento": 1.0, "album": 1.0,
+                                               "anterior": 1.0, "clima": 1.0, "dato": 1.0}, ingredientes_max=8)
+
+
+def test_el_tope_de_palabras_usa_lo_que_de_verdad_habla_cada_voz(montaje, hacer_pedido):
+    crear, _, guiones = montaje
+    guiones.anotar(voz="em_santa", texto=" ".join(["palabra"] * 40), duracion=20.0)    # voz lenta: 2 por segundo
+    productor, _ = crear(config=_MUCHOS, modo=ModoDJ("llm"), llm=LLMFalso(), hechos=FuenteWiki(), reloj=RelojFalso())
+    productor.producir(hacer_pedido("v1", duracion_maxima_segundos=25))
+    productor.producir(hacer_pedido("v2", duracion_maxima_segundos=25, voz="af_heart"))
+    lenta, otra = [g for g in guiones.ultimos(10) if g.get("fuente") == "llm"]
+    assert "y 47 palabras" in lenta["sistema"]              # 25 s × 2 palabras/s × 0,95
+    assert "y 75 palabras" in otra["sistema"]               # sin historial: 3 palabras por segundo
+
+
+def test_la_velocidad_de_la_voz_se_aprende_con_cada_clip(montaje, hacer_pedido):
+    crear, _, guiones = montaje
+    sint = SintetizadorFalso(duraciones=(60.0, 5.0))       # el primer clip sale larguísimo: la voz es lenta
+    productor, _ = crear(sintetizador=sint, config=_MUCHOS, modo=ModoDJ("llm"), llm=LLMFalso(),
+                         hechos=FuenteWiki(), reloj=RelojFalso())
+    productor.producir(hacer_pedido("a1"))
+    productor.producir(hacer_pedido("a2", duracion_maxima_segundos=25))
+    ultimo = [g for g in guiones.ultimos(10) if g.get("fuente") == "llm"][-1]
+    tope = int(ultimo["sistema"].split(" palabras")[0].split()[-1])
+    assert tope < 40
