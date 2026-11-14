@@ -61,7 +61,7 @@ class RadioFalsa:
 @pytest.fixture
 def servidor():
     radio = RadioFalsa()
-    srv = crear_servidor(radio, "127.0.0.1", 0, raiz=Path("/home/x/Música"))
+    srv = crear_servidor(radio, "127.0.0.1", 0, emisoras=Path("/home/x/.config/cassette-fm/estaciones.json"))
     hilo = threading.Thread(target=lambda: srv.serve_forever(poll_interval=0.02), daemon=True)
     hilo.start()
     srv.base = f"http://127.0.0.1:{srv.server_address[1]}"
@@ -133,10 +133,17 @@ def test_sintonizar_sin_campo_400(servidor):
     assert pedir(servidor, "POST", "/sintonizar", {"otra": 1})[0] == 400
 
 
-def test_sin_estaciones_409_nombra_la_raiz(servidor):
+def test_sin_estaciones_409_nombra_el_archivo_de_emisoras(servidor):
     servidor.radio.error = SinEstaciones("no hay estaciones")
     codigo, cuerpo = pedir(servidor, "POST", "/encender")
-    assert codigo == 409 and "/home/x/Música" in cuerpo["error"]
+    assert codigo == 409 and "/home/x/.config/cassette-fm/estaciones.json" in cuerpo["error"]
+
+
+def test_rescan_con_config_rota_es_400(servidor):
+    from cassette_fm.config import ErrorConfig
+    servidor.radio.error = ErrorConfig("x/estaciones.json: línea 3, columna 1: Expecting value")
+    codigo, cuerpo = pedir(servidor, "POST", "/rescan")
+    assert codigo == 400 and "línea 3" in cuerpo["error"]
 
 
 def test_ruta_desconocida_404(servidor):

@@ -15,7 +15,10 @@ de **radios continuas**:
 
 ## Estado
 
-**Arranca de cero.** Todavía no hay código ni stack decidido. Hasta ahora solo existe el relevamiento.
+Etapas 1 a 3 hechas (radio local, applet y atajos, DJ con plantillas y con LLM). **Etapa 4 en curso** (Spotify
+como fuente): las emisoras ya salen de `~/.config/cassette-fm/estaciones.json` (parte 4a); faltan el catálogo de
+Spotify (4b) y la reproducción con Soloist (4c). Diseño:
+[`superpowers/specs/2026-11-14-etapa-4-spotify-design.md`](superpowers/specs/2026-11-14-etapa-4-spotify-design.md).
 
 ## Relevamiento previo (leer antes de diseñar)
 

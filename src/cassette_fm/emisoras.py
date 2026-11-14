@@ -3,13 +3,15 @@ import json
 import logging
 import os
 import re
+import threading
 import tomllib
 import unicodedata
 from dataclasses import dataclass, field, replace
 from pathlib import Path
 
 from cassette_fm import biblioteca
-from cassette_fm.config import ConfigDJ, ErrorConfig, campos_dj
+from cassette_fm.biblioteca import Estacion
+from cassette_fm.config import Config, ConfigDJ, ErrorConfig, Rutas, campos_dj
 
 _log = logging.getLogger("cassette_fm")
 
@@ -134,3 +136,40 @@ def migrar_emisoras(archivo: Path, raiz: Path, toml: Path) -> bool:
     os.replace(tmp, archivo)
     _log.info("se migraron %d emisoras a %s", len(emisoras), archivo)
     return True
+
+
+class Catalogo:
+    """Las emisoras vigentes: relee `estaciones.json` en cada escaneo (lo migra la primera vez) y da los ajustes del
+    DJ de cada una. Si el archivo está roto, el escaneo lanza ErrorConfig y lo anterior queda como estaba."""
+
+    def __init__(self, config: Config, rutas: Rutas):
+        self._config = config
+        self._rutas = rutas
+        self._dj: dict[str, ConfigDJ] = {}
+        self._lock = threading.Lock()
+        self._avisado_toml = False
+
+    def escanear(self) -> list[Estacion]:
+        archivo = self._rutas.emisoras
+        existia = archivo.exists()
+        if not existia and not migrar_emisoras(archivo, self._config.raiz_musica, self._rutas.config):
+            return []
+        emisoras = leer_emisoras(archivo, self._config.dj)
+        if existia and self._config.estaciones_dj and not self._avisado_toml:
+            self._avisado_toml = True
+            _log.warning("[dj.estaciones] del config.toml se ignora: los ajustes de cada emisora están en %s",
+                         archivo)
+        pares = []
+        for e in emisoras:
+            if e.fuente.tipo == "carpeta":
+                pares.append((e.nombre, Path(e.fuente.valor)))
+            else:
+                _log.warning("la emisora %r es de Spotify: llega en la próxima parte (4b)", e.nombre)
+        estaciones = biblioteca.escanear_carpetas(pares, self._rutas.cache)
+        with self._lock:
+            self._dj = {e.nombre: e.dj for e in emisoras}
+        return estaciones
+
+    def configuracion_dj(self, nombre: str) -> ConfigDJ:
+        with self._lock:
+            return self._dj.get(nombre, self._config.dj)

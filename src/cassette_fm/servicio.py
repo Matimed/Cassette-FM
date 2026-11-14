@@ -4,11 +4,11 @@ import threading
 import time
 from collections.abc import Callable, Sequence
 
-from cassette_fm import biblioteca
 from cassette_fm.api import crear_servidor
 from cassette_fm.avisos import Notificador
 from cassette_fm.cliente_dj import ClienteDJ
-from cassette_fm.config import Config, Rutas, cargar_estado, configuracion_dj, guardar_estado
+from cassette_fm.config import Config, Rutas, cargar_estado, guardar_estado
+from cassette_fm.emisoras import Catalogo
 from cassette_fm.intervenciones import RegistroIntervenciones
 from cassette_fm.locutor import Locutor
 from cassette_fm.mpv import ClienteMpv
@@ -39,14 +39,14 @@ def servir(config: Config, rutas: Rutas, avisar: Callable[[str, str], None] | No
         for senal in (signal.SIGTERM, signal.SIGINT):
             signal.signal(senal, lambda *_: parar.set())
 
-    def escanear():
-        return biblioteca.escanear(config.raiz_musica, rutas.cache)
+    catalogo = Catalogo(config, rutas)
+    escanear = catalogo.escanear
 
     estado = cargar_estado(rutas.estado)
     args_mpv = (["--af=dynaudnorm"] if config.normalizar else []) + list(extra_args_mpv)
     mpv = ClienteMpv(rutas.runtime / "mpv.sock", extra_args=args_mpv)
     estaciones = escanear()
-    _log.info("%d estaciones en %s", len(estaciones), config.raiz_musica)
+    _log.info("%d estaciones (de %s)", len(estaciones), rutas.emisoras)
     reproductor = Reproductor(mpv)
     locutor = None
     planificador = None
@@ -56,13 +56,13 @@ def servir(config: Config, rutas: Rutas, avisar: Callable[[str, str], None] | No
         voz = ClienteMpv(rutas.runtime / "voz.sock", extra_args=argumentos_voz(config.dj, extra_args_mpv))
         registro = RegistroIntervenciones(rutas.intervenciones, rutas.clips,
                                           gracia_segundos=config.dj.tolerancia_desfase_segundos)
-        locutor = Locutor(voz, reproductor, registro, lambda nombre: configuracion_dj(config, nombre))
-        extra_radio = dict(dj=locutor, configuracion_dj=lambda nombre: configuracion_dj(config, nombre),
+        locutor = Locutor(voz, reproductor, registro, catalogo.configuracion_dj)
+        extra_radio = dict(dj=locutor, configuracion_dj=catalogo.configuracion_dj,
                            dir_clips=rutas.clips)
         if config.dj.url:
             # sin `url` la radio no intenta conectarse a ningún servicio DJ (solo clips de prueba)
             planificador = Planificador(ClienteDJ(config.dj.url, config.dj.timeout_http_segundos), locutor,
-                                        registro, lambda nombre: configuracion_dj(config, nombre),
+                                        registro, catalogo.configuracion_dj,
                                         rutas.planificador, rutas.clips,
                                         gracia_segundos=config.dj.tolerancia_desfase_segundos)
             extra_radio["planificador"] = planificador
@@ -72,7 +72,7 @@ def servir(config: Config, rutas: Rutas, avisar: Callable[[str, str], None] | No
     if planificador is not None:
         planificador.iniciar()
         _log.info("planificador del DJ activo (servicio en %s)", config.dj.url)
-    servidor = crear_servidor(radio, "127.0.0.1", config.puerto, raiz=config.raiz_musica)
+    servidor = crear_servidor(radio, "127.0.0.1", config.puerto, emisoras=rutas.emisoras)
     hilo = threading.Thread(target=lambda: servidor.serve_forever(poll_interval=0.05), daemon=True)
     hilo.start()
     _log.info("escuchando en 127.0.0.1:%d", servidor.server_address[1])

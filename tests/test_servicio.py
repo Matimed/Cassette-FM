@@ -80,7 +80,7 @@ def test_servir_con_biblioteca_vacia_arranca(tmp_path, dir_corto):
         with pytest.raises(urllib.error.HTTPError) as exc:
             urllib.request.urlopen(req)
         assert exc.value.code == 409
-        assert "no-existe" in json.loads(exc.value.read())["error"]
+        assert str(rutas.emisoras) in json.loads(exc.value.read())["error"]
     finally:
         parar.set()
         hilo.join(3)
@@ -375,3 +375,35 @@ def test_la_voz_lleva_compresor_y_ganancia_configurables():
     filtro = next(a for a in args if a.startswith("--af="))
     assert "volume=12dB" in filtro and "acompressor" in filtro and "alimiter" in filtro
     assert not any(a.startswith("--af=") for a in servicio.argumentos_voz(ConfigDJ(ganancia_voz_db=0), []))
+
+
+def test_servir_migra_y_usa_el_json(tmp_path, dir_corto, crear_mp3):
+    musica = tmp_path / "musica"
+    crear_mp3(musica / "A" / "a.mp3", 30, titulo="Tema A")
+    crear_mp3(musica / "B" / "b.mp3", 30, titulo="Tema B")
+    crear_mp3(tmp_path / "afuera" / "c.mp3", 30, titulo="Tema C")
+    rutas = Rutas(config=tmp_path / "cfg" / "config.toml", estado=tmp_path / "st" / "estado.json",
+                  cache=tmp_path / "cache" / "d.json", runtime=dir_corto)
+    puerto = puerto_libre()
+    parar = threading.Event()
+    hilo = threading.Thread(target=servir, kwargs=dict(
+        config=Config(raiz_musica=musica, puerto=puerto, avisos=False), rutas=rutas,
+        parar=parar, extra_args_mpv=["--ao=null"]), daemon=True)
+    hilo.start()
+    try:
+        assert esperar_servicio(puerto)["estaciones"] == ["A", "B"]
+        assert [e["nombre"] for e in json.loads(rutas.emisoras.read_text())] == ["A", "B"]
+        rutas.emisoras.write_text(json.dumps([
+            {"nombre": "B", "fuente": {"carpeta": str(musica / "B")}},
+            {"nombre": "A", "fuente": {"carpeta": str(musica / "A")}},
+            {"nombre": "Afuera", "fuente": {"carpeta": str(tmp_path / "afuera")}}]))
+        assert llamar(puerto, "POST", "/rescan")["estaciones"] == ["B", "A", "Afuera"]
+        rutas.emisoras.write_text("[{")
+        req = urllib.request.Request(f"http://127.0.0.1:{puerto}/rescan", method="POST")
+        with pytest.raises(urllib.error.HTTPError) as e:
+            urllib.request.urlopen(req)
+        assert e.value.code == 400
+        assert llamar(puerto, "GET", "/estado")["estaciones"] == ["B", "A", "Afuera"]
+    finally:
+        parar.set()
+        hilo.join(3)

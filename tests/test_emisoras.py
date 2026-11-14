@@ -5,7 +5,8 @@ import pytest
 from cassette_fm.config import ConfigDJ, ErrorConfig
 import logging
 
-from cassette_fm.emisoras import Fuente, leer_emisoras, migrar_emisoras, playlist_de
+from cassette_fm.config import Config, Rutas, cargar_config
+from cassette_fm.emisoras import Catalogo, Fuente, leer_emisoras, migrar_emisoras, playlist_de
 
 PLAYLIST = "4iHcTVQbU4QvIJV5Xao0fs"
 
@@ -166,3 +167,72 @@ def test_ajustes_de_una_estacion_sin_carpeta_avisan(tmp_path, crear_mp3, caplog)
     with caplog.at_level(logging.WARNING, logger="cassette_fm"):
         migrar_emisoras(tmp_path / "estaciones.json", tmp_path / "m", toml)
     assert "Vieja" in caplog.text
+
+
+# --- catálogo ---
+
+def montar(tmp_path, crear_mp3, toml=""):
+    musica = tmp_path / "musica"
+    crear_mp3(musica / "A" / "a.mp3")
+    crear_mp3(musica / "B" / "b.mp3")
+    rutas = Rutas(config=tmp_path / "cfg" / "config.toml", estado=tmp_path / "st" / "e.json",
+                  cache=tmp_path / "ca" / "d.json", runtime=tmp_path / "run")
+    rutas.config.parent.mkdir(parents=True, exist_ok=True)
+    rutas.config.write_text(f'raiz_musica = "{musica}"\n' + toml)
+    return Catalogo(cargar_config(rutas.config), rutas), rutas, musica
+
+
+def test_rutas_emisoras_esta_al_lado_del_config(tmp_path):
+    r = Rutas(config=tmp_path / "x" / "config.toml", estado=tmp_path / "e", cache=tmp_path / "c", runtime=tmp_path)
+    assert r.emisoras == tmp_path / "x" / "estaciones.json"
+
+
+def test_catalogo_migra_escanea_y_da_el_dj(tmp_path, crear_mp3):
+    cat, rutas, _ = montar(tmp_path, crear_mp3, '[dj]\nvoz = "af_heart"\n[dj.estaciones."B"]\nvoz = "am_onyx"\n')
+    assert [e.nombre for e in cat.escanear()] == ["A", "B"]
+    assert rutas.emisoras.exists()
+    assert cat.configuracion_dj("B").voz == "am_onyx"
+    assert cat.configuracion_dj("A").voz == "af_heart" and cat.configuracion_dj("X").voz == "af_heart"
+
+
+def test_catalogo_relee_el_json_en_cada_escaneo(tmp_path, crear_mp3):
+    cat, rutas, musica = montar(tmp_path, crear_mp3)
+    cat.escanear()
+    rutas.emisoras.write_text(json.dumps([
+        {"nombre": "B", "fuente": {"carpeta": str(musica / "B")}, "dj": {"voz": "am_puck"}},
+        {"nombre": "A", "fuente": {"carpeta": str(musica / "A")}}]))
+    assert [e.nombre for e in cat.escanear()] == ["B", "A"]
+    assert cat.configuracion_dj("B").voz == "am_puck"
+
+
+def test_catalogo_con_json_roto_lanza_y_conserva_lo_anterior(tmp_path, crear_mp3):
+    cat, rutas, musica = montar(tmp_path, crear_mp3)
+    rutas.emisoras.parent.mkdir(parents=True, exist_ok=True)
+    rutas.emisoras.write_text(json.dumps([{"nombre": "A", "fuente": {"carpeta": str(musica / "A")},
+                                           "dj": {"voz": "am_puck"}}]))
+    cat.escanear()
+    rutas.emisoras.write_text("[{")
+    with pytest.raises(ErrorConfig, match="estaciones.json"):
+        cat.escanear()
+    assert cat.configuracion_dj("A").voz == "am_puck"
+
+
+def test_catalogo_omite_spotify_con_aviso(tmp_path, crear_mp3, caplog):
+    cat, rutas, musica = montar(tmp_path, crear_mp3)
+    rutas.emisoras.parent.mkdir(parents=True, exist_ok=True)
+    rutas.emisoras.write_text(json.dumps([{"nombre": "Sing", "fuente": {"spotify": f"spotify:playlist:{PLAYLIST}"}},
+                                          {"nombre": "A", "fuente": {"carpeta": str(musica / "A")}}]))
+    with caplog.at_level(logging.WARNING, logger="cassette_fm"):
+        assert [e.nombre for e in cat.escanear()] == ["A"]
+    assert "Sing" in caplog.text and "4b" in caplog.text
+
+
+def test_catalogo_avisa_que_dj_estaciones_del_toml_se_ignora(tmp_path, crear_mp3, caplog):
+    cat, rutas, musica = montar(tmp_path, crear_mp3, '[dj.estaciones."A"]\nvoz = "am_onyx"\n')
+    rutas.emisoras.parent.mkdir(parents=True, exist_ok=True)
+    rutas.emisoras.write_text(json.dumps([{"nombre": "A", "fuente": {"carpeta": str(musica / "A")}}]))
+    with caplog.at_level(logging.WARNING, logger="cassette_fm"):
+        cat.escanear()
+        cat.escanear()
+    assert caplog.text.count("[dj.estaciones]") == 1
+    assert cat.configuracion_dj("A").voz != "am_onyx"

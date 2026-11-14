@@ -1,7 +1,8 @@
 # cassette-fm
 
-Convierte las carpetas de `~/Música` en **radios continuas**: cada subcarpeta es una estación que "suena" todo el
-tiempo en orden aleatorio, y al sintonizarla se entra con el tema ya empezado. Un servicio local (Python + mpv)
+Convierte carpetas de música en **radios continuas**: cada emisora (definida en
+`~/.config/cassette-fm/estaciones.json`, ver [Emisoras](#emisoras)) "suena" todo el tiempo en orden aleatorio, y al
+sintonizarla se entra con el tema ya empezado. Un servicio local (Python + mpv)
 lleva el reloj de cada estación y se controla con el comando `cassette`.
 
 Diseño: [`docs/superpowers/specs/2026-11-13-cassette-fm-design.md`](docs/superpowers/specs/2026-11-13-cassette-fm-design.md).
@@ -30,7 +31,7 @@ Si solo querés el servicio y la CLI, sin el escritorio: `scripts/instalar.sh`.
 | `cassette status` | qué suena |
 | `cassette list` | estaciones y cantidad de temas |
 | `cassette vol 70` / `+5` / `-5` | volumen; en 0 la radio se apaga (como un mute) y subirlo la enciende |
-| `cassette rescan` | vuelve a leer `~/Música` |
+| `cassette rescan` | vuelve a leer `estaciones.json` y la música de cada emisora |
 | `cassette serve` | levanta el servicio a mano (sin systemd) |
 
 ## Applet de Cinnamon
@@ -65,8 +66,8 @@ y `systemctl --user restart cassette-fm`. Con `activo = false` no se crea nada (
 | `cassette dj pedir [--en 30]` | le pide **ahora** una intervención real al servicio DJ para el primer tema que arranque en ≥ 20 s (o los que digas), sin esperar a la frecuencia |
 | `cassette dj estado` | qué tiene programado el DJ, si está hablando, el desfase entre mpv y el reloj y, con planificador, `servicio DJ: ok` o `no responde (…) · reintento en N s` y el pedido en curso |
 
-Parámetros de la sección `[dj]` (todos opcionales; también se pueden pisar por estación con
-`[dj.estaciones."Nombre"]`):
+Parámetros de la sección `[dj]` (todos opcionales; también se pueden pisar por emisora en su `"dj"` de
+`estaciones.json`, ver [Emisoras](#emisoras)):
 
 | Clave | Por defecto | Qué es |
 |---|---|---|
@@ -148,14 +149,15 @@ modo = "temas"           # "temas" o "minutos"
 min = 3
 max = 5
 
-[dj.estaciones."Lentos"]
-voz = "em_santa"         # una voz por estación (cassette-dj voces lista las disponibles)
-idioma = "es"            # es | en | en-us | en-gb
-personalidad = "cálido, de madrugada"
-frecuencia = { min = 4 }               # solo pisa lo que dice: acá, 4 a 5 temas
+```
 
-[dj.estaciones."Rock"]
-frecuencia = { modo = "minutos", min = 8, max = 15 }
+Lo de cada emisora va en su `"dj"` de `estaciones.json` (solo pisa lo que dice):
+
+```json
+{"nombre": "Lentos", "fuente": {"carpeta": "~/Música/Lentos"},
+ "dj": {"voz": "em_santa", "idioma": "es", "personalidad": "cálido, de madrugada", "frecuencia": {"min": 4}}},
+{"nombre": "Rock", "fuente": {"carpeta": "~/Música/Rock"},
+ "dj": {"frecuencia": {"modo": "minutos", "min": 8, "max": 15}}}
 ```
 
 La intervención cae entre `min` y `max` temas (o minutos) después de la última de esa estación; nunca antes del
@@ -223,8 +225,7 @@ configura en `~/.config/cassette-dj/lexico.toml`:
 "Regueton 2000" = "Reguetón 2000"
 ```
 
-La velocidad de la voz de cada estación se pone con `velocidad` (0,5 a 2) en `[dj.estaciones."X"]` de la configuración
-de la radio; si falta, vale la del servicio (`velocidad` de `cassette-dj`, 1,05).
+La velocidad de la voz de cada emisora se pone con `velocidad` (0,5 a 2) en su `"dj"` de `estaciones.json`; si falta, vale la del servicio (`velocidad` de `cassette-dj`, 1,05).
 
 ### Hechos reales en las frases
 
@@ -307,13 +308,33 @@ las mismas frases.
 `~/.config/cassette-fm/config.toml` (todas las claves son opcionales):
 
 ```toml
-raiz_musica = "~/Música"   # cada subcarpeta es una estación
+raiz_musica = "~/Música"   # solo para crear estaciones.json la primera vez (ver Emisoras)
 puerto = 7710              # la API escucha solo en 127.0.0.1
 avisos = true              # notificación de escritorio con estación y tema
 normalizar = true          # parejiza el volumen entre temas (filtro dynaudnorm de mpv)
 ```
 
 El estado (última estación y volumen) se guarda en `~/.local/state/cassette-fm/estado.json`.
+
+### Emisoras
+
+Las emisoras están en `~/.config/cassette-fm/estaciones.json`, una lista en el orden en que se rotan:
+
+```json
+[
+  {"nombre": "Lentos", "fuente": {"carpeta": "~/Música/Lentos"}, "dj": {"idioma": "es", "voz": "daniela"}},
+  {"nombre": "Otra", "fuente": {"carpeta": "/media/disco/música/otra"}},
+  {"nombre": "Sing", "fuente": {"spotify": "https://open.spotify.com/playlist/4iHcTVQbU4QvIJV5Xao0fs"}}
+]
+```
+
+- `fuente` es una carpeta (ruta absoluta o con `~`, en cualquier lugar del disco) o una playlist de Spotify (link o
+  URI; **llega en la parte 4b**: hasta entonces esas emisoras se omiten con un aviso en el log).
+- `dj` (opcional) pisa los ajustes de `[dj]` del `config.toml` para esa emisora.
+- **La primera vez** el archivo se crea solo con las subcarpetas de `raiz_musica` y los `[dj.estaciones."X"]` que
+  hubiera en el `config.toml`. Desde entonces `[dj.estaciones]` del `config.toml` se ignora (avisa una vez en el log).
+- `cassette rescan` lo relee. Si quedó mal escrito, la radio sigue con las emisoras que tenía y el comando muestra el
+  error con la línea.
 
 ## Desarrollo
 

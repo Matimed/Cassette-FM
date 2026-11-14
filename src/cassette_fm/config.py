@@ -75,6 +75,10 @@ class Rutas:
     runtime: Path
 
     @property
+    def emisoras(self) -> Path:
+        return self.config.with_name("estaciones.json")
+
+    @property
     def intervenciones(self) -> Path:
         return self.estado.parent / "intervenciones.json"
 

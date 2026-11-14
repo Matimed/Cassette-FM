@@ -218,7 +218,11 @@ def main(argv: list[str] | None = None) -> int:
         logging.basicConfig(level=logging.INFO, format="%(levelname)s %(name)s: %(message)s")
         if hasattr(args, "puerto"):
             cfg = dataclasses.replace(cfg, puerto=args.puerto)
-        servicio.servir(cfg, rutas)
+        try:
+            servicio.servir(cfg, rutas)
+        except config.ErrorConfig as e:
+            print(e, file=sys.stderr)
+            return 1
         return 0
     try:
         _ejecutar(args, getattr(args, "puerto", cfg.puerto))

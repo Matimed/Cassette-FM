@@ -3,6 +3,7 @@ import logging
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
+from cassette_fm.config import ErrorConfig
 from cassette_fm.mpv import ErrorMpv
 from cassette_fm.radio import DJInactivo, EstacionInexistente, RadioApagada, SinEstaciones
 
@@ -20,7 +21,7 @@ class _SolicitudInvalida(Exception):
 
 
 def crear_servidor(radio, host: str = "127.0.0.1", puerto: int = 7710,
-                   raiz: Path | None = None) -> ThreadingHTTPServer:
+                   emisoras: Path | None = None) -> ThreadingHTTPServer:
     class Manejador(BaseHTTPRequestHandler):
         def log_message(self, *args):
             pass
@@ -112,8 +113,10 @@ def crear_servidor(radio, host: str = "127.0.0.1", puerto: int = 7710,
             except RadioApagada:
                 self._error(409, "No hay una estación sintonizada: encendé la radio primero")
             except SinEstaciones:
-                donde = f" en {raiz}" if raiz else ""
-                self._error(409, f"No hay estaciones{donde}: cada subcarpeta con música es una estación")
+                donde = f": revisá {emisoras}" if emisoras else ""
+                self._error(409, f"No hay estaciones{donde}")
+            except ErrorConfig as e:
+                self._error(400, str(e))
             except Exception:
                 _log.exception("error inesperado en POST %s", self.path)
                 self._error(500, "error interno (mirá el log del servicio)")

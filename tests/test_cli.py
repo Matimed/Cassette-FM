@@ -68,7 +68,7 @@ class RadioFalsa:
 def servicio(monkeypatch, tmp_path):
     monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path))
     radio = RadioFalsa()
-    srv = crear_servidor(radio, "127.0.0.1", 0, raiz=Path("/m"))
+    srv = crear_servidor(radio, "127.0.0.1", 0, emisoras=Path("/m/estaciones.json"))
     threading.Thread(target=lambda: srv.serve_forever(poll_interval=0.02), daemon=True).start()
     srv.radio = radio
     srv.puerto = str(srv.server_address[1])
@@ -307,3 +307,16 @@ def test_dj_modo_llm_avisa_si_falta_el_modelo(servicio, capsys):
     assert main(["dj", "modo", "llm", "--puerto", servicio.puerto]) == 0
     salida = capsys.readouterr().out
     assert "no está descargado" in salida and "instalar-llm.sh" in salida
+
+
+def test_serve_con_estaciones_json_roto_sale_con_1(tmp_path, monkeypatch, capsys):
+    from cassette_fm import config, servicio
+    from cassette_fm.config import ErrorConfig, Rutas
+    monkeypatch.setattr(config, "rutas", lambda: Rutas(tmp_path / "c.toml", tmp_path / "e.json",
+                                                         tmp_path / "d.json", tmp_path))
+
+    def roto(*a, **k):
+        raise ErrorConfig("/x/estaciones.json: línea 3, columna 1: Expecting value")
+    monkeypatch.setattr(servicio, "servir", roto)
+    assert main(["serve"]) == 1
+    assert "estaciones.json: línea 3" in capsys.readouterr().err
