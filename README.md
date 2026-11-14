@@ -44,9 +44,10 @@ Si algo falla: `Alt+F2`, escribir `lg`, pestaña *Errors* (Looking Glass), y `jo
 
 ## DJ (en desarrollo)
 
-La Etapa 3 agrega un DJ que habla entre temas. Hoy está la **parte 1**: la radio sabe reproducir un clip de voz en
-un hueco reservado de la agenda de una estación, con la música bajada, y entrar a mitad de frase si sintonizás con
-la intervención en curso. Todavía no hay servicio que genere las frases: se prueba con clips fijos.
+La Etapa 3 agrega un DJ que habla entre temas. La radio sabe reproducir un clip de voz en un hueco reservado de la
+agenda de una estación, con la música bajada, y entrar a mitad de frase si sintonizás con la intervención en curso
+(se prueba con `cassette dj probar`). Y, si le das la dirección del [servicio DJ](#servicio-dj), **decide sola cuándo
+pedirle una intervención** según una frecuencia configurable, la reserva en el hueco justo y la descarga cuando está lista.
 
 **Viene apagado.** Para activarlo, en `~/.config/cassette-fm/config.toml`:
 
@@ -61,7 +62,8 @@ y `systemctl --user restart cassette-fm`. Con `activo = false` no se crea nada (
 |---|---|
 | `cassette dj probar` | registra un clip de tonos en el próximo hueco de la estación sintonizada (a ≥ 20 s) |
 | `cassette dj probar --audio clip.wav --en 45` | usa tu propio clip (≤ la duración máxima) y una antelación de 45 s |
-| `cassette dj estado` | qué tiene programado el DJ, si está hablando y el desfase entre mpv y el reloj |
+| `cassette dj pedir [--en 30]` | le pide **ahora** una intervención real al servicio DJ para el primer tema que arranque en ≥ 20 s (o los que digas), sin esperar a la frecuencia |
+| `cassette dj estado` | qué tiene programado el DJ, si está hablando, el desfase entre mpv y el reloj y, con planificador, `servicio DJ: ok` o `no responde (…) · reintento en N s` y el pedido en curso |
 
 Parámetros de la sección `[dj]` (todos opcionales; también se pueden pisar por estación con
 `[dj.estaciones."Nombre"]`):
@@ -77,7 +79,53 @@ Parámetros de la sección `[dj]` (todos opcionales; también se pueden pisar po
 | `desfase_aviso_segundos` | 5 | desfase a partir del cual se avisa en el log |
 | `margen_seguridad_voz_segundos` | 2 | espera extra del temporizador que restaura la música |
 
-**Cómo probarlo con audio real:** sintonizá una estación, corré `cassette dj probar --en 20` y comprobá que
+### Planificador (frases reales)
+
+Para que la radio le pida intervenciones al servicio DJ hay que poner **las dos cosas** (sin `url` no intenta
+conectarse a nada):
+
+```toml
+[dj]
+activo = true
+url = "http://127.0.0.1:7720"
+
+[dj.frecuencia]          # general: vale para todas las estaciones
+modo = "temas"           # "temas" o "minutos"
+min = 3
+max = 5
+
+[dj.estaciones."Lentos"]
+voz = "em_santa"         # una voz por estación (cassette-dj voces lista las disponibles)
+idioma = "es"            # es | en | en-us | en-gb
+personalidad = "cálido, de madrugada"
+frecuencia = { min = 4 }               # solo pisa lo que dice: acá, 4 a 5 temas
+
+[dj.estaciones."Rock"]
+frecuencia = { modo = "minutos", min = 8, max = 15 }
+```
+
+La intervención cae entre `min` y `max` temas (o minutos) después de la última de esa estación; nunca antes del
+`margen_minutos` (da tiempo a generar el clip) y siempre en un tema con artista y título en los tags. Habla solo la
+estación sintonizada, pero un pedido ya iniciado termina siempre y su clip queda reservado para su estación. Si el
+servicio no responde, la música sigue igual: un único aviso en el log, reintentos con espera creciente y recuperación sola.
+
+| Clave | Por defecto | Qué es |
+|---|---|---|
+| `url` | `""` | dirección del servicio DJ; vacía = sin planificador |
+| `frecuencia.modo` / `min` / `max` | `temas` / 2 / 3 | cada cuánto habla (en `temas`, enteros ≥ 1) |
+| `margen_minutos` | 6 | antes de esto no se agenda nada |
+| `voz` / `idioma` / `personalidad` | `em_santa` / `es` / vacía | cómo habla la estación |
+| `timeout_http_segundos` | 10 | espera máxima por una respuesta del servicio |
+| `espera_reintento_segundos` / `espera_reintento_maxima_segundos` | 5 / 300 | espera tras un fallo y su tope (se duplica) |
+| `espera_trabajo_maxima_segundos` | 600 | un pedido que tarda más que esto se cancela |
+| `recientes_cantidad` | 6 | cuántos ingredientes de frases anteriores se le recuerdan al servicio por estación |
+
+**Verificación con audio real (la hacemos juntos):** (1) `scripts/instalar-dj.sh` y `cassette-dj modelos`;
+(2) poner la `url` de arriba en `config.toml` y `systemctl --user restart cassette-fm`; (3) sintonizar una estación y
+correr `cassette dj pedir --en 30`, escuchar la frase; (4) dejarlo solo y comprobar que habla cada 2–3 temas;
+(5) `cassette dj estado` muestra `servicio DJ: ok`.
+
+**Cómo probar el clip fijo con audio real:** sintonizá una estación, corré `cassette dj probar --en 20` y comprobá que
 (a) la voz entra ~1 s después de que arranca el tema siguiente, con la música bajada; (b) si cambiás de estación
 y volvés con la voz todavía sonando, retoma la frase en el punto que corresponde; (c) bajar el volumen a 0 la corta;
 (d) `cassette dj estado` informa el desfase.

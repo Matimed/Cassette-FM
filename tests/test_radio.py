@@ -412,7 +412,7 @@ def test_sin_locutor_todo_sigue_andando():
     radio.volumen(valor=30)
     radio.apagar()
     assert radio.dj_estado() == {"activo": False, "hablando": False, "desfase_segundos": None,
-                                 "intervenciones": []}
+                                 "intervenciones": [], "planificador": None}
 
 
 def test_el_desfase_se_mide_menos_en_el_primer_tema_de_la_sintonia(tmp_path, caplog):
@@ -499,3 +499,109 @@ def test_dj_estado_lista_las_intervenciones_vigentes(tmp_path):
     (item,) = e["intervenciones"]
     assert item["estacion"] == "A" and item["texto"] == "(clip de prueba)"
     assert item["en_segundos"] == pytest.approx(91.0)            # (EPOCA+101) - (EPOCA+10)
+
+
+# --- planificador del DJ ---
+
+class PlanificadorFalso:
+    def __init__(self, linea):
+        self.linea = linea
+        self.rescan_estado = None
+        self.radio = None
+        self.pedidos = []
+
+    def al_sintonizar(self, estacion):
+        self.linea.append(("planificador.al_sintonizar", estacion.nombre))
+
+    def al_apagar(self):
+        self.linea.append(("planificador.al_apagar",))
+
+    def al_rescan(self, estaciones):
+        self.linea.append(("planificador.al_rescan", [e.nombre for e in estaciones]))
+        if self.radio is not None:        # desde otro hilo: si el lock de la radio estuviera tomado, se traba
+            r = []
+            h = threading.Thread(target=lambda: r.append(self.radio.estado()), daemon=True)
+            h.start()
+            h.join(1.0)
+            self.rescan_estado = r[0] if r else "bloqueado"
+
+    def pedir_ahora(self, en_segundos):
+        self.pedidos.append(en_segundos)
+        return {"id": "x", "estacion": "A", "inicio": 1.0, "en_segundos": en_segundos}
+
+    def estado(self):
+        return {"estacion": "A", "en_curso": None, "servicio": "ok", "error": None, "proximo_intento_en": None}
+
+
+def crear_con_planificador(tmp_path, **kw):
+    loc = LocutorFalso()
+    plan = PlanificadorFalso(loc.llamadas)
+    radio, rep, guardados, estado = crear(
+        dj=loc, dir_clips=tmp_path / "clips", configuracion_dj=lambda n: ConfigDJ(activo=True),
+        reloj=lambda: EPOCA + 10, planificador=plan, **kw)
+    loc.llamadas = plan.linea = rep.llamadas
+    plan.radio = radio
+    return radio, rep, loc, plan
+
+
+def test_sintonizar_avisa_al_planificador_despues_del_locutor(tmp_path):
+    radio, rep, loc, plan = crear_con_planificador(tmp_path)
+    radio.sintonizar("B")
+    ll = rep.llamadas
+    assert ll.index(("al_sintonizar", "B")) < ll.index(("planificador.al_sintonizar", "B"))
+
+
+def test_apagar_avisa_al_planificador(tmp_path):
+    radio, rep, loc, plan = crear_con_planificador(tmp_path)
+    radio.encender()
+    radio.apagar()
+    assert ("planificador.al_apagar",) in rep.llamadas
+
+
+def test_rescan_avisa_al_planificador_fuera_del_lock(tmp_path):
+    radio, rep, loc, plan = crear_con_planificador(tmp_path)
+    radio.encender()
+    radio.rescan()
+    assert ("planificador.al_rescan", ["A", "B", "Regueton 2000"]) in rep.llamadas
+    assert isinstance(plan.rescan_estado, dict)       # no quedó bloqueado
+
+
+def test_sin_planificador_todo_sigue_andando(tmp_path):
+    radio, rep, loc = con_dj(tmp_path)
+    radio.sintonizar("A")
+    radio.rescan()
+    radio.apagar()
+    assert radio.dj_estado()["planificador"] is None
+
+
+def test_dj_estado_incluye_el_planificador(tmp_path):
+    radio, rep, loc, plan = crear_con_planificador(tmp_path)
+    assert radio.dj_estado()["planificador"] == plan.estado()
+    sin_dj, _, _, _ = crear()
+    assert sin_dj.dj_estado()["planificador"] is None
+
+
+def test_dj_pedir_sin_planificador_da_DJInactivo(tmp_path):
+    from cassette_fm.radio import DJInactivo
+    radio, rep, loc = con_dj(tmp_path)
+    with pytest.raises(DJInactivo):
+        radio.dj_pedir()
+    sin_dj, _, _, _ = crear()
+    with pytest.raises(DJInactivo):
+        sin_dj.dj_pedir()
+
+
+def test_dj_pedir_con_la_radio_apagada_da_RadioApagada(tmp_path):
+    from cassette_fm.radio import RadioApagada
+    radio, rep, loc, plan = crear_con_planificador(tmp_path)
+    with pytest.raises(RadioApagada):
+        radio.dj_pedir()
+    assert plan.pedidos == []
+
+
+def test_dj_pedir_delega_en_el_planificador(tmp_path):
+    radio, rep, loc, plan = crear_con_planificador(tmp_path)
+    radio.encender()
+    assert radio.dj_pedir(45.0)["en_segundos"] == 45.0
+    radio.dj_pedir()
+    assert plan.pedidos == [45.0, 20.0]

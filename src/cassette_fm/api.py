@@ -64,7 +64,7 @@ def crear_servidor(radio, host: str = "127.0.0.1", puerto: int = 7710,
 
         def do_POST(self):
             ruta = self.path.lstrip("/")
-            if ruta not in ACCIONES + ("sintonizar", "volumen", "dj/probar"):
+            if ruta not in ACCIONES + ("sintonizar", "volumen", "dj/probar", "dj/pedir"):
                 self._error(404, f"ruta desconocida: {self.path}")
                 return
             respuesta = None
@@ -72,6 +72,8 @@ def crear_servidor(radio, host: str = "127.0.0.1", puerto: int = 7710,
                 datos = self._leer_json()
                 if ruta == "dj/probar":
                     respuesta = self._dj_probar(datos)
+                elif ruta == "dj/pedir":
+                    respuesta = self._dj_pedir(datos)
                 elif ruta == "sintonizar":
                     if not isinstance(datos.get("estacion"), str):
                         raise _SolicitudInvalida("falta el campo 'estacion'")
@@ -93,8 +95,9 @@ def crear_servidor(radio, host: str = "127.0.0.1", puerto: int = 7710,
             except ErrorMpv as e:
                 self._error(503, f"mpv: {e}")
             except DJInactivo:
-                self._error(409, "El DJ está apagado: poné `activo = true` en la sección [dj] de "
-                                 "config.toml y reiniciá el servicio")
+                self._error(409, "El DJ está apagado: poné `activo = true` (y, para pedirle intervenciones al "
+                                 "servicio DJ, la `url` del servicio) en la sección [dj] de config.toml y "
+                                 "reiniciá el servicio")
             except RadioApagada:
                 self._error(409, "No hay una estación sintonizada: encendé la radio primero")
             except SinEstaciones:
@@ -105,6 +108,15 @@ def crear_servidor(radio, host: str = "127.0.0.1", puerto: int = 7710,
                 self._error(500, "error interno (mirá el log del servicio)")
             else:
                 self._responder(200, respuesta if respuesta is not None else radio.estado())
+
+        def _dj_pedir(self, datos: dict) -> dict:
+            en = datos.get("en_segundos", 20.0)
+            if isinstance(en, bool) or not isinstance(en, (int, float)) or en < 0:
+                raise _SolicitudInvalida("'en_segundos' tiene que ser un número, 0 o más")
+            try:
+                return radio.dj_pedir(en_segundos=float(en))
+            except ValueError as e:
+                raise _SolicitudInvalida(str(e))
 
         def _dj_probar(self, datos: dict) -> dict:
             audio, en = datos.get("audio"), datos.get("en_segundos", 20.0)

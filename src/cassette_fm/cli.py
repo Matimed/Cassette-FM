@@ -71,13 +71,28 @@ def _armar_parser() -> argparse.ArgumentParser:
     tune.add_argument("nombre", nargs="+")
     vol = sub.add_parser("vol", parents=[comun], help="volumen: N, +N o -N")
     vol.add_argument("valor")
-    dj = sub.add_parser("dj", help="el DJ: ver el estado o probar una intervención")
+    dj = sub.add_parser("dj", help="el DJ: ver el estado, probar un clip o pedir una intervención")
     dj_sub = dj.add_subparsers(dest="accion", required=True)
     dj_sub.add_parser("estado", parents=[comun], help="qué tiene programado el DJ")
     probar = dj_sub.add_parser("probar", parents=[comun], help="registra un clip de prueba en el próximo hueco")
     probar.add_argument("--audio", help="audio a usar (por defecto, un clip de tonos)")
     probar.add_argument("--en", type=float, default=20.0, help="segundos mínimos de antelación (20)")
+    pedir = dj_sub.add_parser("pedir", parents=[comun],
+                              help="le pide una intervención real al servicio DJ para el próximo hueco")
+    pedir.add_argument("--en", type=float, default=20.0, help="segundos mínimos de antelación (20)")
     return parser
+
+
+def _imprimir_planificador(p) -> None:
+    if not p:
+        return
+    if p["servicio"] == "ok":
+        print("servicio DJ: ok")
+    else:
+        espera = f" · reintento en {p['proximo_intento_en']:.0f} s" if p.get("proximo_intento_en") else ""
+        print(f"servicio DJ: no responde ({p['error']}){espera}")
+    if p.get("en_curso"):
+        print(f"pedido en curso: {p['en_curso']['estacion']} ({p['en_curso']['estado']})")
 
 
 def _ejecutar_dj(args, puerto: int) -> None:
@@ -90,6 +105,11 @@ def _ejecutar_dj(args, puerto: int) -> None:
         print(f"DJ activo · habla: {'sí' if e['hablando'] else 'no'} · desfase: {desfase}")
         for i in e["intervenciones"]:
             print(f"  {i['estacion']} · en {i['en_segundos']:.0f} s · {i['duracion']:.1f} s · {i['texto']}")
+        _imprimir_planificador(e.get("planificador"))
+    elif args.accion == "pedir":
+        r = _llamar(puerto, "POST", "/dj/pedir", {"en_segundos": args.en})
+        print(f"Se le pidió una intervención al servicio DJ para «{r['tema']}» en {r['estacion']}: "
+              f"va a hablar en {r['en_segundos']:.0f} s si está lista a tiempo.")
     else:
         audio = str(Path(args.audio).resolve()) if args.audio else None
         cuerpo = {"en_segundos": args.en}

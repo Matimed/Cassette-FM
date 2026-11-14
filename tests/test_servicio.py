@@ -239,3 +239,130 @@ def test_dj_apagado_responde_estado_y_409_al_probar(tmp_path, dir_corto):
     finally:
         parar.set()
         hilo.join(5)
+
+
+# --- planificador del DJ ---
+
+def _arrancar(tmp_path, dir_corto, config):
+    rutas = Rutas(config=tmp_path / "config.toml", estado=tmp_path / "st" / "estado.json",
+                  cache=tmp_path / "cache" / "d.json", runtime=dir_corto)
+    parar = threading.Event()
+    hilo = threading.Thread(target=servir, kwargs=dict(config=config, rutas=rutas, parar=parar,
+                                                        extra_args_mpv=["--ao=null"]), daemon=True)
+    hilo.start()
+    return rutas, parar, hilo
+
+
+def _nombres_de_hilos():
+    return {t.name for t in threading.enumerate()}
+
+
+def test_con_dj_activo_sin_url_no_hay_planificador(tmp_path, dir_corto):
+    from cassette_fm.config import ConfigDJ
+    puerto = puerto_libre()
+    _, parar, hilo = _arrancar(tmp_path, dir_corto,
+                               Config(raiz_musica=tmp_path / "x", puerto=puerto, avisos=False,
+                                      dj=ConfigDJ(activo=True)))
+    try:
+        esperar_servicio(puerto)
+        assert llamar(puerto, "GET", "/dj")["planificador"] is None
+        assert "planificador-dj" not in _nombres_de_hilos()
+        req = urllib.request.Request(f"http://127.0.0.1:{puerto}/dj/pedir", data=b"", method="POST")
+        with pytest.raises(urllib.error.HTTPError) as exc:
+            urllib.request.urlopen(req)
+        assert exc.value.code == 409
+    finally:
+        parar.set()
+        hilo.join(5)
+
+
+def test_con_url_se_crea_el_planificador_y_se_cierra_limpio(tmp_path, dir_corto):
+    from cassette_fm.config import ConfigDJ
+    puerto = puerto_libre()
+    antes = _nombres_de_hilos()
+    _, parar, hilo = _arrancar(tmp_path, dir_corto,
+                               Config(raiz_musica=tmp_path / "x", puerto=puerto, avisos=False,
+                                      dj=ConfigDJ(activo=True, url=f"http://127.0.0.1:{puerto_libre()}")))
+    try:
+        esperar_servicio(puerto)
+        assert llamar(puerto, "GET", "/dj")["planificador"]["servicio"] == "ok"
+        assert "planificador-dj" in _nombres_de_hilos()
+    finally:
+        parar.set()
+        hilo.join(5)
+    assert not hilo.is_alive()
+    assert "planificador-dj" not in _nombres_de_hilos()
+    for socket_ in ("mpv.sock", "voz.sock"):
+        assert subprocess.run(["pgrep", "-f", str(dir_corto / socket_)], capture_output=True).returncode == 1
+
+
+def test_dj_de_punta_a_punta_con_el_servicio_real(tmp_path, dir_corto, crear_mp3, servicio_dj):
+    from dataclasses import replace
+    from cassette_fm.config import ConfigDJ, Frecuencia
+    svc = servicio_dj(duracion=3.0)
+    musica = tmp_path / "musica"
+    for n in range(3):
+        crear_mp3(musica / "A" / f"t{n}.mp3", 3, titulo=f"Tema {n}", artista=f"Artista {n}")
+    puerto = puerto_libre()
+    dj = ConfigDJ(activo=True, url=svc.url, margen_minutos=0.02, retraso_voz_segundos=0.1,
+                  rampa_bajada_segundos=0.05, rampa_subida_segundos=0.05, frecuencia=Frecuencia("temas", 1, 1))
+    rutas, parar, hilo = _arrancar(tmp_path, dir_corto,
+                                   Config(raiz_musica=musica, puerto=puerto, avisos=False, dj=dj))
+    try:
+        assert esperar_servicio(puerto)["encendida"] is False
+        assert llamar(puerto, "POST", "/encender")["estacion"] == "A"
+        intervencion = None
+        fin = time.monotonic() + 20
+        while time.monotonic() < fin and intervencion is None:
+            lista = llamar(puerto, "GET", "/dj")["intervenciones"]
+            intervencion = lista[0] if lista else None
+            time.sleep(0.05)
+        assert intervencion is not None, "el DJ nunca reservó una intervención"
+        assert intervencion["estacion"] == "A" and intervencion["texto"] and intervencion["texto"] != "(clip de prueba)"
+        hablo = False
+        fin = time.monotonic() + 25
+        while time.monotonic() < fin:
+            hablando = llamar(puerto, "GET", "/dj")["hablando"]
+            hablo = hablo or hablando
+            if hablo and not hablando:
+                break
+            time.sleep(0.05)
+        assert hablo, "la voz nunca empezó"
+        assert llamar(puerto, "GET", "/dj")["hablando"] is False
+        guiones = svc.guiones.ultimos(10)
+        assert guiones and all(g["fuente"] == "plantilla" for g in guiones)
+        assert llamar(puerto, "POST", "/apagar")["encendida"] is False
+    finally:
+        parar.set()
+        hilo.join(8)
+    assert not hilo.is_alive()
+    for socket_ in ("mpv.sock", "voz.sock"):
+        assert subprocess.run(["pgrep", "-f", str(dir_corto / socket_)], capture_output=True).returncode == 1
+
+
+def test_el_servicio_dj_caido_no_afecta_a_la_radio(tmp_path, dir_corto, crear_mp3):
+    from cassette_fm.config import ConfigDJ, Frecuencia
+    musica = tmp_path / "musica"
+    for estacion in "AB":
+        for n in range(3):
+            crear_mp3(musica / estacion / f"t{n}.mp3", 30, titulo=f"Tema {n}", artista=f"Artista {n}")
+    puerto = puerto_libre()
+    dj = ConfigDJ(activo=True, url=f"http://127.0.0.1:{puerto_libre()}", margen_minutos=0.0,
+                  espera_reintento_segundos=0.1, espera_reintento_maxima_segundos=0.2, timeout_http_segundos=0.5,
+                  frecuencia=Frecuencia("temas", 1, 1))
+    _, parar, hilo = _arrancar(tmp_path, dir_corto, Config(raiz_musica=musica, puerto=puerto, avisos=False, dj=dj))
+    try:
+        esperar_servicio(puerto)
+        assert llamar(puerto, "POST", "/encender")["encendida"] is True
+        assert llamar(puerto, "POST", "/siguiente")["estacion"] == "B"
+        fin = time.monotonic() + 8
+        while time.monotonic() < fin and llamar(puerto, "GET", "/dj")["planificador"]["servicio"] != "no responde":
+            time.sleep(0.1)
+        plan = llamar(puerto, "GET", "/dj")["planificador"]
+        assert plan["servicio"] == "no responde" and "no responde" in plan["error"]
+        assert llamar(puerto, "POST", "/anterior")["estacion"] == "A"
+        assert llamar(puerto, "POST", "/apagar")["encendida"] is False
+    finally:
+        parar.set()
+        hilo.join(8)
+    assert not hilo.is_alive()

@@ -40,6 +40,11 @@ class RadioFalsa:
         return {"estacion": "Regueton 2000", "inicio": 1.0, "duracion": 8.0,
                 "pista_destino": "/m/Daddy Yankee - Gasolina.mp3", "en_segundos": 24.6}
 
+    def dj_pedir(self, en_segundos=20.0):
+        self._hacer("dj_pedir", en_segundos=en_segundos)
+        return {"id": "x", "estacion": "Regueton 2000", "inicio": 1.0, "en_segundos": 31.2,
+                "tema": "Daddy Yankee - Gasolina"}
+
     def sintonizar(self, nombre): self._hacer("sintonizar", nombre)
     def siguiente(self): self._hacer("siguiente")
     def anterior(self): self._hacer("anterior")
@@ -208,3 +213,47 @@ def test_dj_probar_error_de_la_api_da_codigo_1(servicio, capsys):
     servicio.radio.error = DJInactivo("apagado")
     assert main(["dj", "probar", "--puerto", servicio.puerto]) == 1
     assert "activo = true" in capsys.readouterr().err
+
+
+def test_dj_pedir_imprime_cuando_hablara(servicio, capsys):
+    assert main(["dj", "pedir", "--en", "30", "--puerto", servicio.puerto]) == 0
+    assert capsys.readouterr().out.strip() == (
+        "Se le pidió una intervención al servicio DJ para «Daddy Yankee - Gasolina» en Regueton 2000: "
+        "va a hablar en 31 s si está lista a tiempo.")
+    assert servicio.radio.llamadas == [("dj_pedir", (), {"en_segundos": 30.0})]
+
+
+def test_dj_pedir_por_defecto_20_segundos(servicio):
+    assert main(["dj", "pedir", "--puerto", servicio.puerto]) == 0
+    assert servicio.radio.llamadas[0][2] == {"en_segundos": 20.0}
+
+
+def test_dj_pedir_error_de_la_api_da_codigo_1(servicio, capsys):
+    from cassette_fm.radio import DJInactivo
+    servicio.radio.error = DJInactivo("sin planificador")
+    assert main(["dj", "pedir", "--puerto", servicio.puerto]) == 1
+    assert "url" in capsys.readouterr().err
+
+
+def test_dj_estado_muestra_el_servicio_y_el_pedido_en_curso(servicio, capsys):
+    servicio.radio.dj = {"activo": True, "hablando": False, "desfase_segundos": None, "intervenciones": [],
+                         "planificador": {"estacion": "Lentos", "servicio": "no responde",
+                                          "error": "el servicio DJ no responde en http://x",
+                                          "proximo_intento_en": 12.4,
+                                          "en_curso": {"id": "x", "estacion": "Lentos", "estado": "trabajando",
+                                                       "en_segundos": 80.0}}}
+    main(["dj", "estado", "--puerto", servicio.puerto])
+    assert capsys.readouterr().out.splitlines() == [
+        "DJ activo · habla: no · desfase: —",
+        "servicio DJ: no responde (el servicio DJ no responde en http://x) · reintento en 12 s",
+        "pedido en curso: Lentos (trabajando)"]
+    servicio.radio.dj["planificador"].update(servicio="ok", error=None, proximo_intento_en=None, en_curso=None)
+    main(["dj", "estado", "--puerto", servicio.puerto])
+    assert capsys.readouterr().out.splitlines()[1:] == ["servicio DJ: ok"]
+
+
+def test_dj_estado_sin_planificador_no_agrega_lineas(servicio, capsys):
+    servicio.radio.dj = {"activo": True, "hablando": False, "desfase_segundos": None, "intervenciones": [],
+                         "planificador": None}
+    main(["dj", "estado", "--puerto", servicio.puerto])
+    assert capsys.readouterr().out.splitlines() == ["DJ activo · habla: no · desfase: —"]

@@ -47,8 +47,9 @@ class Radio:
                  guardar: Callable[[Estado], None], escanear: Callable[[], list[Estacion]],
                  avisar: Callable[[str, str], None] | None = None, dj=None,
                  configuracion_dj: Callable[[str], ConfigDJ] | None = None, dir_clips: Path | None = None,
-                 reloj: Callable[[], float] = time.time):
+                 reloj: Callable[[], float] = time.time, planificador=None):
         self._dj = dj
+        self._planificador = planificador
         self._configuracion_dj = configuracion_dj or (lambda nombre: ConfigDJ())
         self._dir_clips = Path(dir_clips) if dir_clips is not None else None
         self._reloj = reloj
@@ -123,6 +124,8 @@ class Radio:
                     self._sintonizar(self._estaciones[0])
                 else:
                     self._apagar()
+        if self._planificador is not None:   # fuera del lock: no tiene por qué frenar a la radio
+            self._planificador.al_rescan(nuevas)
 
     def estado(self) -> dict:
         with self._lock:
@@ -183,6 +186,8 @@ class Radio:
         self.encendida = True
         if self._dj is not None:
             self._dj.al_sintonizar(estacion.nombre)
+        if self._planificador is not None:
+            self._planificador.al_sintonizar(estacion)
 
     def _poner_volumen(self, valor: int) -> int:
         valor = self._reproductor.volumen(valor)
@@ -195,6 +200,8 @@ class Radio:
         self.encendida = False
         if self._dj is not None:
             self._dj.detener()
+        if self._planificador is not None:
+            self._planificador.al_apagar()
 
     def _al_cambiar_pista(self, pista, estacion) -> None:
         if self._avisar is not None and estacion is not None:
@@ -216,7 +223,8 @@ class Radio:
 
     def dj_estado(self) -> dict:
         if self._dj is None:
-            return {"activo": False, "hablando": False, "desfase_segundos": None, "intervenciones": []}
+            return {"activo": False, "hablando": False, "desfase_segundos": None, "intervenciones": [],
+                    "planificador": None}
         ahora = self._reloj()
         return {
             "activo": True,
@@ -226,7 +234,18 @@ class Radio:
                 {"estacion": i.estacion, "inicio": i.inicio, "duracion": i.duracion, "texto": i.texto,
                  "en_segundos": round(i.inicio - ahora, 1)}
                 for i in self._dj.vigentes()],
+            "planificador": self._planificador.estado() if self._planificador is not None else None,
         }
+
+    def dj_pedir(self, en_segundos: float = 20.0) -> dict:
+        """Le pide una intervención de verdad al servicio DJ para el primer tema que arranque dentro de
+        `en_segundos` o más, sin esperar a la frecuencia."""
+        if self._planificador is None:
+            raise DJInactivo("el DJ no está activo o no tiene la url del servicio")
+        with self._lock:
+            if not self.encendida or self._estado.estacion is None:
+                raise RadioApagada("no hay una estación sintonizada")
+        return self._planificador.pedir_ahora(en_segundos)
 
     def dj_probar(self, audio: Path | None = None, en_segundos: float = 20.0) -> dict:
         """Registra una intervención de prueba en la próxima transición de la estación sintonizada."""

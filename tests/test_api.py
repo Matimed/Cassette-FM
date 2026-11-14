@@ -37,6 +37,10 @@ class RadioFalsa:
         self._hacer("dj_probar", audio=audio, en_segundos=en_segundos)
         return {"estacion": "A", "inicio": 1.0, "duracion": 8.0, "pista_destino": "/m/t.mp3", "en_segundos": 20.0}
 
+    def dj_pedir(self, en_segundos=20.0):
+        self._hacer("dj_pedir", en_segundos=en_segundos)
+        return {"id": "x", "estacion": "A", "inicio": 1.0, "en_segundos": en_segundos, "tema": "Artista - Tema"}
+
     def sintonizar(self, nombre): self._hacer("sintonizar", nombre)
     def siguiente(self): self._hacer("siguiente")
     def anterior(self): self._hacer("anterior")
@@ -193,4 +197,39 @@ def test_dj_probar_valueerror_400(servidor):
 @pytest.mark.parametrize("cuerpo", [{"en_segundos": "x"}, {"audio": 5}, {"en_segundos": True}])
 def test_dj_probar_tipos_invalidos_400(servidor, cuerpo):
     assert pedir(servidor, "POST", "/dj/probar", cuerpo)[0] == 400
+    assert servidor.radio.llamadas == []
+
+
+def test_post_dj_pedir_pasa_en_segundos(servidor):
+    codigo, cuerpo = pedir(servidor, "POST", "/dj/pedir", {"en_segundos": 45})
+    assert codigo == 200 and cuerpo["id"] == "x" and cuerpo["en_segundos"] == 45.0
+    assert servidor.radio.llamadas == [("dj_pedir", (), {"en_segundos": 45.0})]
+
+
+def test_post_dj_pedir_sin_cuerpo_usa_el_valor_por_defecto(servidor):
+    assert pedir(servidor, "POST", "/dj/pedir")[0] == 200
+    assert servidor.radio.llamadas[0][2] == {"en_segundos": 20.0}
+
+
+def test_post_dj_pedir_dj_inactivo_409_menciona_la_url(servidor):
+    servidor.radio.error = DJInactivo("sin planificador")
+    codigo, cuerpo = pedir(servidor, "POST", "/dj/pedir")
+    assert codigo == 409 and "url" in cuerpo["error"] and "[dj]" in cuerpo["error"]
+
+
+def test_post_dj_pedir_radio_apagada_409(servidor):
+    servidor.radio.error = RadioApagada("apagada")
+    assert pedir(servidor, "POST", "/dj/pedir")[0] == 409
+
+
+def test_post_dj_pedir_valueerror_400(servidor):
+    servidor.radio.error = ValueError("ya hay un pedido en curso")
+    codigo, cuerpo = pedir(servidor, "POST", "/dj/pedir")
+    assert codigo == 400 and "en curso" in cuerpo["error"]
+
+
+@pytest.mark.parametrize("cuerpo", [{"en_segundos": "x"}, {"en_segundos": True}, {"en_segundos": -1},
+                                    {"en_segundos": None}])
+def test_post_dj_pedir_tipos_invalidos_400(servidor, cuerpo):
+    assert pedir(servidor, "POST", "/dj/pedir", cuerpo)[0] == 400
     assert servidor.radio.llamadas == []

@@ -1,11 +1,11 @@
 ---
 # CASSETTE-FM-zuej
 title: 'Etapa 3, parte 2b: radio, planificador y cliente del servicio DJ'
-status: todo
+status: completed
 type: feature
 priority: normal
 created_at: 2026-11-14T01:57:49Z
-updated_at: 2026-11-14T02:57:09Z
+updated_at: 2026-11-14T03:28:56Z
 parent: CASSETTE-FM-p6zn
 blocked_by:
     - CASSETTE-FM-jd7u
