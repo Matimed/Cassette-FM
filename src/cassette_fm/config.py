@@ -35,8 +35,8 @@ class ConfigDJ:
     url: str = ""   # servicio DJ (cassette-dj); vacío = la radio no planifica intervenciones
     margen_minutos: float = 6.0   # antes de esto no se agenda nada (da tiempo a generar el clip)
     frecuencia: Frecuencia = Frecuencia()
-    voz: str = "em_santa"
-    idioma: str = "es"
+    voz: str = "af_heart"
+    idioma: str = "en"
     personalidad: str = ""
     timeout_http_segundos: float = 10.0
     espera_reintento_segundos: float = 5.0   # primera espera tras un fallo del servicio
