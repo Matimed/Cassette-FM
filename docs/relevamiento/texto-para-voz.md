@@ -35,6 +35,17 @@ Las voces leían mal nombres en otro idioma ("Daddy Yankee", "Buenos Aires" en i
 Sintetizar ~9 s de audio tarda ~3 s (factor ~0,3). El modelo pesa 326 MB (+28 MB de voces). Hacer el TTS en la PC
 local es viable; el LLM es lo caro.
 
+## Qué ofrece `kokoro-onnx` por dentro (v0.6.1, revisado el 13/11/2026)
+
+- `Tokenizer().phonemize(texto, lang)` funciona **sin cargar el modelo** (solo espeak): sirve para preparar el texto de forma
+  liviana y para probarlo sin los 326 MB.
+- `Kokoro.create(...)` acepta `sentence_pause` (0,25 s por defecto), `clause_pause` (0,1 s) y `continuous`. Las pausas se
+  **completan hasta ese valor** después de un punto o `!` y de una coma o `;`; el modelo deja además su propio silencio.
+  Son los controles directos de las "pausas raras" y quedan como ajustes del servicio DJ para afinar con frases reales.
+  `continuous=True` sintetiza el texto en ventanas superpuestas (a probar con frases largas).
+- `voice` puede ser un vector de estilo (`numpy`) en vez de un nombre: **mezclar voces** es promediar sus vectores.
+- Hay 54 voces; en español solo `ef_dora`, `em_alex`, `em_santa`. Cargado, el proceso ronda los 455 MB.
+
 ## Prueba en uso real (parte 1 del DJ)
 
 El 13/11/2026 el usuario escuchó la voz `em_santa` (con "s" argentina) saliendo por el DJ de la radio real, con la
