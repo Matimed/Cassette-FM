@@ -42,6 +42,16 @@ class ConfigServicioDJ:
     ingredientes_max: int = 3               # cuántos ingredientes combina una frase (el tema cuenta)
     penalizacion_reciente: float = 0.3      # cada aparición en `recientes` multiplica el peso por esto
     pesos_ingredientes: Mapping[str, float] = field(default_factory=lambda: dict(PESOS_POR_DEFECTO))
+    modo: str = "plantillas"                           # "plantillas" | "llm": modo al arrancar
+    llm_url: str = "http://127.0.0.1:11434/v1"         # API compatible con OpenAI (Ollama)
+    llm_modelo: str = "gemma3:4b"
+    llm_timeout_segundos: float = 240.0                # tope por llamada al LLM
+    llm_intentos: int = 2                              # cuántas veces se pide una frase antes de usar la plantilla
+    llm_temperatura: float = 0.8
+    wikipedia_dias: float = 90.0                       # vigencia en caché de un resumen encontrado
+    wikipedia_palabras_maximas: int = 120              # el resumen se recorta (en un fin de oración) a esto
+    wikipedia_url: str = "https://{idioma}.wikipedia.org"
+    wikidata_url: str = "https://www.wikidata.org/w/api.php"
     voces: Mapping[str, str] = field(default_factory=dict)   # voces con nombre: alias -> voz o mezcla ("em_alex+em_santa")
 
 
@@ -80,7 +90,9 @@ def rutas_dj() -> RutasDJ:
 
 _TIPOS = {c.name: {"host": str, "modelos_dir": str, "zona_horaria": str, "continuo": bool,
                    "puerto": int, "trabajadores": int, "palabras_maximas": int,
-                   "contacto": str, "musicbrainz_url": str, "open_meteo_url": str, "ingredientes_max": int}.get(c.name, float)
+                   "contacto": str, "musicbrainz_url": str, "open_meteo_url": str, "ingredientes_max": int,
+                   "modo": str, "llm_url": str, "llm_modelo": str, "llm_intentos": int,
+                   "wikipedia_palabras_maximas": int, "wikipedia_url": str, "wikidata_url": str}.get(c.name, float)
           for c in fields(ConfigServicioDJ)}
 _NOMBRE_TIPO = {str: "un texto", int: "un número entero", float: "un número", bool: "true o false"}
 
@@ -183,6 +195,25 @@ def _validar(archivo: Path, c: dict) -> None:
     for clave in ("cache_clima_minutos", "cache_datos_dias", "cache_sin_dato_dias", "cache_error_minutos"):
         if clave in c and c[clave] < 0:
             error(clave, "no puede ser negativo")
+    if "modo" in c and c["modo"] not in ("plantillas", "llm"):
+        error("modo", 'tiene que ser "plantillas" o "llm"')
+    if "llm_modelo" in c and not re.fullmatch(r"\S{1,100}", c["llm_modelo"]):
+        error("llm_modelo", "tiene que ser el nombre de un modelo (sin espacios, hasta 100 caracteres)")
+    if "llm_timeout_segundos" in c and c["llm_timeout_segundos"] <= 0:
+        error("llm_timeout_segundos", "tiene que ser mayor que 0")
+    if "llm_intentos" in c and c["llm_intentos"] < 1:
+        error("llm_intentos", "tiene que ser al menos 1")
+    if "llm_temperatura" in c and not 0 <= c["llm_temperatura"] <= 2:
+        error("llm_temperatura", "tiene que estar entre 0 y 2")
+    if "wikipedia_dias" in c and c["wikipedia_dias"] < 0:
+        error("wikipedia_dias", "no puede ser negativo")
+    if "wikipedia_palabras_maximas" in c and c["wikipedia_palabras_maximas"] < 20:
+        error("wikipedia_palabras_maximas", "tiene que ser al menos 20")
+    if "wikipedia_url" in c and "{idioma}" not in c["wikipedia_url"]:
+        error("wikipedia_url", "tiene que llevar {idioma} (por ejemplo https://{idioma}.wikipedia.org)")
+    for clave in ("llm_url", "wikidata_url", "wikipedia_url"):
+        if clave in c and not re.fullmatch(r"https?://\S+", c[clave]):
+            error(clave, "tiene que empezar con http:// o https://")
     for clave in ("musicbrainz_url", "open_meteo_url"):
         if clave in c and not re.fullmatch(r"https?://\S+", c[clave]):
             error(clave, "tiene que empezar con http:// o https://")

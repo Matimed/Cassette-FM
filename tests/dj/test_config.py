@@ -169,3 +169,38 @@ def test_valores_invalidos_de_los_hechos(tmp_path, contenido):
 def test_rutas_hechos(tmp_path):
     r = RutasDJ(config=tmp_path / "c.toml", estado=tmp_path / "estado", clips=tmp_path / "clips")
     assert r.hechos == tmp_path / "estado" / "hechos.sqlite"
+
+
+# --- LLM y modo (parte 4) ---
+
+def test_defaults_del_llm():
+    c = ConfigServicioDJ()
+    assert (c.modo, c.llm_url, c.llm_modelo, c.llm_timeout_segundos, c.llm_intentos, c.llm_temperatura) == (
+        "plantillas", "http://127.0.0.1:11434/v1", "gemma3:4b", 240.0, 2, 0.8)
+    assert (c.wikipedia_dias, c.wikipedia_palabras_maximas, c.wikipedia_url, c.wikidata_url) == (
+        90.0, 120, "https://{idioma}.wikipedia.org", "https://www.wikidata.org/w/api.php")
+
+
+def test_claves_del_llm_se_leen(tmp_path):
+    archivo = tmp_path / "config.toml"
+    archivo.write_text('modo = "llm"\nllm_url = "http://10.0.0.5:11434/v1"\nllm_modelo = "qwen3:4b"\n'
+                       'llm_timeout_segundos = 60\nllm_intentos = 3\nllm_temperatura = 1\nwikipedia_dias = 30\n'
+                       'wikipedia_palabras_maximas = 80\nwikipedia_url = "http://127.0.0.1:9/{idioma}"\n'
+                       'wikidata_url = "http://127.0.0.1:9/w"\n')
+    c = cargar_config_dj(archivo)
+    assert (c.modo, c.llm_url, c.llm_modelo, c.llm_timeout_segundos, c.llm_intentos, c.llm_temperatura) == (
+        "llm", "http://10.0.0.5:11434/v1", "qwen3:4b", 60.0, 3, 1.0)
+    assert (c.wikipedia_dias, c.wikipedia_palabras_maximas, c.wikipedia_url) == (30.0, 80, "http://127.0.0.1:9/{idioma}")
+
+
+@pytest.mark.parametrize("contenido", ['modo = "otro"', "modo = 3", 'llm_url = "x"', 'wikidata_url = "ftp://x"',
+                                       'wikipedia_url = "https://es.wikipedia.org"', 'llm_modelo = "a b"',
+                                       'llm_modelo = ""', "llm_timeout_segundos = 0", "llm_intentos = 0",
+                                       "llm_intentos = 1.5", "llm_temperatura = 3", "llm_temperatura = -1",
+                                       "wikipedia_palabras_maximas = 5", "wikipedia_dias = -1"])
+def test_valores_invalidos_del_llm(tmp_path, contenido):
+    archivo = tmp_path / "config.toml"
+    archivo.write_text(contenido + "\n")
+    with pytest.raises(ErrorConfig) as e:
+        cargar_config_dj(archivo)
+    assert str(archivo) in str(e.value)

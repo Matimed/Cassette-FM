@@ -27,6 +27,8 @@ def _armar_parser() -> argparse.ArgumentParser:
     v.add_argument("--ultimos", type=int, default=5)
     v.add_argument("--salida", default="voz-prueba")
     v.add_argument("--idioma", choices=["es", "en"])
+    mo = sub.add_parser("modo", help="muestra o cambia cómo redacta el DJ (plantillas o llm); no se guarda al reiniciar")
+    mo.add_argument("nuevo", nargs="?", choices=["plantillas", "llm"])
     h = sub.add_parser("hechos", help="muestra el clima de ahora y, con --artista y --titulo, los datos del tema")
     h.add_argument("--artista")
     h.add_argument("--titulo")
@@ -107,6 +109,37 @@ def _hechos(config, rutas, args, clientes) -> int:
     return 0
 
 
+def _modo(config, args) -> int:
+    import json
+    import urllib.error
+    import urllib.request
+    host = "127.0.0.1" if config.host in ("0.0.0.0", "::") else config.host
+    url = f"http://{host}:{config.puerto}/modo"
+    try:
+        if args.nuevo is None:
+            peticion = urllib.request.Request(url)
+        else:
+            peticion = urllib.request.Request(url, data=json.dumps({"modo": args.nuevo}).encode(), method="POST",
+                                              headers={"Content-Type": "application/json"})
+        with urllib.request.urlopen(peticion, timeout=10) as r:
+            datos = json.loads(r.read().decode("utf-8"))
+    except urllib.error.HTTPError as e:
+        print(f"El servicio DJ rechazó el pedido: {e.read().decode('utf-8', 'replace')[:200]}", file=sys.stderr)
+        return 1
+    except (OSError, ValueError) as e:
+        print(f"El servicio DJ no responde en {url} ({e}): ¿está corriendo `cassette-dj serve`?", file=sys.stderr)
+        return 1
+    modo = datos.get("modo")
+    extra = ""
+    if modo == "llm" and args.nuevo is not None:
+        extra = (" (el LLM responde)" if datos.get("llm") == "ok" else
+                 " (¡el LLM no responde! las frases van a salir por plantillas hasta que arranque Ollama)")
+    print(f"Modo del DJ: {modo}{extra}.")
+    if modo == "llm":
+        print("(vuelve a plantillas al reiniciar el servicio DJ)")
+    return 0
+
+
 def main(argv: list[str] | None = None, *, sintetizador=None, fonemizar=None, clientes=None) -> int:
     parser = _armar_parser()
     args = parser.parse_args(argv)
@@ -155,4 +188,6 @@ def main(argv: list[str] | None = None, *, sintetizador=None, fonemizar=None, cl
         return _guiones(rutas, args)
     if args.comando == "hechos":
         return _hechos(config, rutas, args, clientes)
+    if args.comando == "modo":
+        return _modo(config, args)
     return _voz_prueba(config, rutas, args, sintetizador, fonemizar)

@@ -242,3 +242,56 @@ def test_cassette_dj_hechos_sin_tema_solo_el_clima(entorno, capsys):
 def test_artista_y_titulo_van_juntos(entorno, capsys):
     with pytest.raises(SystemExit):
         cli.main(["hechos", "--artista", "x"])
+
+
+def _servicio_en_marcha(entorno, tmp_path, **cfg):
+    pytest.importorskip("kokoro_onnx")
+    from cassette_fm.dj.servidor import servir
+    with socket.socket() as sk:
+        sk.bind(("127.0.0.1", 0))
+        puerto = sk.getsockname()[1]
+    entorno.config.parent.mkdir(parents=True, exist_ok=True)
+    entorno.config.write_text(f"puerto = {puerto}\n")
+    parar = threading.Event()
+    hilo = threading.Thread(target=servir, args=(ConfigServicioDJ(puerto=puerto, modelos_dir=tmp_path / "v", **cfg),
+                                                 entorno, parar), daemon=True)
+    hilo.start()
+    fin = time.monotonic() + 5
+    while time.monotonic() < fin:
+        try:
+            urllib.request.urlopen(f"http://127.0.0.1:{puerto}/salud").read()
+            break
+        except OSError:
+            time.sleep(0.05)
+    return parar, hilo
+
+
+def test_cassette_dj_modo_muestra_y_cambia(entorno, tmp_path, capsys):
+    parar, hilo = _servicio_en_marcha(entorno, tmp_path)
+    try:
+        assert cli.main(["modo"]) == 0
+        assert capsys.readouterr().out.strip() == "Modo del DJ: plantillas."
+        assert cli.main(["modo", "llm"]) == 0
+        assert "Modo del DJ: llm" in capsys.readouterr().out
+        assert cli.main(["modo"]) == 0
+        assert "llm" in capsys.readouterr().out
+        assert cli.main(["modo", "plantillas"]) == 0
+        assert capsys.readouterr().out.strip() == "Modo del DJ: plantillas."
+    finally:
+        parar.set()
+        hilo.join(5)
+
+
+def test_cassette_dj_modo_sin_servicio_da_error_claro(entorno, capsys):
+    with socket.socket() as sk:
+        sk.bind(("127.0.0.1", 0))
+        puerto = sk.getsockname()[1]
+    entorno.config.parent.mkdir(parents=True, exist_ok=True)
+    entorno.config.write_text(f"puerto = {puerto}\n")
+    assert cli.main(["modo"]) == 1
+    assert "no responde" in capsys.readouterr().err
+
+
+def test_cassette_dj_modo_argumento_invalido(entorno):
+    with pytest.raises(SystemExit):
+        cli.main(["modo", "otro"])

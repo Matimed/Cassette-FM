@@ -57,7 +57,7 @@ class Servicio:
 
 
 def montar(tmp_path, sintetizador, fonemizar=fon_falso, lexico=None, cola=None, modelos_dir=None, config=None,
-           timeout=10.0):
+           timeout=10.0, modo=None, probar_llm=None):
     s = Servicio()
     s.rutas = RutasDJ(config=tmp_path / "cfg" / "config.toml", estado=tmp_path / "estado", clips=tmp_path / "clips")
     s.config = config or ConfigServicioDJ(modelos_dir=modelos_dir or tmp_path / "sin-modelos")
@@ -66,7 +66,8 @@ def montar(tmp_path, sintetizador, fonemizar=fon_falso, lexico=None, cola=None, 
     s.productor = Productor(s.config, s.rutas, sintetizador, fonemizar, lexico or Lexico(), s.guiones,
                             azar=random.Random(1))
     s.cola = cola or Cola(s.productor, trabajadores=1)
-    s.srv = crear_servidor(s.cola, sintetizador, "127.0.0.1", 0, s.config.modelos_dir, timeout=timeout)
+    s.srv = crear_servidor(s.cola, sintetizador, "127.0.0.1", 0, s.config.modelos_dir, timeout=timeout,
+                           modo=modo, probar_llm=probar_llm)
     threading.Thread(target=lambda: s.srv.serve_forever(poll_interval=0.02), daemon=True).start()
     s.base = f"http://127.0.0.1:{s.srv.server_address[1]}"
     return s
@@ -351,3 +352,50 @@ def test_servicio_con_hechos_falsos_de_punta_a_punta(servicio, servidor_http):
     codigo, _ = json_de(pedir(s, "POST", "/intervenciones", pedido_json("hr2", recientes=[])))
     listo = esperar_estado(s, "hr2", timeout=8)
     assert listo["estado"] == "listo" and listo["texto"]
+
+
+# --- modo plantillas / llm ---
+
+def test_get_modo(servicio):
+    from cassette_fm.dj.modo import ModoDJ
+    s = servicio(SintetizadorFalso(), modo=ModoDJ())
+    assert json_de(pedir(s, "GET", "/modo")) == (200, {"modo": "plantillas"})
+    s2 = servicio(SintetizadorFalso())              # sin modo: siempre plantillas
+    assert json_de(pedir(s2, "GET", "/modo")) == (200, {"modo": "plantillas"})
+
+
+def test_post_modo_cambia_y_se_refleja_en_salud(servicio):
+    from cassette_fm.dj.modo import ModoDJ
+    modo = ModoDJ()
+    s = servicio(SintetizadorFalso(), modo=modo, probar_llm=lambda: True)
+    assert json_de(pedir(s, "POST", "/modo", {"modo": "llm"})) == (200, {"modo": "llm", "llm": "ok"})
+    assert modo.actual() == "llm" and json_de(pedir(s, "GET", "/modo"))[1] == {"modo": "llm"}
+    assert json_de(pedir(s, "GET", "/salud"))[1]["modo"] == "llm"
+
+
+def test_post_modo_llm_informa_si_el_llm_responde(servicio):
+    from cassette_fm.dj.modo import ModoDJ
+    s = servicio(SintetizadorFalso(), modo=ModoDJ(), probar_llm=lambda: False)
+    assert json_de(pedir(s, "POST", "/modo", {"modo": "llm"}))[1] == {"modo": "llm", "llm": "no responde"}
+
+
+def test_post_modo_plantillas_no_prueba_el_llm(servicio):
+    from cassette_fm.dj.modo import ModoDJ
+    llamadas = []
+    s = servicio(SintetizadorFalso(), modo=ModoDJ("llm"), probar_llm=lambda: llamadas.append(1) or True)
+    assert json_de(pedir(s, "POST", "/modo", {"modo": "plantillas"})) == (200, {"modo": "plantillas"})
+    assert llamadas == []
+
+
+@pytest.mark.parametrize("cuerpo", [{}, {"modo": "otro"}, {"modo": 3}, {"modo": None}, [1], "x"])
+def test_post_modo_invalido_400(servicio, cuerpo):
+    from cassette_fm.dj.modo import ModoDJ
+    modo = ModoDJ()
+    s = servicio(SintetizadorFalso(), modo=modo)
+    codigo, d = json_de(pedir(s, "POST", "/modo", cuerpo))
+    assert codigo == 400 and "modo" in d["error"] and modo.actual() == "plantillas"
+
+
+def test_post_modo_con_json_roto_400(servicio):
+    s = servicio(SintetizadorFalso())
+    assert json_de(pedir(s, "POST", "/modo", crudo=b"{no es json"))[0] == 400

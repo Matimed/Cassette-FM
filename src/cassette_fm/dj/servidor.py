@@ -3,6 +3,8 @@ import logging
 import re
 import signal
 import threading
+import urllib.request
+from collections.abc import Callable
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
@@ -15,6 +17,7 @@ from cassette_fm.dj.hechos.cache import CacheHechos
 from cassette_fm.dj.hechos.clima import ClienteClima
 from cassette_fm.dj.hechos.musicbrainz import ClienteMusicBrainz
 from cassette_fm.dj.lexico import Lexico
+from cassette_fm.dj.modo import ModoDJ
 from cassette_fm.dj.pedido import leer_pedido
 from cassette_fm.dj.produccion import Productor
 from cassette_fm.dj.sintetizador import ErrorModelos, Sintetizador, faltan_modelos, fonemizador
@@ -27,8 +30,19 @@ MAX_DRENAR = 1024 * 1024
 _MANTENIMIENTO_SEGUNDOS = 30.0
 
 
+def probar_llm(config: ConfigServicioDJ) -> bool:
+    """¿Responde el servidor de LLM? (`GET {llm_url}/models`, 2 s). Nunca lanza."""
+    try:
+        with urllib.request.urlopen(config.llm_url.rstrip("/") + "/models", timeout=2.0) as r:
+            return r.status == 200
+    except Exception:
+        return False
+
+
 def crear_servidor(cola: Cola, sintetizador, host: str, puerto: int, modelos_dir: Path,
-                   timeout: float = 10.0) -> ThreadingHTTPServer:
+                   timeout: float = 10.0, modo: ModoDJ | None = None,
+                   probar_llm: Callable[[], bool] | None = None) -> ThreadingHTTPServer:
+    modo = modo or ModoDJ()
     if host not in ("127.0.0.1", "localhost", "::1"):
         _log.warning("el servicio DJ escucha en %s sin autenticación: usalo solo en una red de confianza", host)
 
@@ -79,8 +93,10 @@ def crear_servidor(cola: Cola, sintetizador, host: str, puerto: int, modelos_dir
             return m.group(1), bool(m.group(2))
 
         def _get(self, ruta: str) -> None:
-            if ruta == "/salud":
-                self._json(200, {"ok": True, "modelo_cargado": sintetizador.cargado,
+            if ruta == "/modo":
+                self._json(200, {"modo": modo.actual()})
+            elif ruta == "/salud":
+                self._json(200, {"ok": True, "modo": modo.actual(), "modelo_cargado": sintetizador.cargado,
                                  "faltan_modelos": [p.name for p in faltan_modelos(modelos_dir)],
                                  "trabajos": cola.contadores()})
             elif ruta == "/voces":
@@ -104,7 +120,37 @@ def crear_servidor(cola: Cola, sintetizador, host: str, puerto: int, modelos_dir
                     return self._error(404, "el audio ya no está disponible")
                 self._enviar(200, archivo.read_bytes(), "audio/wav")
 
+        def _leer_cuerpo(self):
+            """El cuerpo JSON de un POST chico, o None si ya se contestó el error."""
+            crudo = (self.headers.get("Content-Length") or "0").strip()
+            if not (crudo.isascii() and crudo.isdigit()) or int(crudo) > MAX_CUERPO:
+                self._error(400, "Content-Length inválido o demasiado grande")
+                return None
+            cuerpo = self.rfile.read(int(crudo))
+            try:
+                return json.loads(cuerpo.decode("utf-8"))
+            except (ValueError, UnicodeDecodeError, RecursionError):
+                self._error(400, "el cuerpo no es JSON válido")
+                return None
+
+        def _post_modo(self) -> None:
+            datos = self._leer_cuerpo()
+            if datos is None:
+                return
+            try:
+                if not isinstance(datos, dict) or "modo" not in datos:
+                    raise ValueError("falta el campo 'modo' (plantillas o llm)")
+                nuevo = modo.poner(datos["modo"])
+            except ValueError as e:
+                return self._error(400, f"campo 'modo': {e}")
+            respuesta = {"modo": nuevo}
+            if nuevo == "llm" and probar_llm is not None:
+                respuesta["llm"] = "ok" if probar_llm() else "no responde"
+            self._json(200, respuesta)
+
         def _post(self, ruta: str) -> None:
+            if ruta == "/modo":
+                return self._post_modo()
             if ruta != "/intervenciones":
                 return self._error(404, f"ruta desconocida: {ruta}")
             crudo = (self.headers.get("Content-Length") or "0").strip()
@@ -157,10 +203,12 @@ def servir(config: ConfigServicioDJ, rutas: RutasDJ, parar: threading.Event | No
     cache = CacheHechos(rutas.hechos)
     hechos = FuenteHechos(ClienteClima(config, cache), ClienteMusicBrainz(config, cache, version=__version__),
                           espera_segundos=config.timeout_hechos_segundos + 1)
+    modo = ModoDJ(config.modo)
     productor = Productor(config, rutas, sintetizador, fonemizador(), Lexico.cargar(rutas.lexico),
                           RegistroGuiones(rutas.guiones), hechos=hechos)
     cola = Cola(productor, trabajadores=config.trabajadores, retencion_segundos=config.retencion_minutos * 60)
-    servidor = crear_servidor(cola, sintetizador, config.host, config.puerto, config.modelos_dir)
+    servidor = crear_servidor(cola, sintetizador, config.host, config.puerto, config.modelos_dir, modo=modo,
+                              probar_llm=lambda: probar_llm(config))
     threading.Thread(target=lambda: servidor.serve_forever(poll_interval=0.05), daemon=True,
                      name="dj-http").start()
     faltan = faltan_modelos(config.modelos_dir)
