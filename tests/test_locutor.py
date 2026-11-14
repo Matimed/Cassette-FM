@@ -253,6 +253,15 @@ def test_con_volumen_cero_no_habla(mundo):
     assert mundo.voz.cargas() == [] and mundo.musica.llamadas == []
 
 
+def test_vigentes_lista_las_no_vencidas_por_inicio(mundo):
+    tarde, temprano = mundo.iv(T0 + 100, estacion="E"), mundo.iv(T0 + 50, estacion="F")
+    mundo.locutor.registrar(tarde)
+    mundo.locutor.registrar(temprano)
+    assert mundo.locutor.vigentes() == [temprano, tarde]
+    mundo.reloj.t = T0 + 75
+    assert mundo.locutor.vigentes() == [tarde]
+
+
 def test_cerrar_cierra_la_voz(mundo):
     mundo.locutor.cerrar()
     assert mundo.voz.cerrada

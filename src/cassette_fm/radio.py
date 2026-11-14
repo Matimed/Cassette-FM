@@ -1,9 +1,22 @@
+import logging
+import shutil
 import threading
+import time
 import unicodedata
+import uuid
 from collections.abc import Callable
+from itertools import islice
+from pathlib import Path
 
+import mutagen
+
+from cassette_fm.agenda import desfase, transiciones
 from cassette_fm.biblioteca import Estacion
-from cassette_fm.config import Estado
+from cassette_fm.clips import generar_clip_de_prueba
+from cassette_fm.config import ConfigDJ, Estado
+from cassette_fm.intervenciones import Intervencion
+
+_log = logging.getLogger("cassette_fm")
 
 
 VOLUMEN_MINIMO = 10   # con el volumen en 0 la radio está apagada; al encender se parte de acá
@@ -21,10 +34,27 @@ class SinEstaciones(Exception):
     pass
 
 
+class DJInactivo(Exception):
+    """El DJ está apagado en la configuración."""
+
+
+class RadioApagada(Exception):
+    """No hay una estación sintonizada."""
+
+
 class Radio:
     def __init__(self, reproductor, estaciones: list[Estacion], estado: Estado,
                  guardar: Callable[[Estado], None], escanear: Callable[[], list[Estacion]],
-                 avisar: Callable[[str, str], None] | None = None):
+                 avisar: Callable[[str, str], None] | None = None, dj=None,
+                 configuracion_dj: Callable[[str], ConfigDJ] | None = None, dir_clips: Path | None = None,
+                 reloj: Callable[[], float] = time.time):
+        self._dj = dj
+        self._configuracion_dj = configuracion_dj or (lambda nombre: ConfigDJ())
+        self._dir_clips = Path(dir_clips) if dir_clips is not None else None
+        self._reloj = reloj
+        self._lock_dj = threading.Lock()
+        self._primera_pista = False       # el primer tema tras sintonizar se empieza a mitad de camino
+        self._desfase: float | None = None
         self._reproductor = reproductor
         self._estaciones = list(estaciones)
         self._estado = estado
@@ -35,7 +65,7 @@ class Radio:
         self.encendida = False
         reproductor.al_cambiar_pista = self._al_cambiar_pista
         reproductor.al_fallar = self._al_fallar
-        reproductor.volumen(estado.volumen)
+        self._poner_volumen(estado.volumen)
 
     def estaciones(self) -> list[Estacion]:
         with self._lock:
@@ -74,7 +104,7 @@ class Radio:
                 return self._estado.volumen
             previo = self._estado.volumen
             nuevo = valor if valor is not None else previo + delta
-            self._estado.volumen = self._reproductor.volumen(nuevo)
+            self._estado.volumen = self._poner_volumen(nuevo)
             self._guardar(self._estado)
             # volumen 0 = mutear = apagada; subir el volumen estando apagada enciende
             if self._estado.volumen == 0:
@@ -140,9 +170,10 @@ class Radio:
 
     def _sintonizar(self, estacion: Estacion) -> None:
         if self._estado.volumen == 0:
-            self._estado.volumen = self._reproductor.volumen(VOLUMEN_MINIMO)
+            self._estado.volumen = self._poner_volumen(VOLUMEN_MINIMO)
         anterior = self._estado.estacion
         self._estado.estacion = estacion.nombre
+        self._primera_pista = True
         try:
             self._reproductor.sintonizar(estacion)
         except Exception:
@@ -150,14 +181,95 @@ class Radio:
             raise
         self._guardar(self._estado)
         self.encendida = True
+        if self._dj is not None:
+            self._dj.al_sintonizar(estacion.nombre)
+
+    def _poner_volumen(self, valor: int) -> int:
+        valor = self._reproductor.volumen(valor)
+        if self._dj is not None:
+            self._dj.volumen(valor)
+        return valor
 
     def _apagar(self) -> None:
         self._reproductor.detener()
         self.encendida = False
+        if self._dj is not None:
+            self._dj.detener()
 
     def _al_cambiar_pista(self, pista, estacion) -> None:
         if self._avisar is not None and estacion is not None:
             self._avisar(estacion.nombre, pista.titulo)
+        if self._dj is not None and estacion is not None:
+            self._dj.pista_iniciada(pista, estacion.nombre)
+            self._medir_desfase(pista, estacion)
+
+    def _medir_desfase(self, pista, estacion) -> None:
+        with self._lock_dj:
+            if self._primera_pista:
+                self._primera_pista = False
+                return
+            valor = desfase(estacion, pista, self._reloj())
+            self._desfase = valor
+        umbral = self._configuracion_dj(estacion.nombre).desfase_aviso_segundos
+        if valor is not None and abs(valor) > umbral:
+            _log.warning("desfase de %.1f s entre la música real y el reloj en %r", valor, estacion.nombre)
+
+    def dj_estado(self) -> dict:
+        if self._dj is None:
+            return {"activo": False, "hablando": False, "desfase_segundos": None, "intervenciones": []}
+        ahora = self._reloj()
+        return {
+            "activo": True,
+            "hablando": self._dj.hablando,
+            "desfase_segundos": self._desfase,
+            "intervenciones": [
+                {"estacion": i.estacion, "inicio": i.inicio, "duracion": i.duracion, "texto": i.texto,
+                 "en_segundos": round(i.inicio - ahora, 1)}
+                for i in self._dj.vigentes()],
+        }
+
+    def dj_probar(self, audio: Path | None = None, en_segundos: float = 20.0) -> dict:
+        """Registra una intervención de prueba en la próxima transición de la estación sintonizada."""
+        if self._dj is None:
+            raise DJInactivo("el DJ está apagado")
+        with self._lock:
+            estacion = next((e for e in self._estaciones if e.nombre == self._estado.estacion), None)
+            if not self.encendida or estacion is None:
+                raise RadioApagada("no hay una estación sintonizada")
+            cfg = self._configuracion_dj(estacion.nombre)
+            origen = Path(audio) if audio else None
+            if origen is not None and not origen.is_file():
+                raise ValueError(f"no existe el audio {origen}")
+            self._dir_clips.mkdir(parents=True, exist_ok=True)
+            clip = self._dir_clips / f"{uuid.uuid4().hex}{(origen.suffix if origen else '.wav')}"
+            try:
+                if origen is not None:
+                    shutil.copyfile(origen, clip)
+                else:
+                    generar_clip_de_prueba(clip, 8.0)
+                info = mutagen.File(clip)
+                if info is None or not info.info.length:
+                    raise ValueError(f"no se puede leer el audio {origen or clip}")
+                duracion = float(info.info.length)
+                if duracion > cfg.duracion_maxima_segundos:
+                    raise ValueError(f"el clip dura {duracion:.1f} s y el máximo es "
+                                     f"{cfg.duracion_maxima_segundos:g} s")
+                ahora = self._reloj()
+                for pista, inicio_tema in islice(transiciones(estacion, ahora), 20):
+                    inicio = inicio_tema + cfg.retraso_voz_segundos
+                    if inicio < ahora + en_segundos:
+                        continue
+                    try:
+                        self._dj.registrar(Intervencion(uuid.uuid4().hex, estacion.nombre, inicio, duracion,
+                                                        clip, "(clip de prueba)", str(pista.ruta)))
+                    except ValueError:
+                        continue     # ese hueco ya está ocupado
+                    return {"estacion": estacion.nombre, "inicio": inicio, "duracion": duracion,
+                            "pista_destino": str(pista.ruta), "en_segundos": round(inicio - ahora, 1)}
+                raise ValueError("no hay un hueco libre en las próximas transiciones")
+            except BaseException:
+                clip.unlink(missing_ok=True)
+                raise
 
     def _al_fallar(self, estacion) -> None:
         with self._lock:

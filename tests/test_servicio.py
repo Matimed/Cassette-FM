@@ -134,3 +134,38 @@ def test_servir_loguea_el_arranque(tmp_path, dir_corto, caplog):
     servir(Config(raiz_musica=tmp_path / "x", puerto=0), rutas, parar=parar,
            extra_args_mpv=["--ao=null"])
     assert "0 estaciones" in caplog.text
+
+
+def _correr_un_instante(tmp_path, dir_corto, **cfg):
+    parar = threading.Event()
+    parar.set()
+    rutas = Rutas(tmp_path / "c.toml", tmp_path / "st" / "estado.json", tmp_path / "ca" / "d.json", dir_corto)
+    servir(Config(raiz_musica=tmp_path / "x", puerto=0, avisos=False, **cfg), rutas, parar=parar,
+           extra_args_mpv=["--ao=null"])
+    return rutas
+
+
+def test_con_el_dj_apagado_no_se_crea_nada(tmp_path, dir_corto):
+    rutas = _correr_un_instante(tmp_path, dir_corto)
+    assert not rutas.intervenciones.exists() and not rutas.clips.exists()
+    assert subprocess.run(["pgrep", "-f", str(dir_corto / "voz.sock")], capture_output=True).returncode == 1
+
+
+def test_con_el_dj_activo_arranca_y_cierra_limpio(tmp_path, dir_corto):
+    from cassette_fm.config import ConfigDJ
+    rutas = _correr_un_instante(tmp_path, dir_corto, dj=ConfigDJ(activo=True))
+    assert subprocess.run(["pgrep", "-f", str(dir_corto / "voz.sock")], capture_output=True).returncode == 1
+    assert rutas.clips.exists() is False          # sin intervenciones, no se crea nada en disco
+
+
+def test_con_el_dj_activo_el_registro_se_carga_del_disco(tmp_path, dir_corto, crear_wav):
+    import json, time
+    from cassette_fm.config import ConfigDJ
+    rutas = Rutas(tmp_path / "c.toml", tmp_path / "st" / "estado.json", tmp_path / "ca" / "d.json", dir_corto)
+    audio = crear_wav(rutas.clips / "k.wav", 3.0)
+    rutas.intervenciones.parent.mkdir(parents=True)
+    rutas.intervenciones.write_text(json.dumps([{
+        "id": "k", "estacion": "E", "inicio": time.time() + 600, "duracion": 3.0,
+        "audio": str(audio), "texto": "t", "pista_destino": "/m/t.mp3"}]))
+    _correr_un_instante(tmp_path, dir_corto, dj=ConfigDJ(activo=True))
+    assert audio.exists()                       # la intervención vigente sobrevive al reinicio

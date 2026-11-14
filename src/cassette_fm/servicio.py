@@ -7,7 +7,9 @@ from collections.abc import Callable, Sequence
 from cassette_fm import biblioteca
 from cassette_fm.api import crear_servidor
 from cassette_fm.avisos import Notificador
-from cassette_fm.config import Config, Rutas, cargar_estado, guardar_estado
+from cassette_fm.config import Config, Rutas, cargar_estado, configuracion_dj, guardar_estado
+from cassette_fm.intervenciones import RegistroIntervenciones
+from cassette_fm.locutor import Locutor
 from cassette_fm.mpv import ClienteMpv
 from cassette_fm.radio import Radio
 from cassette_fm.reproductor import Reproductor
@@ -34,9 +36,19 @@ def servir(config: Config, rutas: Rutas, avisar: Callable[[str, str], None] | No
     mpv = ClienteMpv(rutas.runtime / "mpv.sock", extra_args=args_mpv)
     estaciones = escanear()
     _log.info("%d estaciones en %s", len(estaciones), config.raiz_musica)
-    radio = Radio(Reproductor(mpv), estaciones, estado,
+    reproductor = Reproductor(mpv)
+    locutor = None
+    extra_radio = {}
+    if config.dj.activo:
+        # el segundo mpv (la voz) no arranca hasta el primer clip y no lleva el filtro de volumen
+        voz = ClienteMpv(rutas.runtime / "voz.sock", extra_args=list(extra_args_mpv))
+        locutor = Locutor(voz, reproductor, RegistroIntervenciones(rutas.intervenciones, rutas.clips),
+                          lambda nombre: configuracion_dj(config, nombre))
+        extra_radio = dict(dj=locutor, configuracion_dj=lambda nombre: configuracion_dj(config, nombre),
+                           dir_clips=rutas.clips)
+    radio = Radio(reproductor, estaciones, estado,
                   guardar=lambda e: guardar_estado(rutas.estado, e),
-                  escanear=escanear, avisar=avisar)
+                  escanear=escanear, avisar=avisar, **extra_radio)
     servidor = crear_servidor(radio, "127.0.0.1", config.puerto, raiz=config.raiz_musica)
     hilo = threading.Thread(target=lambda: servidor.serve_forever(poll_interval=0.05), daemon=True)
     hilo.start()
@@ -44,7 +56,11 @@ def servir(config: Config, rutas: Rutas, avisar: Callable[[str, str], None] | No
     try:
         parar.wait()
     finally:
-        for paso in (servidor.shutdown, servidor.server_close, radio.apagar, mpv.cerrar):
+        pasos = [servidor.shutdown, servidor.server_close, radio.apagar]
+        if locutor is not None:
+            pasos.append(locutor.cerrar)
+        pasos.append(mpv.cerrar)
+        for paso in pasos:
             try:
                 paso()
             except Exception:

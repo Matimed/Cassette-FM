@@ -80,6 +80,12 @@ class Locutor:
                     self._t_anclaje.start()
                     return
 
+    def vigentes(self) -> list[Intervencion]:
+        with self._lock:
+            self._registro.limpiar()
+            ahora = self._reloj()
+            return [i for i in self._registro.todas() if i.fin > ahora]
+
     def volumen(self, valor: int) -> None:
         with self._lock:
             self._volumen = valor
