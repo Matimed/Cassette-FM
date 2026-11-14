@@ -3,7 +3,6 @@ import logging
 import re
 import signal
 import threading
-import urllib.request
 from collections.abc import Callable
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
@@ -17,6 +16,7 @@ from cassette_fm.dj.hechos.cache import CacheHechos
 from cassette_fm.dj.hechos.clima import ClienteClima
 from cassette_fm.dj.hechos.musicbrainz import ClienteMusicBrainz
 from cassette_fm.dj.lexico import Lexico
+from cassette_fm.dj.llm import ClienteLLM
 from cassette_fm.dj.modo import ModoDJ
 from cassette_fm.dj.pedido import leer_pedido
 from cassette_fm.dj.produccion import Productor
@@ -28,15 +28,6 @@ _INTERVENCION = re.compile(r"/intervenciones/([^/]+)(/audio)?")
 MAX_CUERPO = 64 * 1024
 MAX_DRENAR = 1024 * 1024
 _MANTENIMIENTO_SEGUNDOS = 30.0
-
-
-def probar_llm(config: ConfigServicioDJ) -> bool:
-    """¿Responde el servidor de LLM? (`GET {llm_url}/models`, 2 s). Nunca lanza."""
-    try:
-        with urllib.request.urlopen(config.llm_url.rstrip("/") + "/models", timeout=2.0) as r:
-            return r.status == 200
-    except Exception:
-        return False
 
 
 def crear_servidor(cola: Cola, sintetizador, host: str, puerto: int, modelos_dir: Path,
@@ -208,7 +199,7 @@ def servir(config: ConfigServicioDJ, rutas: RutasDJ, parar: threading.Event | No
                           RegistroGuiones(rutas.guiones), hechos=hechos)
     cola = Cola(productor, trabajadores=config.trabajadores, retencion_segundos=config.retencion_minutos * 60)
     servidor = crear_servidor(cola, sintetizador, config.host, config.puerto, config.modelos_dir, modo=modo,
-                              probar_llm=lambda: probar_llm(config))
+                              probar_llm=ClienteLLM(config).disponible)
     threading.Thread(target=lambda: servidor.serve_forever(poll_interval=0.05), daemon=True,
                      name="dj-http").start()
     faltan = faltan_modelos(config.modelos_dir)
