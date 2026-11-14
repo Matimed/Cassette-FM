@@ -274,3 +274,24 @@ def redactar(pedido: Pedido, lexico: Lexico, azar: random.Random, palabras_maxim
             return r
     marco = min((mc[0] for mc in _MARCOS[idioma]), key=lambda t: _palabras(t.format(**campos)))
     return Redaccion(marco.format(**campos) + ".", ("cancion",))
+
+
+# --- piezas que usa también el redactor del LLM ---
+
+def grados_en_palabras(temperatura: int, idioma: str) -> str:
+    return _grados(temperatura, "es" if idioma == "es" else "en")
+
+
+def cielo_en_palabras(clima, idioma: str) -> str:
+    idioma = "es" if idioma == "es" else "en"
+    if not clima.es_de_dia and clima.cielo == "despejado":
+        return _NOCHE_DESPEJADA[idioma]
+    return _CIELO[idioma][clima.cielo]
+
+
+def artistas_del_tag(artista: str) -> list[str]:
+    return _artistas(artista)
+
+
+def momento_en_palabras(momento: datetime, idioma: str) -> str:
+    return _este_momento(momento, idioma == "es")
