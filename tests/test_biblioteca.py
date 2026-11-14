@@ -139,3 +139,48 @@ def test_raiz_sin_permisos_devuelve_vacio(tmp_path, crear_mp3):
         assert escanear(raiz) == []
     finally:
         raiz.chmod(0o755)
+
+
+def test_leer_pista_separa_artista_cancion_album_e_isrc(tmp_path, crear_mp3):
+    p = crear_mp3(tmp_path / "t.mp3", 2, titulo="Tema", artista="Artista", album="Disco", isrc="ESA011234567")
+    pista = leer_pista(p)
+    assert (pista.artista, pista.cancion, pista.album, pista.isrc) == ("Artista", "Tema", "Disco", "ESA011234567")
+    assert pista.titulo == "Artista - Tema"
+
+
+def test_leer_pista_sin_tags_deja_none(tmp_path, crear_mp3):
+    pista = leer_pista(crear_mp3(tmp_path / "Mi Canción.mp3", 2))
+    assert (pista.artista, pista.cancion, pista.album, pista.isrc) == (None, None, None, None)
+    assert pista.titulo == "Mi Canción"
+
+
+def test_tags_vacios_o_con_espacios_dan_none(tmp_path, crear_mp3):
+    p = crear_mp3(tmp_path / "t.mp3", 2, titulo="  Tema  ", artista="   ", album="")
+    pista = leer_pista(p)
+    assert (pista.artista, pista.cancion, pista.album, pista.isrc) == (None, "Tema", None, None)
+
+
+def test_el_cache_guarda_los_campos_nuevos_y_los_devuelve(tmp_path, crear_mp3, monkeypatch):
+    raiz = tmp_path / "m"
+    crear_mp3(raiz / "E" / "a.mp3", 2, titulo="Tema", artista="Artista", album="Disco", isrc="ESA011234567")
+    cache = tmp_path / "cache.json"
+    escanear(raiz, cache)
+    llamadas = []
+    original = biblioteca.leer_pista
+    monkeypatch.setattr(biblioteca, "leer_pista", lambda r: (llamadas.append(r), original(r))[1])
+    pista = escanear(raiz, cache)[0].pistas[0]
+    assert llamadas == []
+    assert (pista.artista, pista.cancion, pista.album, pista.isrc) == ("Artista", "Tema", "Disco", "ESA011234567")
+
+
+def test_una_entrada_de_cache_en_formato_viejo_se_vuelve_a_leer(tmp_path, crear_mp3):
+    import json
+    raiz = tmp_path / "m"
+    a = crear_mp3(raiz / "E" / "a.mp3", 2, titulo="Tema", artista="Artista")
+    st = a.stat()
+    cache = tmp_path / "cache.json"
+    cache.write_text(json.dumps({str(a): {"mtime_ns": st.st_mtime_ns, "tamano": st.st_size,
+                                          "duracion": 2.0, "titulo": "Artista - Tema"}}))
+    pista = escanear(raiz, cache)[0].pistas[0]
+    assert (pista.artista, pista.cancion) == ("Artista", "Tema")
+    assert "artista" in json.loads(cache.read_text())[str(a)]

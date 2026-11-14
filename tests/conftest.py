@@ -16,17 +16,22 @@ _FRECUENCIA = 44100
 @pytest.fixture
 def crear_mp3():
     def crear(ruta: Path, segundos: float = 3.0, titulo: str | None = None,
-              artista: str | None = None) -> Path:
+              artista: str | None = None, album: str | None = None,
+              isrc: str | None = None) -> Path:
         ruta = Path(ruta)
         ruta.parent.mkdir(parents=True, exist_ok=True)
         frames = math.ceil(segundos * _FRECUENCIA / _MUESTRAS_POR_FRAME)
         ruta.write_bytes(_FRAME * frames)
-        if titulo or artista:
+        if titulo or artista or album or isrc:
             tags = EasyID3()
             if titulo:
                 tags["title"] = titulo
             if artista:
                 tags["artist"] = artista
+            if album:
+                tags["album"] = album
+            if isrc:
+                tags["isrc"] = isrc
             tags.save(ruta)
         return ruta
 

@@ -18,12 +18,23 @@ class Pista:
     duracion: float
     titulo: str
     fuente: str = "local"
+    artista: str | None = None
+    cancion: str | None = None  # solo el título del tag; `titulo` es "Artista - Título"
+    album: str | None = None
+    isrc: str | None = None
 
 
 @dataclass(frozen=True)
 class Estacion:
     nombre: str
     pistas: tuple[Pista, ...]
+
+
+def _tag(tags, clave: str) -> str | None:
+    valor = (tags.get(clave) or [None])[0]
+    if not isinstance(valor, str):
+        return None
+    return valor.strip() or None
 
 
 def leer_pista(ruta: Path) -> Pista | None:
@@ -34,13 +45,14 @@ def leer_pista(ruta: Path) -> Pista | None:
     if f is None or f.info is None or not f.info.length or f.info.length <= 0:
         return None
     tags = f.tags or {}
-    titulo = (tags.get("title") or [None])[0]
-    artista = (tags.get("artist") or [None])[0]
+    titulo = _tag(tags, "title")
+    artista = _tag(tags, "artist")
     if titulo and artista:
         texto = f"{artista} - {titulo}"
     else:
         texto = titulo or Path(ruta).stem
-    return Pista(ruta=Path(ruta), duracion=float(f.info.length), titulo=texto)
+    return Pista(ruta=Path(ruta), duracion=float(f.info.length), titulo=texto, artista=artista,
+                 cancion=titulo, album=_tag(tags, "album"), isrc=_tag(tags, "isrc"))
 
 
 def clave_orden(nombre: str) -> str:
@@ -100,13 +112,16 @@ def _pista_con_cache(ruta: Path, previa: dict, nueva: dict) -> Pista | None:
     if (isinstance(entrada, dict) and entrada.get("mtime_ns") == st.st_mtime_ns
             and entrada.get("tamano") == st.st_size
             and isinstance(entrada.get("duracion"), (int, float))
-            and isinstance(entrada.get("titulo"), str)):
+            and isinstance(entrada.get("titulo"), str) and "artista" in entrada):
         nueva[clave] = entrada
-        return Pista(ruta=ruta, duracion=entrada["duracion"], titulo=entrada["titulo"])
+        return Pista(ruta=ruta, duracion=entrada["duracion"], titulo=entrada["titulo"],
+                     artista=entrada["artista"], cancion=entrada.get("cancion"),
+                     album=entrada.get("album"), isrc=entrada.get("isrc"))
     pista = leer_pista(ruta)
     if pista is not None:
         nueva[clave] = {"mtime_ns": st.st_mtime_ns, "tamano": st.st_size,
-                        "duracion": pista.duracion, "titulo": pista.titulo}
+                        "duracion": pista.duracion, "titulo": pista.titulo, "artista": pista.artista,
+                        "cancion": pista.cancion, "album": pista.album, "isrc": pista.isrc}
     return pista
 
 
