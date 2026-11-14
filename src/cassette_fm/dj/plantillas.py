@@ -28,18 +28,26 @@ _MIN_EN = {5: "five past", 10: "ten past", 15: "quarter past", 20: "twenty past"
 _DIAS_ES = ["lunes", "martes", "miércoles", "jueves", "viernes", "sábado", "domingo"]
 _DIAS_EN = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]
 
-# La frase = extras de apertura + marco (tema y artista) + extras de cierre. Cada oración tiene al menos cuatro
-# palabras aunque el nombre propio sea una sola (si no, el texto para voz la une con la vecina).
+# La frase = [oraciones sueltas: hora, estación, momento, tema anterior] + UNA oración principal: el marco (tema y
+# artista) con, si toca, un comienzo enganchado delante (clima o álbum) y un dato colgado al final del nombre al que
+# se refiere (el año del tema, el país del artista). Cada oración tiene al menos cuatro palabras aunque el nombre
+# propio sea una sola (si no, el texto para voz la une con la vecina).
+# (marco, nombre con el que termina: "artista", "titulo" o None si termina en un relleno)
 _MARCOS = {
-    "es": ["Seguimos con {artista} y su tema {titulo} para acompañar este momento de la mejor manera.",
-           "Ahora suena {titulo} de {artista} para todos ustedes.",
-           "Con ustedes {artista} y su tema {titulo} sin interrupciones.",
-           "Sigue {artista} con {titulo} para que no pares.",
-           "Llega {titulo} de {artista} para vos."],
-    "en": ["Coming up next we have {artista} with {titulo} to keep you company.",
-           "Now playing {titulo} by {artista} for everybody out there.",
-           "Here comes {artista} with {titulo} right on time.",
-           "Stay with us for {titulo} from {artista} right now."],
+    "es": [("Seguimos con {artista} y su tema {titulo} para acompañar este momento de la mejor manera", None),
+           ("Llega {titulo} de {artista} para vos", None),
+           ("Ahora suena {titulo} de {artista}", "artista"),
+           ("Sigue {titulo} con {artista}", "artista"),
+           ("Llega {titulo} de la mano de {artista}", "artista"),
+           ("Con ustedes {artista} y su tema {titulo}", "titulo"),
+           ("De {artista} escuchamos ahora {titulo}", "titulo"),
+           ("Sigue {artista} con {titulo}", "titulo")],
+    "en": [("Coming up next we have {artista} with {titulo} to keep you company", None),
+           ("Now playing {titulo} by {artista}", "artista"),
+           ("Up next is {titulo} by {artista}", "artista"),
+           ("Here comes {titulo} from {artista}", "artista"),
+           ("Here comes {artista} with {titulo}", "titulo"),
+           ("Stay with us for {artista} and {titulo}", "titulo")],
 }
 _EXTRAS = {
     "es": {
@@ -51,7 +59,6 @@ _EXTRAS = {
                     "Qué lindo pasar {este_momento} con ustedes.", "Compartimos {este_dia} con todos ustedes.",
                     "Para disfrutar {este_dia} con buena música."],
         "anterior": ["Veníamos de {artista_ant} con {titulo_ant}.", "Recién sonó {artista_ant} con {titulo_ant}."],
-        "album": ["Del disco {album} para ustedes.", "Del álbum {album} de su discografía."],
     },
     "en": {
         "hora": ["It is {hora} and we keep going.", "It is {hora} right here with you.",
@@ -63,14 +70,14 @@ _EXTRAS = {
                     "Nothing beats {este_momento} with good music.", "Enjoy {este_dia} with great music.",
                     "Let us make {este_dia} sound good."],
         "anterior": ["We just heard {artista_ant} with {titulo_ant}.", "That was {artista_ant} with {titulo_ant}."],
-        "album": ["From the album {album} for you.", "Taken from the album {album} for everybody."],
     },
 }
-_CLIMA = {
-    "es": ["Afuera hay {grados} y {cielo}.", "Ahora mismo en Buenos Aires hay {grados}.",
-           "Con {grados} afuera seguimos acá."],
-    "en": ["It is {grados} outside and {cielo}.", "Right now in Buenos Aires it is {grados}.",
-           "With {grados} outside we keep going."],
+# comienzos enganchados delante del marco (van con una coma y el marco empieza en minúscula)
+_COMIENZOS = {
+    "es": {"clima": ["Con {grados} afuera", "Afuera hay {grados} y {cielo}"],
+           "album": ["Del disco {album}", "Desde el álbum {album}"]},
+    "en": {"clima": ["With {grados} outside", "It is {grados} outside and {cielo}"],
+           "album": ["From the album {album}", "Taken from the album {album}"]},
 }
 _CIELO = {
     "es": {"despejado": "el cielo está despejado", "nublado": "está nublado", "lluvia": "está lloviendo",
@@ -79,16 +86,15 @@ _CIELO = {
            "tormenta": "there is a storm", "niebla": "it is foggy", "nieve": "it is snowing"},
 }
 _NOCHE_DESPEJADA = {"es": "la noche está despejada", "en": "the night is clear"}
-# (campos que necesita, texto)
-_DATO = {
-    "es": [("anio", "Este tema salió en {anio}."), ("anio", "{titulo} es de {anio}."),
-           ("pais", "{artista} viene de {pais}."), ("inicio", "{artista} es una banda que empezó en {inicio}.")],
-    "en": [("anio", "This one came out in {anio}."), ("anio", "{titulo} dates from {anio}."),
-           ("pais", "{artista} comes from {pais}."), ("inicio", "{artista} is a band that started in {inicio}.")],
+# datos colgados del final del marco: (campo que necesita, nombre al que se pegan, texto)
+_COLAS = {
+    "es": [("anio", "titulo", "que salió en {anio}"), ("anio", "titulo", "que es de {anio}"),
+           ("pais", "artista", "que viene de {pais}"), ("inicio", "artista", "una banda que empezó en {inicio}")],
+    "en": [("anio", "titulo", "which came out in {anio}"), ("anio", "titulo", "from {anio}"),
+           ("pais", "artista", "an artist from {pais}"), ("inicio", "artista", "a band that started in {inicio}")],
 }
 _DESCARTE = ("dato", "clima", "anterior", "album")        # lo primero que se saca si la frase no entra
-_APERTURA = ("hora", "estacion", "momento", "clima", "anterior")
-_CIERRE = ("album", "dato")
+_SUELTOS = ("hora", "estacion", "momento", "anterior")
 
 
 @dataclass(frozen=True)
@@ -141,15 +147,15 @@ def _grados(temperatura: int, idioma: str) -> str:
     return f"{palabras} {'grados' if idioma == 'es' else 'degrees'}"
 
 
-def _variantes_de_dato(hechos: Hechos, idioma: str) -> list[str]:
-    """Las frases de dato que se pueden decir con lo verificado (cada una exige sus campos)."""
+def _variantes_de_dato(hechos: Hechos, idioma: str) -> list[tuple[str, str]]:
+    """Las colas de dato que se pueden decir con lo verificado: (nombre al que se pegan, texto)."""
     t = hechos.tema
     if t is None:
         return []
     tiene = {"anio": t.anio is not None and 1900 <= t.anio <= 2099,
              "pais": t.pais is not None and nombre_de_pais(t.pais, idioma) is not None,
              "inicio": t.es_grupo and t.anio_inicio_artista is not None and 1900 <= t.anio_inicio_artista <= 2099}
-    return [texto for campo, texto in _DATO[idioma] if tiene[campo]]
+    return [(nombre, texto) for campo, nombre, texto in _COLAS[idioma] if tiene[campo]]
 
 
 def ingredientes_disponibles(pedido: Pedido, hechos: Hechos = Hechos()) -> set[str]:
@@ -168,6 +174,16 @@ def ingredientes_disponibles(pedido: Pedido, hechos: Hechos = Hechos()) -> set[s
     return disponibles
 
 
+def _artistas(artista: str) -> list[str]:
+    """Los artistas del tag sin repetidos ("R.K.M & Ken-Y, Ken-Y" → uno solo) y a lo sumo dos."""
+    partes = [p.strip() for p in artista.split(", ") if p.strip()]
+    claves = [re.sub(r"\W+", " ", p.casefold()).strip() for p in partes]
+    utiles = [p for i, p in enumerate(partes)
+              if not any(i != j and (f" {claves[i]} " in f" {claves[j]} ") and (claves[i] != claves[j] or j < i)
+                         for j in range(len(partes)))]
+    return (utiles or partes)[:2]
+
+
 def redactar(pedido: Pedido, lexico: Lexico, azar: random.Random, palabras_maximas: int,
              zona: tzinfo | None = None, hechos: Hechos = Hechos(),
              pesos: Mapping[str, float] = PESOS_POR_DEFECTO, maximo: int = 3,
@@ -183,7 +199,8 @@ def redactar(pedido: Pedido, lexico: Lexico, azar: random.Random, palabras_maxim
     hora = frase_hora(momento, idioma)
     dia = _DIAS_ES[momento.weekday()] if es else _DIAS_EN[momento.weekday()]
     campos = {
-        "artista": m(pedido.siguiente.artista), "titulo": m(pedido.siguiente.titulo), "estacion": m(pedido.estacion),
+        "artista": (" y " if es else " and ").join(m(a) for a in _artistas(pedido.siguiente.artista)),
+        "titulo": m(pedido.siguiente.titulo), "estacion": m(pedido.estacion),
         "hora": hora, "son": "Es" if hora.startswith("la ") else "Son",
         "son_min": "es" if hora.startswith("la ") else "son",
         "este_momento": _este_momento(momento, es), "este_dia": f"este {dia}" if es else f"this {dia}",
@@ -191,14 +208,14 @@ def redactar(pedido: Pedido, lexico: Lexico, azar: random.Random, palabras_maxim
     if pedido.siguiente.album:
         campos["album"] = m(pedido.siguiente.album)
     if pedido.anterior is not None:
-        campos["artista_ant"] = m(pedido.anterior.artista)
+        campos["artista_ant"] = (" y " if es else " and ").join(m(a) for a in _artistas(pedido.anterior.artista))
         campos["titulo_ant"] = m(pedido.anterior.titulo)
     disponibles = ingredientes_disponibles(pedido, hechos)
     if "clima" in disponibles:
         c = hechos.clima
-        cielo = (_NOCHE_DESPEJADA[idioma] if not c.es_de_dia and c.cielo == "despejado" else _CIELO[idioma][c.cielo])
         campos["grados"] = _grados(c.temperatura, idioma)
-        campos["cielo"] = cielo
+        campos["cielo"] = (_NOCHE_DESPEJADA[idioma] if not c.es_de_dia and c.cielo == "despejado"
+                           else _CIELO[idioma][c.cielo])
     if hechos.tema is not None:
         t = hechos.tema
         if t.anio is not None and 1900 <= t.anio <= 2099:
@@ -208,41 +225,52 @@ def redactar(pedido: Pedido, lexico: Lexico, azar: random.Random, palabras_maxim
         if t.anio_inicio_artista is not None and 1900 <= t.anio_inicio_artista <= 2099:
             campos["inicio"] = anio_en_palabras(t.anio_inicio_artista, idioma)
 
-    elegidos = elegir_ingredientes(disponibles, pesos, pedido.recientes, azar,
-                                   maximo, penalizacion)
+    elegidos = elegir_ingredientes(disponibles, pesos, pedido.recientes, azar, maximo, penalizacion)
+    if "clima" in elegidos and "album" in elegidos:
+        elegidos = tuple(i for i in elegidos if i != "album")         # un solo comienzo enganchado por frase
 
-    def extra(ingrediente: str) -> str:
-        if ingrediente == "clima":
-            return azar.choice(_CLIMA[idioma]).format(**campos)
-        if ingrediente == "dato":
-            return azar.choice(_variantes_de_dato(hechos, idioma)).format(**campos)
-        return azar.choice(_EXTRAS[idioma][ingrediente]).format(**campos)
+    def armar(marco: str, usados: Sequence[str], comienzo: str | None, cola: str | None) -> str:
+        sueltos = {i: azar_sueltos[i] for i in usados if i in _SUELTOS}
+        if "hora" in sueltos and "estacion" in sueltos and fusion:
+            sueltos["hora"] = fusion
+            del sueltos["estacion"]
+        principal = marco.format(**campos)
+        if comienzo is not None and comienzo in usados:
+            enganche = azar_comienzos[comienzo].format(**campos)
+            principal = f"{enganche}, {principal[0].lower()}{principal[1:]}"
+        if cola is not None and "dato" in usados:
+            principal += f", {cola.format(**campos)}"
+        partes = [sueltos[i] for i in _SUELTOS if i in sueltos] + [principal + "."]
+        return " ".join(partes)
 
-    def armar(marco: str, usados: Sequence[str]) -> tuple[str, tuple[str, ...]]:
-        frases = {i: extra(i) for i in usados if i != "hora+estacion"}
-        if "hora" in usados and "estacion" in usados and azar.random() < 0.5:
-            frases["hora"] = azar.choice(_EXTRAS[idioma]["hora+estacion"]).format(**campos)
-            del frases["estacion"]
-        partes = [frases[i] for i in _APERTURA if i in frases] + [marco.format(**campos)] \
-            + [frases[i] for i in _CIERRE if i in frases]
-        return " ".join(partes), ("cancion", *usados)
-
-    def ajustar(marco: str) -> Redaccion | None:
+    def ajustar(marco: str, cola: str | None) -> Redaccion | None:
         usados = [i for i in elegidos if i != "cancion"]
+        comienzo = next((i for i in ("clima", "album") if i in usados), None)
         while True:
-            texto, ingredientes = armar(marco, usados)
+            texto = armar(marco, usados, comienzo, cola)
             if _palabras(texto) <= palabras_maximas:
-                return Redaccion(texto, ingredientes)
-            candidato = next((i for i in _DESCARTE if i in usados), None)
-            if candidato is None:
-                candidato = next(iter(usados), None)
+                return Redaccion(texto, ("cancion", *usados))
+            candidato = next((i for i in _DESCARTE if i in usados), None) or next(iter(usados), None)
             if candidato is None:
                 return None
             usados.remove(candidato)
+            if candidato == comienzo:
+                comienzo = None
 
     for _ in range(10):
-        r = ajustar(azar.choice(_MARCOS[idioma]))
+        # lo que se elige al azar una vez por intento: las oraciones sueltas, su fusión y los comienzos
+        azar_sueltos = {i: azar.choice(_EXTRAS[idioma][i]).format(**campos) for i in _SUELTOS
+                        if i != "anterior" or pedido.anterior is not None}
+        fusion = (azar.choice(_EXTRAS[idioma]["hora+estacion"]).format(**campos) if azar.random() < 0.5 else None)
+        azar_comienzos = {i: azar.choice(f) for i, f in _COMIENZOS[idioma].items()}
+        cola = None
+        pool = _MARCOS[idioma]
+        if "dato" in elegidos:
+            nombre, cola = azar.choice(_variantes_de_dato(hechos, idioma))
+            pool = [mc for mc in pool if mc[1] == nombre]
+        marco = azar.choice(pool)[0]
+        r = ajustar(marco, cola)
         if r is not None:
             return r
-    marco = min(_MARCOS[idioma], key=lambda t: _palabras(t.format(**campos)))
-    return Redaccion(marco.format(**campos), ("cancion",))
+    marco = min((mc[0] for mc in _MARCOS[idioma]), key=lambda t: _palabras(t.format(**campos)))
+    return Redaccion(marco.format(**campos) + ".", ("cancion",))

@@ -269,7 +269,7 @@ def test_el_dato_usa_solo_lo_que_hay():
         a = sin_marcas(redactar(pedido("es"), Lexico(), random.Random(s), 60, hechos=solo_anio, pesos=ALTOS, maximo=9))
         assert "viene de" not in a and "empezó" not in a
         b = sin_marcas(redactar(pedido("es"), Lexico(), random.Random(s), 60, hechos=solo_pais, pesos=ALTOS, maximo=9))
-        assert "salió" not in b and " es de " not in b and "empezó" not in b
+        assert "salió" not in b and "que es de" not in b and "empezó" not in b
 
 
 def test_el_anio_va_en_palabras_y_el_pais_con_nombre():
@@ -320,12 +320,11 @@ def test_si_no_entra_se_descartan_primero_dato_clima_anterior_album():
             ing = set(r.ingredientes)
             vistos.add(frozenset(ing))
             # se saca de a uno y en este orden: lo que se saca después sigue estando si quedó algo de lo anterior
+            # (el álbum no entra cuando sale el clima: un solo comienzo enganchado por frase)
             if "dato" in ing:
-                assert {"clima", "anterior", "album"} <= ing
+                assert {"clima", "anterior"} <= ing
             if "clima" in ing:
-                assert {"anterior", "album"} <= ing
-            if "anterior" in ing:
-                assert "album" in ing
+                assert "anterior" in ing
         assert len(vistos) >= 1
     chico = redactar(p, Lexico(), random.Random(1), 8, hechos=TODO, pesos=ALTOS, maximo=9)
     assert chico.ingredientes == ("cancion",)           # el marco nunca se descarta
@@ -372,3 +371,90 @@ def test_un_clima_absurdo_no_se_ofrece_y_no_tumba_la_frase():
         assert "clima" not in ingredientes_disponibles(pedido(), h)
         for s in range(100):
             assert "clima" not in redactar(pedido("es"), Lexico(), random.Random(s), 45, hechos=h, pesos=ALTOS).ingredientes
+
+
+# --- datos enganchados en la misma oración (feedback del 14/11) ---
+
+def oraciones(r):
+    return [o for o in re.split(r"(?<=[.?])\s+", r.marcado.strip()) if o]
+
+
+@pytest.mark.parametrize("idioma", ["es", "en"])
+def test_el_dato_va_pegado_al_nombre_al_que_se_refiere(idioma):
+    """Nada de oraciones sueltas con un dato al final: el año se cuelga del tema y el país, del artista."""
+    p = pedido(idioma, album=False, anterior=False, siguiente=("Foreigner", "Waiting for a Girl Like You"))
+    con_anio = con_pais = 0
+    for s in range(400):
+        r = redactar(p, Lexico(), random.Random(s), 60, hechos=TODO, pesos=dict(ALTOS, hora=0, estacion=0, momento=0,
+                                                                                 clima=0), maximo=2)
+        for o in oraciones(r):
+            if re.search(r"salió en|came out in|from nineteen|que es de", MARCA.sub(lambda m: m.group(2), o)):
+                assert "Waiting for a Girl Like You" in o and "Foreigner" in o      # misma oración que el marco
+                con_anio += 1
+            if re.search(r"viene de|from Norway|comes from|empezó|started in", MARCA.sub(lambda m: m.group(2), o)):
+                assert "Foreigner" in o and "Waiting for a Girl Like You" in o
+                con_pais += 1
+        assert len(oraciones(r)) == 1                # solo marco + dato: una única oración
+    assert con_anio > 20 and con_pais > 20
+
+
+def test_el_dato_del_anio_cuelga_del_tema_y_el_del_pais_del_artista():
+    p = pedido("es", album=False, anterior=False)
+    pesos = dict(ALTOS, hora=0, estacion=0, momento=0, clima=0)
+    solo_anio = Hechos(tema=DatosTema(1984, None, None, False, "u"))
+    solo_pais = Hechos(tema=DatosTema(None, "NO", None, False, "u"))
+    for s in range(150):
+        a = redactar(p, Lexico(), random.Random(s), 60, hechos=solo_anio, pesos=pesos, maximo=2).marcado
+        if "dato" in redactar(p, Lexico(), random.Random(s), 60, hechos=solo_anio, pesos=pesos, maximo=2).ingredientes:
+            assert re.search(r"\{es:Waiting for a Girl Like You\}, (que salió en|que es de) mil novecientos ochenta y cuatro\.$", a), a
+        b = redactar(p, Lexico(), random.Random(s), 60, hechos=solo_pais, pesos=pesos, maximo=2).marcado
+        if "dato" in redactar(p, Lexico(), random.Random(s), 60, hechos=solo_pais, pesos=pesos, maximo=2).ingredientes:
+            assert re.search(r"\{es:Foreigner\}, que viene de Noruega\.$", b), b
+
+
+def test_el_clima_se_engancha_delante_del_marco_en_la_misma_oracion():
+    p = pedido("es", album=False, anterior=False)
+    pesos = dict(ALTOS, hora=0, estacion=0, momento=0, dato=0)
+    vistos = 0
+    for s in range(200):
+        r = redactar(p, Lexico(), random.Random(s), 60, hechos=Hechos(clima=CLIMA), pesos=pesos, maximo=2)
+        if "clima" in r.ingredientes:
+            vistos += 1
+            assert len(oraciones(r)) == 1
+            assert re.match(r"(Con veintidós grados afuera|Afuera hay veintidós grados y está lloviendo), [a-záéíóú]", r.marcado), r.marcado
+    assert vistos > 50
+
+
+def test_el_album_tambien_se_engancha_y_no_compite_con_el_clima():
+    p = pedido("es", album=True, anterior=False)
+    pesos = dict(ALTOS, hora=0, estacion=0, momento=0, dato=0, clima=0.5)
+    con_album = 0
+    for s in range(200):
+        r = redactar(p, Lexico(), random.Random(s), 60, hechos=Hechos(clima=CLIMA), pesos=pesos, maximo=3)
+        assert not ("album" in r.ingredientes and "clima" in r.ingredientes)       # un solo comienzo enganchado
+        assert len(oraciones(r)) == 1
+        con_album += "album" in r.ingredientes
+    assert con_album > 20
+
+
+def test_hora_estacion_momento_y_anterior_siguen_siendo_oraciones_propias():
+    p = pedido("es")
+    pesos = dict(ALTOS, clima=0, dato=0, album=0)
+    for s in range(100):
+        r = redactar(p, Lexico(), random.Random(s), 80, pesos=pesos, maximo=5)
+        sueltos = [i for i in r.ingredientes if i in ("hora", "estacion", "momento", "anterior")]
+        # cada uno suma una oración (la hora y la estación pueden ir juntas en una sola)
+        assert len(oraciones(r)) in (1 + len(sueltos), len(sueltos))
+def test_un_artista_repetido_en_el_tag_no_se_dice_dos_veces():
+    p = pedido(siguiente=("R.K.M & Ken-Y, Ken-Y", "Down"))
+    for s in range(60):
+        r = redactar(p, Lexico(), random.Random(s), 60)
+        assert r.marcado.count("Ken-Y") == 1
+
+
+@pytest.mark.parametrize("idioma, lang, union", [("es", "es", " y "), ("en", "en-us", " and ")])
+def test_varios_artistas_se_unen_con_y(idioma, lang, union):
+    p = pedido(idioma, siguiente=("Lil Nas X, Billy Ray Cyrus", "Old Town Road"))
+    esperado = "{%s:Lil Nas X}%s{%s:Billy Ray Cyrus}" % (lang, union, lang)
+    for s in range(60):
+        assert esperado in redactar(p, Lexico(), random.Random(s), 60).marcado
