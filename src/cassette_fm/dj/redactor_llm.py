@@ -21,7 +21,8 @@ _MESES = {"es": ["enero", "febrero", "marzo", "abril", "mayo", "junio", "julio",
                  "noviembre", "diciembre"],
           "en": ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October",
                  "November", "December"]}
-_EXCEPCIONES = {"buenos", "aires", "argentina"}      # nombres comunes que no hace falta que estén en los hechos
+# nombres comunes que no hace falta que estén en los hechos (las siglas de país las usa para "United Kingdom")
+_EXCEPCIONES = {"buenos", "aires", "argentina", "uk", "us", "usa", "eeuu", "ee", "uu"}
 _PALABRA = re.compile(r"[^\W\d_][\w'’-]*")
 _NUMERO = re.compile(r"\d+(?:[.,]\d+)?")
 
@@ -55,6 +56,14 @@ def _titulo_limpio(titulo: str) -> str:
 
 def _idioma(pedido: Pedido) -> str:
     return "es" if pedido.idioma == "es" else "en"
+
+
+# "Moment: Saturday afternoon" se lee natural; con "this afternoon (Saturday)" el modelo escribía
+# "this afternoon Saturday"
+_PARTE_DEL_DIA = {"es": {"esta mañana": "por la mañana", "esta tarde": "por la tarde", "esta noche": "por la noche",
+                         "esta madrugada": "de madrugada"},
+                  "en": {"this morning": "morning", "this afternoon": "afternoon", "this evening": "evening",
+                         "tonight": "night"}}
 
 
 def campos_de_voz(pedido: Pedido, hechos: Hechos, zona: tzinfo | None = None) -> dict[str, str]:
@@ -99,8 +108,8 @@ def construir_peticion(pedido: Pedido, ingredientes: Sequence[str], hechos: Hech
     if "hora" in ingredientes:
         lineas.append(f"{'Hora' if es else 'Time'}: {campos_de_voz['hora']} ({campos_de_voz['momento']})")
     if "momento" in ingredientes:
-        lineas.append(f"{'Momento' if es else 'Moment'}: {campos_de_voz['momento']} ({campos_de_voz['dia']})"
-                      if es else f"Moment: {campos_de_voz['momento']} ({campos_de_voz['dia']})")
+        parte = _PARTE_DEL_DIA[idioma].get(campos_de_voz["momento"], campos_de_voz["momento"])
+        lineas.append(f"{'Momento' if es else 'Moment'}: {campos_de_voz['dia']} {parte}")
     if "album" in ingredientes and pedido.siguiente.album:
         lineas.append(f"{'Álbum' if es else 'Album'}: {pedido.siguiente.album}")
     if "anterior" in ingredientes and pedido.anterior is not None:
@@ -291,7 +300,7 @@ def verificar(texto: str, pedido: Pedido, peticion: Peticion, palabras_maximas: 
             return "número que no se puede decir"
         if int(numero) not in permitidos:
             return "número que no está en los hechos"
-        if not (0 <= int(numero) <= 99 or 1900 <= int(numero) <= 2099):
+        if not (0 <= int(numero) <= 999 or 1900 <= int(numero) <= 2099):
             return "número que no se puede decir"
     hablado = _norm(resto)
     for anio in (n for n in permitidos if 1900 <= n <= 2099):
@@ -307,7 +316,8 @@ def verificar(texto: str, pedido: Pedido, peticion: Peticion, palabras_maximas: 
             palabra = m.group(0)
             if i == 0 or not palabra[0].isupper() or len(palabra) == 1:
                 continue    # la mayúscula del arranque de una oración no indica un nombre
-            partes = [p for p in re.split(r"['’-]", _sin_acentos(palabra)) if p]
+            # solo las partes con mayúscula: en "UK-based" o "Synth-pop" la parte en minúscula no es un nombre
+            partes = [_sin_acentos(p) for p in re.split(r"['’-]", palabra) if p and p[0].isupper()]
             if not all(p in vocabulario or len(p) == 1 or difflib.get_close_matches(p, vocabulario, 1, 0.85)
                        for p in partes):
                 return f"nombre propio que no está en los hechos: {palabra}"
@@ -328,6 +338,23 @@ def salvar(texto: str, pedido: Pedido, peticion: Peticion, palabras_maximas: int
     return None
 
 
+_MESES_EN = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October",
+             "November", "December"]
+_ORDINALES_EN = ["", "first", "second", "third", "fourth", "fifth", "sixth", "seventh", "eighth", "ninth", "tenth",
+                 "eleventh", "twelfth", "thirteenth", "fourteenth", "fifteenth", "sixteenth", "seventeenth",
+                 "eighteenth", "nineteenth"]
+
+
+def _ordinal_en(n: int) -> str:
+    if not 1 <= n <= 31:
+        raise ValueError(f"número que no se puede decir: {n}")
+    if n < 20:
+        return _ORDINALES_EN[n]
+    decena, unidad = divmod(n, 10)
+    nombre = {2: "twenty", 3: "thirty"}[decena]
+    return f"{nombre} {_ORDINALES_EN[unidad]}" if unidad else nombre[:-1] + "ieth"
+
+
 def numeros_a_palabras(texto: str, idioma: str) -> str:
     """Pasa las cifras a palabras (años 1900–2099, 0–99); ValueError si hay una que no se puede decir.
     Lo que está dentro de una marca {idioma:Nombre} (U2, Blink-182…) no se toca."""
@@ -336,19 +363,36 @@ def numeros_a_palabras(texto: str, idioma: str) -> str:
     def grados(m: re.Match) -> str:
         return grados_en_palabras(int(m.group(1).replace("−", "-")), idioma)
 
+    def decir(n: int, crudo: str) -> str:
+        if 1900 <= n <= 2099:
+            return anio_en_palabras(n, idioma)
+        if 0 <= n <= 999:
+            return en_palabras(n, idioma)
+        raise ValueError(f"número que no se puede decir: {crudo}")
+
     def numero(m: re.Match) -> str:
         crudo = m.group(0)
         if not crudo.isdigit():
             raise ValueError(f"número que no se puede decir: {crudo}")
-        n = int(crudo)
-        if 1900 <= n <= 2099:
-            return anio_en_palabras(n, idioma)
-        if 0 <= n <= 99:
-            return en_palabras(n, idioma)
-        raise ValueError(f"número que no se puede decir: {crudo}")
+        palabras = decir(int(crudo), crudo)
+        if idioma == "es" and palabras.endswith("uno") and re.match(r"\s+(?:mil|millones)\b", m.string[m.end():]):
+            palabras = palabras[:-3] + ("ún" if palabras.endswith("veintiuno") else "un")   # "veintiún millones"
+        return palabras
+
+    def decada(m: re.Match) -> str:                     # "1970s" → "nineteen seventies", "80s" → "eighties"
+        palabras = decir(int(m.group(1)), m.group(0))
+        if idioma == "es":
+            return palabras
+        return palabras[:-1] + "ies" if palabras.endswith("y") else palabras + "s"
+
+    def fecha(m: re.Match) -> str:                      # "February 3" → "February third"
+        return f"{m.group(1)} {_ordinal_en(int(m.group(2)))}"
 
     def convertir(trozo: str) -> str:
         trozo = re.sub(r"(?<![\w-])([-−]?\d{1,2})\s+(?:grados?|degrees?)\b", grados, trozo)
+        if idioma == "en":
+            trozo = re.sub(r"\b(" + "|".join(_MESES_EN) + r")\s+(\d{1,2})(?:st|nd|rd|th)?\b", fecha, trozo)
+        trozo = re.sub(r"(?<![\w])['’]?(\d{2}|\d{4})s\b", decada, trozo)
         return _NUMERO.sub(numero, trozo)
 
     return "".join(p if p.startswith("{") and p.endswith("}") else convertir(p)

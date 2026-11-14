@@ -321,7 +321,7 @@ def test_numeros_a_palabras(texto, idioma, esperado):
     assert numeros_a_palabras(texto, idioma) == esperado
 
 
-@pytest.mark.parametrize("texto", ["100 fans", "1,5 millones", "3000 personas", "12345"])
+@pytest.mark.parametrize("texto", ["1000 fans", "1,5 millones", "3000 personas", "12345"])
 def test_numeros_a_palabras_que_no_se_pueden_decir(texto):
     with pytest.raises(ValueError):
         numeros_a_palabras(texto, "es")
@@ -508,3 +508,38 @@ def test_de_wikipedia_solo_van_las_dos_primeras_oraciones():
     assert "Gyllene" not in pet.usuario and "Philipsson" not in pet.usuario
     assert "Gyllene" in ver("Ahora suena Take On Me de a-ha, y Gessle venía de Gyllene Tider.",
                             ingredientes=("cancion", "dato"), hechos=Hechos(None, None, largo))
+
+
+@pytest.mark.parametrize("texto, idioma, esperado", [
+    ("They sold over 200 million records", "en", "They sold over two hundred million records"),
+    ("Vendieron 250 millones de discos", "es", "Vendieron doscientos cincuenta millones de discos"),
+    ("Vendieron 21 millones de discos", "es", "Vendieron veintiún millones de discos"),
+    ("He rose to fame in the 1970s", "en", "He rose to fame in the nineteen seventies"),
+    ("a hit of the 2000s and the 80s", "en", "a hit of the two thousands and the eighties"),
+    ("released on February 3, 2024", "en", "released on February third, twenty twenty four"),
+    ("from March 21 2001", "en", "from March twenty first two thousand one"),
+])
+def test_cifras_grandes_decadas_y_fechas_se_dicen_bien(texto, idioma, esperado):
+    assert numeros_a_palabras(texto, idioma) == esperado
+
+
+def test_una_cifra_de_wikipedia_hasta_999_pasa_la_verificacion():
+    wiki = Resumen("Los Eagles vendieron más de 200 millones de discos.", "Eagles", "es", "https://x")
+    assert ver("Ahora suena Take On Me de a-ha; los Eagles vendieron 200 millones de discos.",
+               ingredientes=("cancion", "dato"), hechos=Hechos(None, None, wiki)) is None
+
+
+@pytest.mark.parametrize("texto", [
+    "Now playing Take On Me by a-ha, the UK-based synth-pop group everyone knows.",
+    "Now playing Take On Me by a-ha, a band from the UK with a long career.",
+    "Now playing Take On Me by a-ha, a band that toured the US and the USA many times.",
+])
+def test_siglas_de_paises_y_compuestos_con_minuscula_no_son_nombres_nuevos(texto):
+    assert ver(texto, p=pedido("en")) is None
+
+
+def test_el_momento_se_dice_como_dia_y_parte_del_dia():
+    es = peticion(["cancion", "momento"]).usuario
+    assert "Momento: sábado de madrugada" in es
+    p = Pedido(**{**pedido("en").__dict__, "momento": datetime(2026, 11, 14, 13, 20, tzinfo=ZONA)})
+    assert "Moment: Saturday afternoon" in peticion(["cancion", "momento"], p=p).usuario

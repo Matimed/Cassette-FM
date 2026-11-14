@@ -16,7 +16,18 @@ def _idioma(idioma: str) -> str:
     return idioma
 
 
+_CENTENAS_ES = {1: "ciento", 2: "doscientos", 3: "trescientos", 4: "cuatrocientos", 5: "quinientos",
+                6: "seiscientos", 7: "setecientos", 8: "ochocientos", 9: "novecientos"}
+
+
 def _positivo(n: int, idioma: str) -> str:
+    if n >= 100:
+        c, resto = divmod(n, 100)
+        if idioma == "es":
+            if n == 100:
+                return "cien"
+            return _CENTENAS_ES[c] + (f" {_positivo(resto, 'es')}" if resto else "")
+        return f"{_UNIDADES_EN[c]} hundred" + (f" {_positivo(resto, 'en')}" if resto else "")
     if idioma == "es":
         if n < 30:
             return _UNIDADES_ES[n]
@@ -29,9 +40,9 @@ def _positivo(n: int, idioma: str) -> str:
 
 
 def en_palabras(n: int, idioma: str) -> str:
-    """Enteros de −99 a 99 ("veintidós", "minus three")."""
+    """Enteros de −999 a 999 ("veintidós", "minus three", "doscientos cincuenta")."""
     idioma = _idioma(idioma)
-    if not -99 <= n <= 99:
+    if not -999 <= n <= 999:
         raise ValueError(f"número fuera de rango: {n}")
     texto = _positivo(abs(n), idioma)
     return (f"menos {texto}" if idioma == "es" else f"minus {texto}") if n < 0 else texto

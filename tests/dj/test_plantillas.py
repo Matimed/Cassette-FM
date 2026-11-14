@@ -482,3 +482,19 @@ def test_varios_artistas_se_unen_con_y(idioma, lang, union):
     esperado = "{%s:Lil Nas X}%s{%s:Billy Ray Cyrus}" % (lang, union, lang)
     for s in range(60):
         assert esperado in redactar(p, Lexico(), random.Random(s), 60).marcado
+
+
+@pytest.mark.parametrize("album, recopilatorio", [
+    ("Die ultimative Chartshow: Die beliebtesten Hits aller Zeiten", True),
+    ("40 of the World’s Greatest Love Songs", True), ("Live in Zürich, Vol. 2", True),
+    ("The Dan Hill Collection", True), ("Frosh Eighties", True), ("All Night Love", False),
+    ("Now That's What I Call Music! 45", True), ("Grandes Éxitos", True), ("Lo Mejor de Wisin & Yandel", True),
+    ("Seth Troxler b2b Skream at fabric (DJ Mix)", True), ("Hunting High and Low", False), ("Look Sharp!", False),
+    ("La historia de el dúo, vol. 1", True), ("Slip of the Tongue", False),
+])
+def test_un_album_recopilatorio_no_es_ingrediente(album, recopilatorio):
+    from cassette_fm.dj.plantillas import es_recopilatorio, ingredientes_disponibles
+    assert es_recopilatorio(album) is recopilatorio
+    p = Pedido(id="x", estacion="E", idioma="es", voz="v", momento=a(12, 0), anterior=None,
+               siguiente=Tema("A", "T", album))
+    assert ("album" in ingredientes_disponibles(p)) is (not recopilatorio)

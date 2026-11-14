@@ -158,10 +158,22 @@ def _variantes_de_dato(hechos: Hechos, idioma: str) -> list[tuple[str, str]]:
     return [(nombre, texto) for campo, nombre, texto in _COLAS[idioma] if tiene[campo]]
 
 
+_RECOPILATORIO = re.compile(
+    r"\b(?:hits?|greatest|best of|collection|chartshow|compilation|anthology|essentials?|ultimate|"
+    r"vol(?:ume)?\b\.?|now that'?s|\blive\b|dj mix|\bmix\b|b2b|sixties|seventies|eighties|nineties|"
+    r"love songs|grandes [eé]xitos|[eé]xitos|lo mejor|colecci[oó]n|antolog[ií]a|en vivo|\d+\s+of the)\b",
+    re.IGNORECASE)
+
+
+def es_recopilatorio(album: str) -> bool:
+    """Un álbum de la etiqueta que no vale la pena nombrar: recopilatorios, en vivo, mezclas de DJ."""
+    return bool(_RECOPILATORIO.search(album))
+
+
 def ingredientes_disponibles(pedido: Pedido, hechos: Hechos = Hechos()) -> set[str]:
     """Qué ingredientes se pueden usar para este pedido con lo que hay (y lo verificado)."""
     disponibles = {"cancion", "estacion", "hora", "momento"}
-    if pedido.siguiente.album:
+    if pedido.siguiente.album and not es_recopilatorio(pedido.siguiente.album):
         disponibles.add("album")
     if pedido.anterior is not None:
         disponibles.add("anterior")
