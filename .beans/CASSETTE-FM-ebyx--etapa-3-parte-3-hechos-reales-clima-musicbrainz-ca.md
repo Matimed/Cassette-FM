@@ -1,10 +1,11 @@
 ---
 # CASSETTE-FM-ebyx
 title: 'Etapa 3, parte 3: hechos reales (clima, MusicBrainz, caché, selector de ingredientes)'
-status: todo
+status: in-progress
 type: feature
+priority: normal
 created_at: 2026-11-14T05:26:43Z
-updated_at: 2026-11-14T05:26:43Z
+updated_at: 2026-11-14T05:33:29Z
 parent: CASSETTE-FM-p6zn
 blocked_by:
     - CASSETTE-FM-zuej

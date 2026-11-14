@@ -134,7 +134,7 @@ def test_dj_defaults_del_planificador():
     assert (d.url, d.margen_minutos, d.frecuencia, d.voz, d.idioma, d.personalidad,
             d.timeout_http_segundos, d.espera_reintento_segundos, d.espera_reintento_maxima_segundos,
             d.espera_trabajo_maxima_segundos, d.recientes_cantidad) == (
-        "", 6.0, Frecuencia("temas", 2.0, 3.0), "em_santa", "es", "", 10.0, 5.0, 300.0, 600.0, 6)
+        "", 6.0, Frecuencia("temas", 2.0, 3.0), "af_heart", "en", "", 10.0, 5.0, 300.0, 600.0, 6)
 
 
 def test_la_frecuencia_general_vale_para_todas(tmp_path):
