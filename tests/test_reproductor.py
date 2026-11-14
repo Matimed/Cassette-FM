@@ -437,3 +437,17 @@ def test_integracion_una_rampa_en_curso_no_relanza_mpv_tras_cerrar(dir_corto):
     cliente.cerrar()
     time.sleep(1.3)                 # la rampa seguía hasta ~0,8 s: antes relanzaba mpv
     assert subprocess.run(["pgrep", "-f", str(dir_corto / "m.sock")], capture_output=True).returncode == 1
+
+
+def test_estatica_en_bucle_y_al_sacarla_para(mpv):
+    rep = Reproductor(mpv, reloj=lambda: T)
+    rep.sintonizar(E)
+    mpv.comandos.clear()
+    rep.estatica(Path("/tmp/estatica.wav"))
+    assert mpv.comandos[0] == (("loadfile",), {"url": "/tmp/estatica.wav", "flags": "replace"})
+    assert (("set_property", "loop-file", "inf"), {}) in mpv.comandos
+    assert rep.pista_actual is None
+    rep.manejar_evento({"event": "file-loaded"})        # el clip de estática no es un tema de la emisora
+    mpv.comandos.clear()
+    rep.estatica(None)
+    assert mpv.comandos == [(("stop",), {})]

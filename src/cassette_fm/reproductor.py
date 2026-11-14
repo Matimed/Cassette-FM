@@ -71,14 +71,25 @@ class Reproductor:
         with self._lock:
             self._detener()
 
-    def _detener(self) -> None:
+    def estatica(self, ruta) -> None:
+        """Con una ruta: deja la emisora y toca ese clip en bucle (la estática mientras suena otra fuente);
+        con None: la corta."""
+        with self._lock:
+            self._asegurar(restaurar_estacion=False)
+            self._detener(parar=ruta is None)        # el loadfile con "replace" ya reemplaza lo que suena
+            if ruta is not None:
+                self._mpv.comando("loadfile", url=str(ruta), flags="replace")
+                self._mpv.comando("set_property", "loop-file", "inf")
+
+    def _detener(self, parar: bool = True) -> None:
         self._estacion = None
         self._secuencia = None
         self._pistas = {}
         self._ids = deque()
         self._primero = None
         self.pista_actual = None
-        self._mpv.comando("stop")
+        if parar:
+            self._mpv.comando("stop")
 
     def posicion(self) -> float | None:
         """Segundo de la pista que suena; no relanza mpv si está caído."""

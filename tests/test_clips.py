@@ -32,3 +32,20 @@ def test_hay_silencios_entre_rafagas(tmp_path):
         corrida = corrida + 1 if abs(m) < 50 else 0
         mejor = max(mejor, corrida)
     assert mejor / fs >= 0.2
+
+
+def test_estatica_es_un_wav_corto_con_nivel_moderado_y_bordes_en_silencio(tmp_path):
+    import math
+    import struct
+    import wave
+    from cassette_fm.clips import generar_estatica
+    ruta = generar_estatica(tmp_path / "x" / "estatica.wav", 3.0)
+    with wave.open(str(ruta)) as w:
+        assert (w.getnchannels(), w.getsampwidth(), w.getframerate()) == (1, 2, 22050)
+        n = w.getnframes()
+        muestras = struct.unpack(f"<{n}h", w.readframes(n))
+    assert abs(n / 22050 - 3.0) < 0.01
+    rms = math.sqrt(sum(m * m for m in muestras) / n) / 32768
+    assert -30 < 20 * math.log10(rms) < -18
+    borde = int(0.005 * 22050)
+    assert max(abs(m) for m in muestras[:borde]) < 2000 and max(abs(m) for m in muestras[-borde:]) < 2000
