@@ -169,3 +169,63 @@ def test_con_el_dj_activo_el_registro_se_carga_del_disco(tmp_path, dir_corto, cr
         "audio": str(audio), "texto": "t", "pista_destino": "/m/t.mp3"}]))
     _correr_un_instante(tmp_path, dir_corto, dj=ConfigDJ(activo=True))
     assert audio.exists()                       # la intervención vigente sobrevive al reinicio
+
+
+def test_dj_de_punta_a_punta(tmp_path, dir_corto, crear_mp3, crear_wav):
+    from cassette_fm.config import ConfigDJ
+    musica = tmp_path / "musica"
+    for n in range(3):
+        crear_mp3(musica / "A" / f"t{n}.mp3", 3, titulo=f"Tema {n}")
+    clip = crear_wav(tmp_path / "voz.wav", 3.0)
+    rutas = Rutas(config=tmp_path / "config.toml", estado=tmp_path / "st" / "estado.json",
+                  cache=tmp_path / "cache" / "d.json", runtime=dir_corto)
+    puerto = puerto_libre()
+    dj = ConfigDJ(activo=True, retraso_voz_segundos=0.1, rampa_bajada_segundos=0.05, rampa_subida_segundos=0.05)
+    parar = threading.Event()
+    hilo = threading.Thread(target=servir, kwargs=dict(
+        config=Config(raiz_musica=musica, puerto=puerto, avisos=False, dj=dj), rutas=rutas,
+        parar=parar, extra_args_mpv=["--ao=null"]), daemon=True)
+    hilo.start()
+    try:
+        assert esperar_servicio(puerto)["encendida"] is False
+        assert llamar(puerto, "POST", "/encender")["estacion"] == "A"
+        r = llamar(puerto, "POST", "/dj/probar", {"audio": str(clip), "en_segundos": 1})
+        assert r["estacion"] == "A" and r["duracion"] == pytest.approx(3.0, abs=0.1)
+        estado = llamar(puerto, "GET", "/dj")
+        assert estado["activo"] is True and len(estado["intervenciones"]) == 1
+        habló = False
+        fin = time.monotonic() + 12
+        while time.monotonic() < fin:
+            hablando = llamar(puerto, "GET", "/dj")["hablando"]
+            habló = habló or hablando
+            if habló and not hablando:
+                break
+            time.sleep(0.05)
+        assert habló, "la voz nunca empezó"
+        assert llamar(puerto, "GET", "/dj")["hablando"] is False, "la voz no terminó"
+        assert llamar(puerto, "POST", "/apagar")["encendida"] is False
+    finally:
+        parar.set()
+        hilo.join(5)
+    assert not hilo.is_alive()
+    assert subprocess.run(["pgrep", "-f", str(dir_corto / "voz.sock")], capture_output=True).returncode == 1
+
+
+def test_dj_apagado_responde_estado_y_409_al_probar(tmp_path, dir_corto):
+    rutas = Rutas(tmp_path / "c.toml", tmp_path / "e.json", tmp_path / "d.json", dir_corto)
+    puerto = puerto_libre()
+    parar = threading.Event()
+    hilo = threading.Thread(target=servir, kwargs=dict(
+        config=Config(raiz_musica=tmp_path / "x", puerto=puerto, avisos=False), rutas=rutas,
+        parar=parar, extra_args_mpv=["--ao=null"]), daemon=True)
+    hilo.start()
+    try:
+        esperar_servicio(puerto)
+        assert llamar(puerto, "GET", "/dj")["activo"] is False
+        req = urllib.request.Request(f"http://127.0.0.1:{puerto}/dj/probar", data=b"", method="POST")
+        with pytest.raises(urllib.error.HTTPError) as exc:
+            urllib.request.urlopen(req)
+        assert exc.value.code == 409
+    finally:
+        parar.set()
+        hilo.join(5)

@@ -16,6 +16,7 @@ class RadioFalsa:
         self.llamadas = []
         self.encendida = True
         self.error = None
+        self.dj = {"activo": False, "hablando": False, "desfase_segundos": None, "intervenciones": []}
 
     def _hacer(self, nombre, *args, **kw):
         self.llamadas.append((nombre, args, kw))
@@ -30,6 +31,14 @@ class RadioFalsa:
     def estaciones(self):
         return [SimpleNamespace(nombre="Lentos", pistas=(1,) * 37),
                 SimpleNamespace(nombre="Regueton 2000", pistas=(1,) * 91)]
+
+    def dj_estado(self):
+        return self.dj
+
+    def dj_probar(self, audio=None, en_segundos=20.0):
+        self._hacer("dj_probar", audio=audio, en_segundos=en_segundos)
+        return {"estacion": "Regueton 2000", "inicio": 1.0, "duracion": 8.0,
+                "pista_destino": "/m/Daddy Yankee - Gasolina.mp3", "en_segundos": 24.6}
 
     def sintonizar(self, nombre): self._hacer("sintonizar", nombre)
     def siguiente(self): self._hacer("siguiente")
@@ -158,3 +167,44 @@ def test_config_invalida_da_mensaje_y_codigo_1(monkeypatch, tmp_path, capsys):
     (tmp_path / "cassette-fm" / "config.toml").write_text('puerto = "x"\n')
     assert main(["status"]) == 1
     assert "config.toml" in capsys.readouterr().err
+
+
+def test_dj_estado_apagado(servicio, capsys):
+    assert main(["dj", "estado", "--puerto", servicio.puerto]) == 0
+    assert capsys.readouterr().out.strip() == "DJ apagado"
+
+
+def test_dj_estado_con_intervenciones(servicio, capsys):
+    servicio.radio.dj = {"activo": True, "hablando": True, "desfase_segundos": 0.4, "intervenciones": [
+        {"estacion": "Lentos", "inicio": 5.0, "duracion": 9.8, "texto": "(clip de prueba)", "en_segundos": 312.0}]}
+    assert main(["dj", "estado", "--puerto", servicio.puerto]) == 0
+    assert capsys.readouterr().out.splitlines() == [
+        "DJ activo · habla: sí · desfase: 0.4 s",
+        "  Lentos · en 312 s · 9.8 s · (clip de prueba)"]
+
+
+def test_dj_estado_sin_desfase_medido(servicio, capsys):
+    servicio.radio.dj = {"activo": True, "hablando": False, "desfase_segundos": None, "intervenciones": []}
+    main(["dj", "estado", "--puerto", servicio.puerto])
+    assert capsys.readouterr().out.strip() == "DJ activo · habla: no · desfase: —"
+
+
+def test_dj_probar_imprime_cuando_hablara(servicio, capsys):
+    assert main(["dj", "probar", "--puerto", servicio.puerto]) == 0
+    assert capsys.readouterr().out.strip() == (
+        "El DJ va a hablar en 25 s, justo después de que arranque «Daddy Yankee - Gasolina» en Regueton 2000.")
+    assert servicio.radio.llamadas == [("dj_probar", (), {"audio": None, "en_segundos": 20.0})]
+
+
+def test_dj_probar_con_audio_manda_ruta_absoluta(servicio, monkeypatch, tmp_path):
+    monkeypatch.chdir(tmp_path)
+    assert main(["dj", "probar", "--audio", "clip.wav", "--en", "45", "--puerto", servicio.puerto]) == 0
+    (llamada,) = servicio.radio.llamadas
+    assert str(llamada[2]["audio"]) == str(tmp_path / "clip.wav") and llamada[2]["en_segundos"] == 45.0
+
+
+def test_dj_probar_error_de_la_api_da_codigo_1(servicio, capsys):
+    from cassette_fm.radio import DJInactivo
+    servicio.radio.error = DJInactivo("apagado")
+    assert main(["dj", "probar", "--puerto", servicio.puerto]) == 1
+    assert "activo = true" in capsys.readouterr().err

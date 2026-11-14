@@ -1,10 +1,11 @@
 ---
 # CASSETTE-FM-hnhf
 title: 'Etapa 3, parte 1: capa de intervenciones, segundo mpv y música bajada'
-status: todo
+status: completed
 type: feature
+priority: normal
 created_at: 2026-11-14T01:19:45Z
-updated_at: 2026-11-14T01:19:45Z
+updated_at: 2026-11-14T01:33:06Z
 parent: CASSETTE-FM-p6zn
 ---
 

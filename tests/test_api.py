@@ -9,7 +9,7 @@ import pytest
 
 from cassette_fm.api import crear_servidor
 from cassette_fm.mpv import ErrorMpv
-from cassette_fm.radio import EstacionInexistente, SinEstaciones
+from cassette_fm.radio import DJInactivo, RadioApagada, EstacionInexistente, SinEstaciones
 
 
 class RadioFalsa:
@@ -29,6 +29,13 @@ class RadioFalsa:
 
     def estaciones(self):
         return [SimpleNamespace(nombre="A", pistas=(1, 2)), SimpleNamespace(nombre="B", pistas=(1,))]
+
+    def dj_estado(self):
+        return {"activo": True, "hablando": False, "desfase_segundos": 0.4, "intervenciones": []}
+
+    def dj_probar(self, audio=None, en_segundos=20.0):
+        self._hacer("dj_probar", audio=audio, en_segundos=en_segundos)
+        return {"estacion": "A", "inicio": 1.0, "duracion": 8.0, "pista_destino": "/m/t.mp3", "en_segundos": 20.0}
 
     def sintonizar(self, nombre): self._hacer("sintonizar", nombre)
     def siguiente(self): self._hacer("siguiente")
@@ -146,3 +153,44 @@ def test_error_inesperado_500_y_se_loguea(servidor, caplog):
     codigo, cuerpo = pedir(servidor, "POST", "/siguiente")
     assert codigo == 500 and "error" in cuerpo
     assert "explotó" in caplog.text
+
+
+def test_get_dj(servidor):
+    assert pedir(servidor, "GET", "/dj") == (200, servidor.radio.dj_estado())
+
+
+def test_post_dj_probar_pasa_audio_y_en_segundos(servidor):
+    codigo, cuerpo = pedir(servidor, "POST", "/dj/probar", {"audio": "/tmp/x.wav", "en_segundos": 30})
+    assert codigo == 200 and cuerpo["pista_destino"] == "/m/t.mp3"
+    (llamada,) = servidor.radio.llamadas
+    assert llamada[0] == "dj_probar"
+    assert str(llamada[2]["audio"]) == "/tmp/x.wav" and llamada[2]["en_segundos"] == 30.0
+
+
+def test_post_dj_probar_sin_cuerpo_usa_los_valores_por_defecto(servidor):
+    assert pedir(servidor, "POST", "/dj/probar")[0] == 200
+    assert servidor.radio.llamadas[0][2] == {"audio": None, "en_segundos": 20.0}
+
+
+def test_dj_inactivo_409(servidor):
+    servidor.radio.error = DJInactivo("apagado")
+    codigo, cuerpo = pedir(servidor, "POST", "/dj/probar")
+    assert codigo == 409 and "activo = true" in cuerpo["error"] and "[dj]" in cuerpo["error"]
+
+
+def test_radio_apagada_409(servidor):
+    servidor.radio.error = RadioApagada("apagada")
+    codigo, cuerpo = pedir(servidor, "POST", "/dj/probar")
+    assert codigo == 409 and "encendé la radio" in cuerpo["error"]
+
+
+def test_dj_probar_valueerror_400(servidor):
+    servidor.radio.error = ValueError("el clip dura 20.0 s y el máximo es 15 s")
+    codigo, cuerpo = pedir(servidor, "POST", "/dj/probar")
+    assert codigo == 400 and "el clip dura 20.0 s" in cuerpo["error"]
+
+
+@pytest.mark.parametrize("cuerpo", [{"en_segundos": "x"}, {"audio": 5}, {"en_segundos": True}])
+def test_dj_probar_tipos_invalidos_400(servidor, cuerpo):
+    assert pedir(servidor, "POST", "/dj/probar", cuerpo)[0] == 400
+    assert servidor.radio.llamadas == []

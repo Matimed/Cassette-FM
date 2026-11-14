@@ -4,7 +4,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
 from cassette_fm.mpv import ErrorMpv
-from cassette_fm.radio import EstacionInexistente, SinEstaciones
+from cassette_fm.radio import DJInactivo, EstacionInexistente, RadioApagada, SinEstaciones
 
 _log = logging.getLogger("cassette_fm")
 
@@ -54,6 +54,8 @@ def crear_servidor(radio, host: str = "127.0.0.1", puerto: int = 7710,
         def _get(self):
             if self.path == "/estado":
                 self._responder(200, radio.estado())
+            elif self.path == "/dj":
+                self._responder(200, radio.dj_estado())
             elif self.path == "/estaciones":
                 self._responder(200, [{"nombre": e.nombre, "pistas": len(e.pistas)}
                                       for e in radio.estaciones()])
@@ -62,12 +64,15 @@ def crear_servidor(radio, host: str = "127.0.0.1", puerto: int = 7710,
 
         def do_POST(self):
             ruta = self.path.lstrip("/")
-            if ruta not in ACCIONES + ("sintonizar", "volumen"):
+            if ruta not in ACCIONES + ("sintonizar", "volumen", "dj/probar"):
                 self._error(404, f"ruta desconocida: {self.path}")
                 return
+            respuesta = None
             try:
                 datos = self._leer_json()
-                if ruta == "sintonizar":
+                if ruta == "dj/probar":
+                    respuesta = self._dj_probar(datos)
+                elif ruta == "sintonizar":
                     if not isinstance(datos.get("estacion"), str):
                         raise _SolicitudInvalida("falta el campo 'estacion'")
                     radio.sintonizar(datos["estacion"])
@@ -87,6 +92,11 @@ def crear_servidor(radio, host: str = "127.0.0.1", puerto: int = 7710,
                 self._error(404, str(e))
             except ErrorMpv as e:
                 self._error(503, f"mpv: {e}")
+            except DJInactivo:
+                self._error(409, "El DJ está apagado: poné `activo = true` en la sección [dj] de "
+                                 "config.toml y reiniciá el servicio")
+            except RadioApagada:
+                self._error(409, "No hay una estación sintonizada: encendé la radio primero")
             except SinEstaciones:
                 donde = f" en {raiz}" if raiz else ""
                 self._error(409, f"No hay estaciones{donde}: cada subcarpeta con música es una estación")
@@ -94,7 +104,18 @@ def crear_servidor(radio, host: str = "127.0.0.1", puerto: int = 7710,
                 _log.exception("error inesperado en POST %s", self.path)
                 self._error(500, "error interno (mirá el log del servicio)")
             else:
-                self._responder(200, radio.estado())
+                self._responder(200, respuesta if respuesta is not None else radio.estado())
+
+        def _dj_probar(self, datos: dict) -> dict:
+            audio, en = datos.get("audio"), datos.get("en_segundos", 20.0)
+            if audio is not None and not isinstance(audio, str):
+                raise _SolicitudInvalida("'audio' tiene que ser una ruta (texto)")
+            if isinstance(en, bool) or not isinstance(en, (int, float)):
+                raise _SolicitudInvalida("'en_segundos' tiene que ser un número")
+            try:
+                return radio.dj_probar(audio=Path(audio) if audio else None, en_segundos=float(en))
+            except ValueError as e:
+                raise _SolicitudInvalida(str(e))
 
     servidor = ThreadingHTTPServer((host, puerto), Manejador)
     servidor.daemon_threads = True
