@@ -4,8 +4,15 @@ import re
 from dataclasses import dataclass
 from datetime import datetime, tzinfo
 
+from collections.abc import Mapping, Sequence
+
+from cassette_fm.dj.config import PESOS_POR_DEFECTO
+from cassette_fm.dj.hechos import Hechos
+from cassette_fm.dj.hechos.numeros import anio_en_palabras, en_palabras
+from cassette_fm.dj.hechos.paises import nombre_de_pais
 from cassette_fm.dj.lexico import Lexico
 from cassette_fm.dj.pedido import Pedido
+from cassette_fm.dj.selector import elegir_ingredientes
 from cassette_fm.dj.texto_voz import marcar
 
 _MARCA = re.compile(r"\{([A-Za-z-]+):([^{}]*)\}")
@@ -18,60 +25,76 @@ _MIN_EN = {5: "five past", 10: "ten past", 15: "quarter past", 20: "twenty past"
            30: "half past", 35: "twenty five to", 40: "twenty to", 45: "quarter to", 50: "ten to", 55: "five to"}
 
 
+_DIAS_ES = ["lunes", "martes", "miércoles", "jueves", "viernes", "sábado", "domingo"]
+_DIAS_EN = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]
+
+# La frase = extras de apertura + marco (tema y artista) + extras de cierre. Cada oración tiene al menos cuatro
+# palabras aunque el nombre propio sea una sola (si no, el texto para voz la une con la vecina).
+_MARCOS = {
+    "es": ["Seguimos con {artista} y su tema {titulo} para acompañar este momento de la mejor manera.",
+           "Ahora suena {titulo} de {artista} para todos ustedes.",
+           "Con ustedes {artista} y su tema {titulo} sin interrupciones.",
+           "Sigue {artista} con {titulo} para que no pares.",
+           "Llega {titulo} de {artista} para vos."],
+    "en": ["Coming up next we have {artista} with {titulo} to keep you company.",
+           "Now playing {titulo} by {artista} for everybody out there.",
+           "Here comes {artista} with {titulo} right on time.",
+           "Stay with us for {titulo} from {artista} right now."],
+}
+_EXTRAS = {
+    "es": {
+        "hora": ["{son} {hora} y seguimos con vos.", "{son} {hora} para que lo sepas.", "{son} {hora} en la radio."],
+        "estacion": ["Estás escuchando {estacion} en vivo.", "Esto es {estacion} tu radio de siempre.",
+                     "Acá en {estacion} seguimos con vos.", "Bienvenidos a {estacion} la radio que no para."],
+        "hora+estacion": ["En {estacion} {son_min} {hora} para vos.", "{son} {hora} acá en {estacion} con ustedes."],
+        "momento": ["Seguimos {este_momento} juntos.", "Pasamos {este_momento} con la mejor música.",
+                    "Qué lindo pasar {este_momento} con ustedes.", "Compartimos {este_dia} con todos ustedes.",
+                    "Para disfrutar {este_dia} con buena música."],
+        "anterior": ["Veníamos de {artista_ant} con {titulo_ant}.", "Recién sonó {artista_ant} con {titulo_ant}."],
+        "album": ["Del disco {album} para ustedes.", "Del álbum {album} de su discografía."],
+    },
+    "en": {
+        "hora": ["It is {hora} and we keep going.", "It is {hora} right here with you.",
+                 "The time is {hora} on the dial."],
+        "estacion": ["You are listening to {estacion} right now.", "This is {estacion} the station that never stops.",
+                     "Right here on {estacion} with all of you.", "Welcome to {estacion} where the music never stops."],
+        "hora+estacion": ["On {estacion} it is {hora} right now.", "It is {hora} here on {estacion} with you."],
+        "momento": ["Let us spend {este_momento} together.", "We share {este_momento} with all of you.",
+                    "Nothing beats {este_momento} with good music.", "Enjoy {este_dia} with great music.",
+                    "Let us make {este_dia} sound good."],
+        "anterior": ["We just heard {artista_ant} with {titulo_ant}.", "That was {artista_ant} with {titulo_ant}."],
+        "album": ["From the album {album} for you.", "Taken from the album {album} for everybody."],
+    },
+}
+_CLIMA = {
+    "es": ["Afuera hay {grados} y {cielo}.", "Ahora mismo en Buenos Aires hay {grados}.",
+           "Con {grados} afuera seguimos acá."],
+    "en": ["It is {grados} outside and {cielo}.", "Right now in Buenos Aires it is {grados}.",
+           "With {grados} outside we keep going."],
+}
+_CIELO = {
+    "es": {"despejado": "el cielo está despejado", "nublado": "está nublado", "lluvia": "está lloviendo",
+           "tormenta": "hay tormenta", "niebla": "hay niebla", "nieve": "está nevando"},
+    "en": {"despejado": "the sky is clear", "nublado": "it is cloudy", "lluvia": "it is raining",
+           "tormenta": "there is a storm", "niebla": "it is foggy", "nieve": "it is snowing"},
+}
+_NOCHE_DESPEJADA = {"es": "la noche está despejada", "en": "the night is clear"}
+# (campos que necesita, texto)
+_DATO = {
+    "es": [("anio", "Este tema salió en {anio}."), ("anio", "{titulo} es de {anio}."),
+           ("pais", "{artista} viene de {pais}."), ("inicio", "{artista} es una banda que empezó en {inicio}.")],
+    "en": [("anio", "This one came out in {anio}."), ("anio", "{titulo} dates from {anio}."),
+           ("pais", "{artista} comes from {pais}."), ("inicio", "{artista} is a band that started in {inicio}.")],
+}
+_DESCARTE = ("dato", "clima", "anterior", "album")        # lo primero que se saca si la frase no entra
+_APERTURA = ("hora", "estacion", "momento", "clima", "anterior")
+_CIERRE = ("album", "dato")
+
+
 @dataclass(frozen=True)
 class Redaccion:
     marcado: str                       # frase con marcas {lang:Nombre} en los nombres propios
     ingredientes: tuple[str, ...]
-
-
-@dataclass(frozen=True)
-class _Plantilla:
-    texto: str
-    ingredientes: tuple[str, ...]
-    requiere: frozenset[str] = frozenset()      # datos opcionales del pedido: "album", "anterior"
-
-
-def _p(texto, ingredientes, requiere=()):
-    return _Plantilla(texto, tuple(ingredientes), frozenset(requiere))
-
-
-_ES = [
-    _p("Seguimos con {artista} y su tema {titulo} para acompañar este momento de la mejor manera.", ["cancion"]),
-    _p("Esto es {estacion} y ahora te dejamos con {artista} cantando {titulo} para vos.", ["cancion", "estacion"]),
-    _p("{son} {hora} y suena {titulo} de {artista} para que sigas disfrutando de la música.", ["cancion", "hora"]),
-    _p("Seguimos {este_momento} con {titulo} de la mano de {artista} para todos los que nos escuchan.",
-       ["cancion", "momento"]),
-    _p("Terminamos con {artista_ant} y {titulo_ant} y seguimos ahora con {artista} y su tema {titulo}.",
-       ["cancion", "anterior"], ["anterior"]),
-    _p("En {estacion} {son_min} {hora} y toca el turno de {artista} con {titulo} sin cortes.",
-       ["cancion", "estacion", "hora"]),
-    _p("De su disco {album} escuchamos ahora {titulo} de {artista} acá en la radio de siempre.",
-       ["cancion", "album"], ["album"]),
-    _p("Estamos en {estacion} {este_momento} y ahora suena {titulo} de {artista} para todos nosotros.",
-       ["cancion", "estacion", "momento"]),
-    _p("{son} {hora} y después de {artista_ant} llega {artista} con su tema {titulo} para seguir.",
-       ["cancion", "hora", "anterior"], ["anterior"]),
-]
-
-_EN = [
-    _p("Coming up next we have {artista} with {titulo} to keep you company right here.", ["cancion"]),
-    _p("You are listening to {estacion} and now it is time for {titulo} by {artista} for you.",
-       ["cancion", "estacion"]),
-    _p("It is {hora} and here is {titulo} from {artista} to keep the music going right here.",
-       ["cancion", "hora"]),
-    _p("Let us spend {este_momento} together with {titulo} from {artista} for everyone listening.",
-       ["cancion", "momento"]),
-    _p("We just heard {artista_ant} with {titulo_ant} and now we continue with {artista} and {titulo}.",
-       ["cancion", "anterior"], ["anterior"]),
-    _p("On {estacion} it is {hora} and {artista} takes the stage with {titulo} for all of you.",
-       ["cancion", "estacion", "hora"]),
-    _p("From the album {album} here is {titulo} by {artista} for everybody out there right now.",
-       ["cancion", "album"], ["album"]),
-    _p("Staying on {estacion} {este_momento} with {titulo} by {artista} for everybody out there.",
-       ["cancion", "estacion", "momento"]),
-    _p("It is {hora} and after {artista_ant} comes {artista} with their song {titulo} for you.",
-       ["cancion", "hora", "anterior"], ["anterior"]),
-]
 
 
 def frase_hora(momento: datetime, idioma: str) -> str:
@@ -96,7 +119,8 @@ def frase_hora(momento: datetime, idioma: str) -> str:
 def _este_momento(momento: datetime, es: bool) -> str:
     h = momento.hour
     if es:
-        return "esta mañana" if 5 <= h < 12 else "esta tarde" if 12 <= h < 20 else "esta noche"
+        return ("esta madrugada" if h < 5 else "esta mañana" if h < 12 else "esta tarde" if h < 20
+                else "esta noche")
     return ("this morning" if 5 <= h < 12 else "this afternoon" if 12 <= h < 18
             else "this evening" if 18 <= h < 21 else "tonight")
 
@@ -105,39 +129,115 @@ def _palabras(marcado: str) -> int:
     return len(_MARCA.sub(lambda m: m.group(2), marcado).split())
 
 
-def redactar(pedido: Pedido, lexico: Lexico, azar: random.Random, palabras_maximas: int,
-             zona: tzinfo | None = None) -> Redaccion:
-    es = pedido.idioma == "es"
-    momento = pedido.momento.astimezone(zona) if zona is not None else pedido.momento
-    lang = pedido.lang
-    disponibles = set()
+def _grados(temperatura: int, idioma: str) -> str:
+    """La temperatura en palabras con su unidad ("veintidós grados", "menos un grado", "one degree")."""
+    n = abs(temperatura)
+    if n == 1:
+        cuerpo = "un grado" if idioma == "es" else "one degree"
+        return (f"menos {cuerpo}" if idioma == "es" else f"minus {cuerpo}") if temperatura < 0 else cuerpo
+    return f"{en_palabras(temperatura, idioma)} {'grados' if idioma == 'es' else 'degrees'}"
+
+
+def _variantes_de_dato(hechos: Hechos, idioma: str) -> list[str]:
+    """Las frases de dato que se pueden decir con lo verificado (cada una exige sus campos)."""
+    t = hechos.tema
+    if t is None:
+        return []
+    tiene = {"anio": t.anio is not None and 1900 <= t.anio <= 2099,
+             "pais": t.pais is not None and nombre_de_pais(t.pais, idioma) is not None,
+             "inicio": t.es_grupo and t.anio_inicio_artista is not None and 1900 <= t.anio_inicio_artista <= 2099}
+    return [texto for campo, texto in _DATO[idioma] if tiene[campo]]
+
+
+def ingredientes_disponibles(pedido: Pedido, hechos: Hechos = Hechos()) -> set[str]:
+    """Qué ingredientes se pueden usar para este pedido con lo que hay (y lo verificado)."""
+    disponibles = {"cancion", "estacion", "hora", "momento"}
     if pedido.siguiente.album:
         disponibles.add("album")
     if pedido.anterior is not None:
         disponibles.add("anterior")
-    elegibles = [t for t in (_ES if es else _EN) if t.requiere <= disponibles]
+    if hechos.clima is not None:
+        disponibles.add("clima")
+    idioma = "es" if pedido.idioma == "es" else "en"
+    if _variantes_de_dato(hechos, idioma):
+        disponibles.add("dato")
+    return disponibles
+
+
+def redactar(pedido: Pedido, lexico: Lexico, azar: random.Random, palabras_maximas: int,
+             zona: tzinfo | None = None, hechos: Hechos = Hechos(),
+             pesos: Mapping[str, float] = PESOS_POR_DEFECTO, maximo: int = 3,
+             penalizacion: float = 0.3) -> Redaccion:
+    idioma = "es" if pedido.idioma == "es" else "en"
+    es = idioma == "es"
+    momento = pedido.momento.astimezone(zona) if zona is not None else pedido.momento
+    lang = pedido.lang
 
     def m(nombre: str) -> str:
         return marcar(lexico.pronunciacion(nombre), lexico.idioma_de(nombre, lang))
 
-    hora = frase_hora(momento, "es" if es else "en")
+    hora = frase_hora(momento, idioma)
+    dia = _DIAS_ES[momento.weekday()] if es else _DIAS_EN[momento.weekday()]
     campos = {
         "artista": m(pedido.siguiente.artista), "titulo": m(pedido.siguiente.titulo), "estacion": m(pedido.estacion),
         "hora": hora, "son": "Es" if hora.startswith("la ") else "Son",
         "son_min": "es" if hora.startswith("la ") else "son",
-        "este_momento": _este_momento(momento, es),
+        "este_momento": _este_momento(momento, es), "este_dia": f"este {dia}" if es else f"this {dia}",
     }
     if pedido.siguiente.album:
         campos["album"] = m(pedido.siguiente.album)
     if pedido.anterior is not None:
         campos["artista_ant"] = m(pedido.anterior.artista)
         campos["titulo_ant"] = m(pedido.anterior.titulo)
+    if hechos.clima is not None:
+        c = hechos.clima
+        cielo = (_NOCHE_DESPEJADA[idioma] if not c.es_de_dia and c.cielo == "despejado" else _CIELO[idioma][c.cielo])
+        campos["grados"] = _grados(c.temperatura, idioma)
+        campos["cielo"] = cielo
+    if hechos.tema is not None:
+        t = hechos.tema
+        if t.anio is not None and 1900 <= t.anio <= 2099:
+            campos["anio"] = anio_en_palabras(t.anio, idioma)
+        if t.pais is not None and nombre_de_pais(t.pais, idioma):
+            campos["pais"] = nombre_de_pais(t.pais, idioma)
+        if t.anio_inicio_artista is not None and 1900 <= t.anio_inicio_artista <= 2099:
+            campos["inicio"] = anio_en_palabras(t.anio_inicio_artista, idioma)
 
-    def armar(t: _Plantilla) -> Redaccion:
-        return Redaccion(t.texto.format(**campos), t.ingredientes)
+    elegidos = elegir_ingredientes(ingredientes_disponibles(pedido, hechos), pesos, pedido.recientes, azar,
+                                   maximo, penalizacion)
+
+    def extra(ingrediente: str) -> str:
+        if ingrediente == "clima":
+            return azar.choice(_CLIMA[idioma]).format(**campos)
+        if ingrediente == "dato":
+            return azar.choice(_variantes_de_dato(hechos, idioma)).format(**campos)
+        return azar.choice(_EXTRAS[idioma][ingrediente]).format(**campos)
+
+    def armar(marco: str, usados: Sequence[str]) -> tuple[str, tuple[str, ...]]:
+        frases = {i: extra(i) for i in usados if i != "hora+estacion"}
+        if "hora" in usados and "estacion" in usados and azar.random() < 0.5:
+            frases["hora"] = azar.choice(_EXTRAS[idioma]["hora+estacion"]).format(**campos)
+            del frases["estacion"]
+        partes = [frases[i] for i in _APERTURA if i in frases] + [marco.format(**campos)] \
+            + [frases[i] for i in _CIERRE if i in frases]
+        return " ".join(partes), ("cancion", *usados)
+
+    def ajustar(marco: str) -> Redaccion | None:
+        usados = [i for i in elegidos if i != "cancion"]
+        while True:
+            texto, ingredientes = armar(marco, usados)
+            if _palabras(texto) <= palabras_maximas:
+                return Redaccion(texto, ingredientes)
+            candidato = next((i for i in _DESCARTE if i in usados), None)
+            if candidato is None:
+                candidato = next(iter(usados), None)
+            if candidato is None:
+                return None
+            usados.remove(candidato)
 
     for _ in range(10):
-        r = armar(azar.choice(elegibles))
-        if _palabras(r.marcado) <= palabras_maximas:
+        r = ajustar(azar.choice(_MARCOS[idioma]))
+        if r is not None:
             return r
-    return min((armar(t) for t in elegibles), key=lambda r: _palabras(r.marcado))
+    marco = min(_MARCOS[idioma], key=lambda t: _palabras(t.format(**campos)))
+    return Redaccion(marco.format(**campos), ("cancion",))

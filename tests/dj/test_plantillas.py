@@ -189,3 +189,175 @@ def test_redactar_dice_la_pronunciacion_del_lexico_y_el_idioma_del_nombre_origin
         if "Reguetón" in r.marcado:
             assert ("es", "Reguetón 2000") in MARCA.findall(r.marcado)
         assert ("en-us", "Nicky Jam") in MARCA.findall(r.marcado) or "Nicky" not in r.marcado
+
+
+# --- hechos reales (parte 3) ---
+
+from cassette_fm.dj.config import PESOS_POR_DEFECTO  # noqa: E402
+from cassette_fm.dj.hechos import Hechos  # noqa: E402
+from cassette_fm.dj.hechos.clima import Clima  # noqa: E402
+from cassette_fm.dj.hechos.musicbrainz import DatosTema  # noqa: E402
+from cassette_fm.dj.plantillas import ingredientes_disponibles  # noqa: E402
+
+CLIMA = Clima(22, "lluvia", True)
+TEMA = DatosTema(1984, "NO", 1983, True, "https://musicbrainz.org/artist/x")
+TODO = Hechos(CLIMA, TEMA)
+ALTOS = {k: 1.0 for k in PESOS_POR_DEFECTO}
+
+
+def sin_marcas(r):
+    return MARCA.sub(lambda m: m.group(2), r.marcado)
+
+
+def test_ingredientes_disponibles_segun_los_datos():
+    base = {"cancion", "estacion", "hora", "momento", "album", "anterior"}
+    assert ingredientes_disponibles(pedido()) == base
+    assert ingredientes_disponibles(pedido(album=False, anterior=False)) == {"cancion", "estacion", "hora", "momento"}
+    assert ingredientes_disponibles(pedido(), Hechos(clima=CLIMA)) == base | {"clima"}
+    assert ingredientes_disponibles(pedido(), Hechos(tema=TEMA)) == base | {"dato"}
+    # un tema sin nada utilizable no ofrece "dato"
+    assert "dato" not in ingredientes_disponibles(pedido(), Hechos(tema=DatosTema(None, "ZZ", None, False, "u")))
+
+
+def test_sin_hechos_nunca_dice_clima_ni_dato():
+    for s in range(300):
+        r = redactar(pedido("es"), Lexico(), random.Random(s), 45, pesos=ALTOS)
+        assert "clima" not in r.ingredientes and "dato" not in r.ingredientes
+        assert "grados" not in r.marcado and "salió" not in r.marcado
+
+
+@pytest.mark.parametrize("idioma", ["es", "en"])
+def test_con_hechos_a_veces_los_usa_y_con_pesos_en_cero_nunca(idioma):
+    p = pedido(idioma)
+    usados = [redactar(p, Lexico(), random.Random(s), 60, hechos=TODO, pesos=ALTOS) for s in range(200)]
+    assert any("clima" in r.ingredientes for r in usados) and any("dato" in r.ingredientes for r in usados)
+    ceros = dict(ALTOS, clima=0.0, dato=0.0)
+    for s in range(200):
+        r = redactar(p, Lexico(), random.Random(s), 60, hechos=TODO, pesos=ceros)
+        assert "clima" not in r.ingredientes and "dato" not in r.ingredientes
+
+
+def test_el_clima_se_dice_en_palabras_y_con_menos():
+    textos = {}
+    for temp, esperado_es, esperado_en in [(22, "veintidós grados", "twenty two degrees"),
+                                           (-3, "menos tres grados", "minus three degrees"),
+                                           (1, "un grado", "one degree"), (-1, "menos un grado", "minus one degree"),
+                                           (0, "cero grados", "zero degrees")]:
+        h = Hechos(Clima(temp, "nublado", True))
+        for idioma, esperado in (("es", esperado_es), ("en", esperado_en)):
+            vistos = [redactar(pedido(idioma), Lexico(), random.Random(s), 60, hechos=h, pesos=ALTOS, maximo=9)
+                      for s in range(100)]
+            assert any(esperado in sin_marcas(r) for r in vistos if "clima" in r.ingredientes), (temp, idioma)
+            assert all(not re.search(r"\d", sin_marcas(r)) for r in vistos)
+
+
+def test_el_cielo_de_noche_despejado_es_la_noche():
+    h = Hechos(Clima(18, "despejado", False))
+    junto = " ".join(sin_marcas(redactar(pedido("es"), Lexico(), random.Random(s), 60, hechos=h, pesos=ALTOS, maximo=9))
+                     for s in range(150))
+    assert "la noche está despejada" in junto or "Ahora mismo en Buenos Aires" in junto
+    assert "el cielo está despejado" not in junto
+
+
+def test_el_dato_usa_solo_lo_que_hay():
+    solo_anio = Hechos(tema=DatosTema(1984, None, None, False, "u"))
+    solo_pais = Hechos(tema=DatosTema(None, "NO", None, False, "u"))
+    for s in range(200):
+        a = sin_marcas(redactar(pedido("es"), Lexico(), random.Random(s), 60, hechos=solo_anio, pesos=ALTOS, maximo=9))
+        assert "viene de" not in a and "empezó" not in a
+        b = sin_marcas(redactar(pedido("es"), Lexico(), random.Random(s), 60, hechos=solo_pais, pesos=ALTOS, maximo=9))
+        assert "salió" not in b and " es de " not in b and "empezó" not in b
+
+
+def test_el_anio_va_en_palabras_y_el_pais_con_nombre():
+    junto = " ".join(sin_marcas(redactar(pedido("es"), Lexico(), random.Random(s), 60, hechos=TODO, pesos=ALTOS,
+                                         maximo=9)) for s in range(200))
+    assert "mil novecientos ochenta y cuatro" in junto and "mil novecientos ochenta y tres" in junto
+    assert "Noruega" in junto and "NO " not in junto
+    en = " ".join(sin_marcas(redactar(pedido("en"), Lexico(), random.Random(s), 60, hechos=TODO, pesos=ALTOS,
+                                      maximo=9)) for s in range(200))
+    assert "nineteen eighty four" in en and "Norway" in en
+
+
+def test_solo_un_grupo_tiene_comienzo():
+    persona = Hechos(tema=DatosTema(1984, "PR", 1977, False, "u"))
+    for s in range(200):
+        r = redactar(pedido("es"), Lexico(), random.Random(s), 60, hechos=persona, pesos=ALTOS, maximo=9)
+        assert "empezó" not in r.marcado and "mil novecientos setenta y siete" not in r.marcado
+
+
+def test_un_pais_fuera_de_la_tabla_no_se_dice():
+    h = Hechos(tema=DatosTema(None, "ZZ", None, False, "u"))
+    assert "dato" not in ingredientes_disponibles(pedido(), h)
+
+
+@pytest.mark.parametrize("idioma", ["es", "en"])
+@pytest.mark.parametrize("album,anterior", [(True, True), (False, False)])
+@pytest.mark.parametrize("hechos", [Hechos(), TODO, Hechos(clima=CLIMA)])
+def test_invariantes_de_todas_las_combinaciones(idioma, album, anterior, hechos):
+    p = pedido(idioma, album, anterior, a(2, 5))
+    for s in range(300):
+        r = redactar(p, Lexico(), random.Random(s), 45, hechos=hechos, pesos=ALTOS)
+        limpio = limpiar(r.marcado, p.lang)
+        original = re.split(r"(?<=[.?])\s+", r.marcado.strip())
+        assert len(re.split(r"(?<=[.?])\s+", limpio.strip())) == len(original)      # ninguna oración corta se unió
+        assert palabras(r) <= 45 and r.marcado.rstrip().endswith(".") and "cancion" in r.ingredientes
+        assert not re.search(r"\d", MARCA.sub("", r.marcado))
+        assert "{" not in MARCA.sub("", r.marcado) and "}" not in MARCA.sub("", r.marcado)
+        assert len(set(r.ingredientes)) == len(r.ingredientes) <= 3
+
+
+def test_si_no_entra_se_descartan_primero_dato_clima_anterior_album():
+    p = pedido("es")
+    for tope in (14, 20, 26, 34):
+        vistos = set()
+        for s in range(150):
+            r = redactar(p, Lexico(), random.Random(s), tope, hechos=TODO, pesos=ALTOS, maximo=9)
+            assert palabras(r) <= tope and "cancion" in r.ingredientes
+            ing = set(r.ingredientes)
+            vistos.add(frozenset(ing))
+            # se saca de a uno y en este orden: lo que se saca después sigue estando si quedó algo de lo anterior
+            if "dato" in ing:
+                assert {"clima", "anterior", "album"} <= ing
+            if "clima" in ing:
+                assert {"anterior", "album"} <= ing
+            if "anterior" in ing:
+                assert "album" in ing
+        assert len(vistos) >= 1
+    chico = redactar(p, Lexico(), random.Random(1), 8, hechos=TODO, pesos=ALTOS, maximo=9)
+    assert chico.ingredientes == ("cancion",)           # el marco nunca se descarta
+
+
+def test_la_variedad_en_cientos_de_pedidos():
+    marcos = {}
+    frases = set()
+    for s in range(500):
+        r = redactar(pedido("es"), Lexico(), random.Random(s), 60, hechos=TODO)
+        frases.add(r.marcado)
+        for marco in ("Seguimos con", "Ahora suena", "Con ustedes", "Sigue", "Llega"):
+            if marco in sin_marcas(r):
+                marcos[marco] = marcos.get(marco, 0) + 1
+    assert len(marcos) >= 5 and len(frases) >= 150 and max(marcos.values()) <= 0.4 * 500
+
+
+def test_respeta_los_recientes():
+    p = pedido("es")
+    base = sum("hora" in redactar(p, Lexico(), random.Random(s), 60).ingredientes for s in range(1000))
+    con_recientes = p.__class__(**{**p.__dict__, "recientes": ("hora",) * 4})
+    menos = sum("hora" in redactar(con_recientes, Lexico(), random.Random(s), 60).ingredientes for s in range(1000))
+    assert base > 200 and menos < base * 0.2
+
+
+def test_los_dias_de_la_semana_se_dicen():
+    junto = " ".join(sin_marcas(redactar(pedido("es", momento=a(15, 0)), Lexico(), random.Random(s), 60, pesos=ALTOS))
+                     for s in range(200))
+    assert "este viernes" in junto                       # 13/11/2026 es viernes
+    en = " ".join(sin_marcas(redactar(pedido("en", momento=a(15, 0)), Lexico(), random.Random(s), 60, pesos=ALTOS))
+                  for s in range(200))
+    assert "this Friday" in en
+
+
+def test_la_madrugada_tiene_su_frase():
+    junto = " ".join(sin_marcas(redactar(pedido("es", momento=a(3, 0)), Lexico(), random.Random(s), 60, pesos=ALTOS))
+                     for s in range(200))
+    assert "esta madrugada" in junto and "esta noche" not in junto
