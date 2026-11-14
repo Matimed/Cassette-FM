@@ -51,9 +51,13 @@ class ClienteClima:
     def actual(self) -> Clima | None:
         fallo: list[Exception] = []
 
+        buscado = []
+
         def buscar():
             try:
-                return self._pedir()
+                valor = self._pedir()
+                buscado.append(1)
+                return valor
             except _Fallo as e:
                 fallo.append(e)
                 return None
@@ -69,7 +73,8 @@ class ClienteClima:
                 self._avisado = True
                 _log.warning("no se pudo obtener el clima (%s): las frases siguen sin clima", fallo[0])
             return None
-        self._avisado = False
+        if buscado:
+            self._avisado = False        # una consulta de verdad salió bien (no una respuesta de la caché)
         if not isinstance(valor, dict):
             return None
         try:
