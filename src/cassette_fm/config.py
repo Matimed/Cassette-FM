@@ -1,5 +1,6 @@
 import json
 import os
+import re
 import tomllib
 from collections.abc import Mapping
 from dataclasses import asdict, dataclass, field, fields, replace
@@ -8,6 +9,14 @@ from pathlib import Path
 
 class ErrorConfig(Exception):
     pass
+
+
+@dataclass(frozen=True)
+class Frecuencia:
+    """Cada cuánto habla el DJ: entre `min` y `max` temas (o minutos) desde la última intervención."""
+    modo: str = "temas"   # "temas" | "minutos"
+    min: float = 2.0
+    max: float = 3.0
 
 
 @dataclass(frozen=True)
@@ -23,6 +32,17 @@ class ConfigDJ:
     tolerancia_desfase_segundos: float = 60.0
     desfase_aviso_segundos: float = 5.0
     margen_seguridad_voz_segundos: float = 2.0   # el temporizador que restaura la música espera esto de más
+    url: str = ""   # servicio DJ (cassette-dj); vacío = la radio no planifica intervenciones
+    margen_minutos: float = 6.0   # antes de esto no se agenda nada (da tiempo a generar el clip)
+    frecuencia: Frecuencia = Frecuencia()
+    voz: str = "em_santa"
+    idioma: str = "es"
+    personalidad: str = ""
+    timeout_http_segundos: float = 10.0
+    espera_reintento_segundos: float = 5.0   # primera espera tras un fallo del servicio
+    espera_reintento_maxima_segundos: float = 300.0   # tope de la espera creciente
+    espera_trabajo_maxima_segundos: float = 600.0   # un trabajo que tarda más que esto se cancela
+    recientes_cantidad: int = 6   # cuántos ingredientes recordar por estación
 
 
 @dataclass(frozen=True)
@@ -59,6 +79,10 @@ class Rutas:
     @property
     def clips(self) -> Path:
         return self.cache.parent / "dj"
+
+    @property
+    def planificador(self) -> Path:
+        return self.estado.parent / "planificador.json"
 
 
 def _xdg(variable: str, por_defecto: Path) -> Path:
@@ -104,31 +128,101 @@ def cargar_config(archivo: Path) -> Config:
     return Config(**datos, dj=dj, estaciones_dj=por_estacion)
 
 
-_TIPOS_DJ = {c.name: (bool if c.type in (bool, "bool") else float) for c in fields(ConfigDJ)}
-_POSITIVOS = {"duracion_maxima_segundos", "tolerancia_desfase_segundos", "desfase_aviso_segundos"}
+_CAMPOS_NUMERICOS_DJ = {c.name for c in fields(ConfigDJ)
+                        if c.type in (float, "float") and c.name != "frecuencia"}
+_POSITIVOS = {"duracion_maxima_segundos", "tolerancia_desfase_segundos", "desfase_aviso_segundos",
+              "timeout_http_segundos", "espera_reintento_segundos", "espera_reintento_maxima_segundos",
+              "espera_trabajo_maxima_segundos"}
+_IDIOMAS = ("es", "en", "en-us", "en-gb")
+_VOZ = re.compile(r"^[A-Za-z0-9_+.-]+$")
+_PERSONALIDAD_MAXIMA = 300
 
 
-def _campos_dj(archivo: Path, tabla: dict, donde: str) -> dict:
+def _numero(archivo: Path, clave: str, valor) -> float:
+    if isinstance(valor, bool) or not isinstance(valor, (int, float)):
+        raise ErrorConfig(f"{archivo}: '{clave}' tiene que ser un número")
+    return float(valor)
+
+
+def _texto(archivo: Path, clave: str, valor) -> str:
+    if not isinstance(valor, str):
+        raise ErrorConfig(f"{archivo}: '{clave}' tiene que ser un texto")
+    return valor
+
+
+def _frecuencia(archivo: Path, base: Frecuencia, tabla, donde: str) -> Frecuencia:
+    clave = f"{donde}frecuencia"
+    if not isinstance(tabla, dict):
+        raise ErrorConfig(f"{archivo}: '{clave}' tiene que ser una tabla (modo, min, max)")
+    campos = {}
+    if "modo" in tabla:
+        modo = _texto(archivo, f"{clave}.modo", tabla["modo"])
+        if modo not in ("temas", "minutos"):
+            raise ErrorConfig(f"{archivo}: '{clave}.modo' tiene que ser \"temas\" o \"minutos\"")
+        campos["modo"] = modo
+    for nombre in ("min", "max"):
+        if nombre in tabla:
+            campos[nombre] = _numero(archivo, f"{clave}.{nombre}", tabla[nombre])
+    f = replace(base, **campos)
+    for nombre in ("min", "max"):
+        if getattr(f, nombre) <= 0:
+            raise ErrorConfig(f"{archivo}: '{clave}.{nombre}' tiene que ser mayor que 0")
+        if f.modo == "temas" and (getattr(f, nombre) != int(getattr(f, nombre))):
+            raise ErrorConfig(f"{archivo}: '{clave}.{nombre}' tiene que ser un número entero (cantidad de temas)")
+    if f.min > f.max:
+        raise ErrorConfig(f"{archivo}: '{clave}.min' no puede ser mayor que 'max'")
+    return f
+
+
+def _campos_dj(archivo: Path, tabla: dict, donde: str, base: ConfigDJ) -> dict:
     campos = {}
     for clave, valor in tabla.items():
-        tipo = _TIPOS_DJ.get(clave)
-        if tipo is None:
-            continue   # claves de las partes siguientes (url, frecuencia, voz…): se ignoran
-        if tipo is bool:
+        nombre = f"{donde}{clave}"
+        if clave == "activo":
             if not isinstance(valor, bool):
-                raise ErrorConfig(f"{archivo}: '{donde}{clave}' tiene que ser true o false")
+                raise ErrorConfig(f"{archivo}: '{nombre}' tiene que ser true o false")
             campos[clave] = valor
-            continue
-        if isinstance(valor, bool) or not isinstance(valor, (int, float)):
-            raise ErrorConfig(f"{archivo}: '{donde}{clave}' tiene que ser un número")
-        valor = float(valor)
-        if clave == "nivel_musica_con_voz" and not 0 < valor <= 1:
-            raise ErrorConfig(f"{archivo}: '{donde}{clave}' tiene que estar entre 0 (sin incluir) y 1")
-        if clave in _POSITIVOS and valor <= 0:
-            raise ErrorConfig(f"{archivo}: '{donde}{clave}' tiene que ser mayor que 0")
-        if valor < 0:
-            raise ErrorConfig(f"{archivo}: '{donde}{clave}' no puede ser negativo")
-        campos[clave] = valor
+        elif clave in _CAMPOS_NUMERICOS_DJ:
+            valor = _numero(archivo, nombre, valor)
+            if clave == "nivel_musica_con_voz" and not 0 < valor <= 1:
+                raise ErrorConfig(f"{archivo}: '{nombre}' tiene que estar entre 0 (sin incluir) y 1")
+            if clave in _POSITIVOS and valor <= 0:
+                raise ErrorConfig(f"{archivo}: '{nombre}' tiene que ser mayor que 0")
+            if valor < 0:
+                raise ErrorConfig(f"{archivo}: '{nombre}' no puede ser negativo")
+            campos[clave] = valor
+        elif clave == "recientes_cantidad":
+            if isinstance(valor, bool) or not isinstance(valor, int) or valor < 0:
+                raise ErrorConfig(f"{archivo}: '{nombre}' tiene que ser un número entero, 0 o más")
+            campos[clave] = valor
+        elif clave == "url":
+            valor = _texto(archivo, nombre, valor)
+            if valor and not re.match(r"^https?://\S+$", valor):
+                raise ErrorConfig(f"{archivo}: '{nombre}' tiene que empezar con http:// o https:// (o quedar vacía)")
+            campos[clave] = valor
+        elif clave == "voz":
+            valor = _texto(archivo, nombre, valor)
+            if not _VOZ.match(valor):
+                raise ErrorConfig(f"{archivo}: '{nombre}' solo puede tener letras, números y _ + . -")
+            campos[clave] = valor
+        elif clave == "idioma":
+            valor = _texto(archivo, nombre, valor)
+            if valor not in _IDIOMAS:
+                raise ErrorConfig(f"{archivo}: '{nombre}' tiene que ser uno de: {', '.join(_IDIOMAS)}")
+            campos[clave] = valor
+        elif clave == "personalidad":
+            valor = _texto(archivo, nombre, valor)
+            if len(valor) > _PERSONALIDAD_MAXIMA:
+                raise ErrorConfig(f"{archivo}: '{nombre}' admite hasta {_PERSONALIDAD_MAXIMA} caracteres")
+            campos[clave] = valor
+        elif clave == "frecuencia":
+            campos[clave] = _frecuencia(archivo, base.frecuencia, valor, donde)
+        # el resto (palabras_maximas, claves de partes siguientes) se ignora
+    if {"espera_reintento_segundos", "espera_reintento_maxima_segundos"} & campos.keys():
+        f = replace(base, **campos)
+        if f.espera_reintento_segundos > f.espera_reintento_maxima_segundos:
+            raise ErrorConfig(f"{archivo}: '{donde}espera_reintento_segundos' no puede superar "
+                              f"'espera_reintento_maxima_segundos'")
     return campos
 
 
@@ -140,12 +234,12 @@ def _leer_dj(archivo: Path, tabla) -> tuple[ConfigDJ, dict[str, ConfigDJ]]:
     estaciones = tabla.get("estaciones", {})
     if not isinstance(estaciones, dict):
         raise ErrorConfig(f"{archivo}: 'dj.estaciones' tiene que ser una tabla con una tabla por estación")
-    general = replace(ConfigDJ(), **_campos_dj(archivo, tabla, "dj."))
+    general = replace(ConfigDJ(), **_campos_dj(archivo, tabla, "dj.", ConfigDJ()))
     por_estacion = {}
     for nombre, t in estaciones.items():
         if not isinstance(t, dict):
             raise ErrorConfig(f"{archivo}: 'dj.estaciones.{nombre}' tiene que ser una tabla")
-        por_estacion[nombre] = replace(general, **_campos_dj(archivo, t, f"dj.estaciones.{nombre}."))
+        por_estacion[nombre] = replace(general, **_campos_dj(archivo, t, f"dj.estaciones.{nombre}.", general))
     return general, por_estacion
 
 

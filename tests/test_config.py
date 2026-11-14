@@ -85,7 +85,7 @@ def test_config_invalida_da_error_claro(tmp_path, contenido):
 
 # --- DJ ---
 
-from cassette_fm.config import ConfigDJ, configuracion_dj  # noqa: E402
+from cassette_fm.config import ConfigDJ, Frecuencia, configuracion_dj  # noqa: E402
 
 
 def test_dj_por_defecto():
@@ -117,12 +117,67 @@ def test_dj_por_estacion_pisa_a_la_general(tmp_path):
     assert configuracion_dj(cfg, "Otra").duracion_maxima_segundos == 15.0
 
 
-def test_dj_ignora_claves_de_otras_partes(tmp_path):
+def test_las_claves_viejas_siguen_andando(tmp_path):
     archivo = tmp_path / "config.toml"
-    archivo.write_text('[dj]\nurl = "http://x"\nmargen_minutos = 6\npalabras_maximas = 45\n'
-                       'frecuencia = {modo = "temas", min = 2, max = 3}\n'
-                       '[dj.estaciones."X"]\nvoz = "em_santa"\nidioma = "es"\npersonalidad = "hola"\n')
+    archivo.write_text('[dj]\npalabras_maximas = 45\nclave_inventada = 1\n')
     assert cargar_config(archivo).dj == ConfigDJ()
+    archivo.write_text('[dj]\nurl = "http://x:1"\nmargen_minutos = 3\nvoz = "am_michael"\nidioma = "en"\n'
+                       'personalidad = "hola"\nfrecuencia = {modo = "minutos", min = 8, max = 15}\n')
+    dj = cargar_config(archivo).dj
+    assert (dj.url, dj.margen_minutos, dj.voz, dj.idioma, dj.personalidad) == (
+        "http://x:1", 3.0, "am_michael", "en", "hola")
+    assert dj.frecuencia == Frecuencia("minutos", 8, 15)
+
+
+def test_dj_defaults_del_planificador():
+    d = ConfigDJ()
+    assert (d.url, d.margen_minutos, d.frecuencia, d.voz, d.idioma, d.personalidad,
+            d.timeout_http_segundos, d.espera_reintento_segundos, d.espera_reintento_maxima_segundos,
+            d.espera_trabajo_maxima_segundos, d.recientes_cantidad) == (
+        "", 6.0, Frecuencia("temas", 2.0, 3.0), "em_santa", "es", "", 10.0, 5.0, 300.0, 600.0, 6)
+
+
+def test_la_frecuencia_general_vale_para_todas(tmp_path):
+    archivo = tmp_path / "config.toml"
+    archivo.write_text('[dj.frecuencia]\nmin = 3\nmax = 5\n[dj.estaciones."Lentos"]\nvoz = "ef_dora"\n')
+    cfg = cargar_config(archivo)
+    assert configuracion_dj(cfg, "Cualquiera").frecuencia == Frecuencia("temas", 3, 5)
+    assert configuracion_dj(cfg, "Lentos").frecuencia == Frecuencia("temas", 3, 5)
+
+
+def test_la_estacion_pisa_la_frecuencia_solo_en_lo_que_da(tmp_path):
+    archivo = tmp_path / "config.toml"
+    archivo.write_text('[dj.frecuencia]\nmin = 3\nmax = 5\n'
+                       '[dj.estaciones."A"]\nfrecuencia = {min = 4}\n'
+                       '[dj.estaciones."B"]\nfrecuencia = {modo = "minutos", min = 8, max = 15}\n')
+    cfg = cargar_config(archivo)
+    assert configuracion_dj(cfg, "A").frecuencia == Frecuencia("temas", 4, 5)
+    assert configuracion_dj(cfg, "B").frecuencia == Frecuencia("minutos", 8, 15)
+    assert configuracion_dj(cfg, "C").frecuencia == Frecuencia("temas", 3, 5)
+
+
+def test_voz_idioma_y_personalidad_por_estacion(tmp_path):
+    archivo = tmp_path / "config.toml"
+    archivo.write_text('[dj]\nvoz = "em_santa"\n[dj.estaciones."Rock"]\nvoz = "am_michael"\nidioma = "en-us"\n'
+                       'personalidad = "sarcástico"\n')
+    cfg = cargar_config(archivo)
+    rock = configuracion_dj(cfg, "Rock")
+    assert (rock.voz, rock.idioma, rock.personalidad) == ("am_michael", "en-us", "sarcástico")
+    assert configuracion_dj(cfg, "Otra").voz == "em_santa"
+
+
+def test_dj_acepta_url_vacia_y_http(tmp_path):
+    archivo = tmp_path / "config.toml"
+    for url in ("", "http://127.0.0.1:7720", "https://dj.example"):
+        archivo.write_text(f'[dj]\nurl = "{url}"\n')
+        assert cargar_config(archivo).dj.url == url
+
+
+def test_rutas_planificador(tmp_path):
+    from cassette_fm.config import Rutas
+    r = Rutas(config=tmp_path / "c.toml", estado=tmp_path / "s" / "estado.json",
+              cache=tmp_path / "k" / "d.json", runtime=tmp_path / "r")
+    assert r.planificador == tmp_path / "s" / "planificador.json"
 
 
 @pytest.mark.parametrize("contenido", [
@@ -136,6 +191,16 @@ def test_dj_ignora_claves_de_otras_partes(tmp_path):
     "[dj]\nestaciones = 5",
     "[dj.estaciones]\nLentos = 3",
     "[dj]\nretraso_voz_segundos = true",
+    '[dj]\nurl = "ftp://x"', "[dj]\nurl = 5", '[dj]\nvoz = "../x"', '[dj]\nidioma = "fr"',
+    "[dj]\npersonalidad = 3", '[dj]\npersonalidad = "' + "x" * 301 + '"',
+    "[dj]\nmargen_minutos = -1", "[dj]\ntimeout_http_segundos = 0",
+    "[dj]\nespera_reintento_segundos = 400", "[dj]\nespera_trabajo_maxima_segundos = 0",
+    "[dj]\nrecientes_cantidad = -1", "[dj]\nrecientes_cantidad = 1.5",
+    '[dj.frecuencia]\nmodo = "dias"', "[dj.frecuencia]\nmin = 0", "[dj.frecuencia]\nmin = 5\nmax = 3",
+    "[dj.frecuencia]\nmin = 1.5", '[dj.frecuencia]\nmin = "x"', "[dj.frecuencia]\nmin = true",
+    '[dj.frecuencia]\nmodo = "minutos"\nmin = 0',
+    '[dj.estaciones."X"]\nfrecuencia = 5', '[dj.estaciones."X"]\nfrecuencia = {min = 9}',
+    "[dj]\nfrecuencia = 5",
 ])
 def test_dj_invalido_da_error_claro(tmp_path, contenido):
     archivo = tmp_path / "config.toml"
