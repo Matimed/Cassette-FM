@@ -221,7 +221,7 @@ def test_listo_actualiza_ultima_y_recientes_y_el_proximo_pedido_los_usa(mundo):
     inicio1 = i.inicio - CFG.retraso_voz_segundos
     serie = [t for _, t in zip(range(40), (t for _, t in transiciones(est, inicio1 - 0.001)))]
     (_, inicio2) = [(None, datetime.fromisoformat(p2["momento"]).timestamp() - CFG.retraso_voz_segundos)][0]
-    assert min(abs(inicio2 - t) for t in serie) < 1.5 and serie.index(min(serie, key=lambda t: abs(t - inicio2))) >= 3
+    assert min(abs(inicio2 - t) for t in serie) < 1.5 and serie.index(min(serie, key=lambda t: abs(t - inicio2))) == 3
 
 
 def test_recientes_se_recortan_a_la_cantidad_configurada(mundo):
@@ -503,3 +503,110 @@ def test_integracion_con_el_servicio_dj_real(tmp_path, servicio_dj):
     assert i.texto and i.estacion == "Rock"
     (guion,) = servicio.guiones.ultimos(5)
     assert guion["id"] == i.id and guion["fuente"] == "plantilla"
+
+
+# --- revisión final ---
+
+def test_un_rescan_durante_la_consulta_no_deja_registrar_el_hueco_viejo(mundo):
+    est, p1 = sintonizar_y_pedir(mundo)
+    mundo.listo(p1["id"])
+    original = mundo.cliente.estado
+
+    def estado_y_rescan(id_):
+        r = original(id_)
+        mundo.p.al_rescan([Estacion("E", est.pistas[:-1])])      # llega mientras se esperaba al servicio
+        return r
+
+    mundo.cliente.estado = estado_y_rescan
+    mundo.p.paso()
+    assert mundo.locutor.registradas == [] and mundo.registro.todas() == []
+    assert not (mundo.clips / f"{p1['id']}.wav").exists()
+    assert json.loads(mundo.archivo.read_text())["ultima"] == {}
+
+
+def test_un_rescan_durante_el_POST_cancela_el_pedido_viejo(mundo):
+    est = estacion()
+    mundo.p.al_sintonizar(est)
+    original = mundo.cliente.enviar
+
+    def enviar_y_rescan(pedido):
+        r = original(pedido)
+        mundo.p.al_rescan([Estacion("E", est.pistas[:-1])])
+        return r
+
+    mundo.cliente.enviar = enviar_y_rescan
+    mundo.p.paso()
+    id_viejo = mundo.cliente.enviados[0]["id"]
+    assert mundo.p.estado()["en_curso"] is None
+    mundo.p.paso()
+    assert id_viejo in mundo.cliente.cancelados
+
+
+@pytest.mark.parametrize("respuesta", [None, {"estado": "cancelado"}])
+def test_si_el_servicio_olvida_o_cancela_no_se_vuelve_a_pedir_enseguida(mundo, respuesta):
+    _, p1 = sintonizar_y_pedir(mundo)
+    mundo.cliente.respuestas[p1["id"]] = respuesta
+    mundo.p.paso()
+    for _ in range(3):
+        mundo.p.paso()
+    assert len(mundo.cliente.enviados) == 1
+    mundo.reloj.t += 6
+    mundo.p.paso()
+    assert len(mundo.cliente.enviados) == 2
+
+
+def test_un_id_distinto_del_pedido_se_trata_como_fallo(mundo):
+    mundo.p.al_sintonizar(estacion())
+    mundo.cliente.enviar = lambda pedido: "otro-id"
+    mundo.p.paso()
+    assert mundo.p.estado()["en_curso"] is None and mundo.p.estado()["servicio"] == "no responde"
+
+
+def test_pedir_ahora_despues_de_una_caida_no_hereda_la_espera(mundo):
+    mundo.p.al_sintonizar(estacion())
+    mundo.cliente.error_enviar = ErrorDJ("no responde")
+    for _ in range(4):
+        mundo.p.paso()
+        mundo.reloj.t += mundo.p.estado()["proximo_intento_en"] + 0.1
+    mundo.cliente.error_enviar = None
+    r = mundo.p.pedir_ahora(20)
+    mundo.listo(r["id"])
+    mundo.p.paso()
+    assert [i.id for i in mundo.locutor.registradas] == [r["id"]]
+
+
+@pytest.mark.parametrize("duracion", [float("nan"), -1.0, 0.0, True, float("inf"), 999.0, "3"])
+def test_una_duracion_invalida_del_servicio_se_rechaza(mundo, duracion):
+    _, p1 = sintonizar_y_pedir(mundo)
+    mundo.listo(p1["id"], duracion=duracion)
+    mundo.p.paso()
+    assert mundo.locutor.registradas == [] and not (mundo.clips / f"{p1['id']}.wav").exists()
+    assert mundo.p.estado()["en_curso"] is None
+
+
+def test_al_sintonizar_con_otra_agenda_descarta_lo_reservado(mundo):
+    est, p1 = sintonizar_y_pedir(mundo)
+    mundo.listo(p1["id"])
+    mundo.p.paso()
+    assert mundo.registro.de_la_estacion("E")
+    mundo.p.al_apagar()
+    otra = mundo.nuevo()                                   # reinicio con la biblioteca cambiada
+    otra.al_sintonizar(Estacion("E", est.pistas[:-1]))
+    assert mundo.locutor.descartadas == ["E"]
+    assert json.loads(mundo.archivo.read_text())["ultima"] == {}
+
+
+def test_si_desaparece_una_estacion_en_el_rescan_se_descartan_sus_reservas(mundo):
+    sintonizar_y_pedir(mundo, "E")
+    mundo.p.al_sintonizar(estacion("F"))
+    mundo.p.al_rescan([estacion("F")])
+    assert mundo.locutor.descartadas == ["E"]
+
+
+def test_una_ultima_muy_vieja_no_deja_a_la_estacion_sin_DJ(mundo):
+    from cassette_fm.planificacion import Ultima
+    mundo.p._ultima["E"] = Ultima(T0 - 400 * 86400, T0 - 400 * 86400 + 10)
+    mundo.p.al_sintonizar(estacion())
+    t0 = time.monotonic()
+    mundo.p.paso()
+    assert len(mundo.cliente.enviados) == 1 and time.monotonic() - t0 < 1.0

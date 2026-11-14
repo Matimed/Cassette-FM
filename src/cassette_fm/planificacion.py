@@ -42,7 +42,10 @@ def elegir_hueco(estacion: Estacion, ahora: float, cfg: ConfigDJ, ultima: Ultima
     else:
         k = azar.randint(int(f.min), int(f.max))
         piso = minimo
-        if ultima:
+        # si la última quedó tan atrás que la k-ésima transición desde ella ya pasó, contarla no sirve: se
+        # cuenta desde ahora (y no se recorren miles de transiciones viejas)
+        mas_larga = max(p.duracion for p in estacion.pistas)
+        if ultima and ahora - ultima.inicio_tema <= (k + 1) * mas_larga:
             serie, primera = transiciones(estacion, ultima.inicio_tema - 0.001), 0
         else:
             serie, primera = transiciones(estacion, ahora), 1

@@ -357,3 +357,12 @@ def test_descartar_la_estacion_cancela_el_anclaje_pendiente(mundo):
     mundo.locutor.descartar_estacion("E")
     time.sleep(0.2)
     assert not mundo.voz.cargas() and not mundo.locutor.hablando
+
+
+@pytest.mark.parametrize("duracion", [float("nan"), 0.0, -2.0, float("inf")])
+def test_registrar_rechaza_duraciones_que_no_son_un_numero_finito_positivo(mundo, duracion):
+    i = mundo.iv(T0 + 100)
+    malo = Intervencion(i.id, i.estacion, i.inicio, duracion, i.audio, i.texto, i.pista_destino)
+    with pytest.raises(ValueError):
+        mundo.locutor.registrar(malo)
+    assert mundo.registro.todas() == []

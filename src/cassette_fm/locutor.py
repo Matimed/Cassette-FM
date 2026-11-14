@@ -1,4 +1,5 @@
 import logging
+import math
 import threading
 import time
 from collections.abc import Callable
@@ -45,6 +46,9 @@ class Locutor:
 
     def registrar(self, i: Intervencion) -> None:
         cfg = self._configuracion(i.estacion)
+        if not (isinstance(i.duracion, (int, float)) and not isinstance(i.duracion, bool)
+                and math.isfinite(i.duracion) and i.duracion > 0):
+            raise ValueError(f"la duración del clip no es válida: {i.duracion!r}")
         if i.duracion > cfg.duracion_maxima_segundos:
             raise ValueError(f"el clip dura {i.duracion:.1f} s y el máximo es "
                              f"{cfg.duracion_maxima_segundos:g} s")

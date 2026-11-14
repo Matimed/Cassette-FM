@@ -200,3 +200,12 @@ def test_el_pedido_pasa_la_validacion_del_servicio():
     h = elegir_hueco(est, AHORA, cfg(), None, random.Random(1))
     pedido = leer_pedido(armar_pedido("a-b_1", est.nombre, h, cfg(personalidad="cálido"), ["x"]))
     assert pedido.siguiente.artista.startswith("Guns")
+
+
+def test_con_una_ultima_de_hace_muchos_dias_igual_hay_hueco_rapido():
+    import time
+    est = estacion()
+    vieja = Ultima(AHORA - 400 * 86400, AHORA - 400 * 86400 + 10)
+    t0 = time.monotonic()
+    h = elegir_hueco(est, AHORA, cfg(margen_minutos=6, frecuencia=Frecuencia("temas", 2, 3)), vieja, random.Random(1))
+    assert h is not None and h.inicio_tema >= AHORA + 360 and time.monotonic() - t0 < 0.5

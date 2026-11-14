@@ -1,6 +1,7 @@
 import hashlib
 import json
 import logging
+import math
 import os
 import random
 import re
@@ -68,6 +69,7 @@ class Planificador:
         self._ultima: dict[str, Ultima] = {}
         self._recientes: dict[str, list[str]] = {}
         self._firmas: dict[str, str] = {}
+        self._epoca: dict[str, int] = {}        # sube cuando la agenda de la estación cambia: lo calculado antes ya no vale
         self._trabajo: _Trabajo | None = None
         self._a_cancelar: list[str] = []
         self._servicio_caido = False
@@ -128,13 +130,17 @@ class Planificador:
                 id_ = uuid.uuid4().hex
                 pedido = armar_pedido(id_, estacion.nombre, hueco, cfg, self._recientes.get(estacion.nombre, []))
             try:
-                self._cliente.enviar(pedido)
+                devuelto = self._cliente.enviar(pedido)
+                if devuelto != id_:
+                    raise ErrorDJ(f"el servicio DJ contestó otro id ({devuelto!r}) al pedido {id_}")
             except ErrorDJ as e:
                 raise ValueError(str(e)) from None
             with self._lock:
                 self._trabajo = _Trabajo(id_, estacion.nombre, hueco.inicio_tema, hueco.inicio_voz,
                                          str(hueco.pista.ruta), ahora, cfg.duracion_maxima_segundos)
                 self._guardar()
+                self._no_antes_de = 0.0       # un pedido manual no hereda esperas de caídas anteriores
+                self._espera_trabajo = 0.0
             self._ok()
             return {"id": id_, "estacion": estacion.nombre, "inicio": hueco.inicio_voz,
                     "en_segundos": hueco.inicio_voz - ahora, "tema": hueco.pista.titulo}
@@ -200,6 +206,8 @@ class Planificador:
     def _descartar(self, nombre: str) -> None:
         """La agenda de `nombre` cambió: sus reservas, su última intervención y su trabajo en curso ya no valen."""
         _log.info("la agenda de %r cambió: se descartan sus intervenciones reservadas", nombre)
+        with self._lock:
+            self._epoca[nombre] = self._epoca.get(nombre, 0) + 1
         self._locutor.descartar_estacion(nombre)
         with self._lock:
             self._ultima.pop(nombre, None)
@@ -245,12 +253,14 @@ class Planificador:
         self._ok()
         if estado is None:
             _log.info("el servicio DJ ya no conoce el pedido %s: se descarta", t.id)
-            return self._limpiar(t.id)
+            self._limpiar(t.id)
+            return self._esperar_tras_error(cfg)
         situacion = estado.get("estado")
         with self._lock:
             t.estado = str(situacion)
         if situacion == "cancelado":
-            return self._limpiar(t.id)
+            self._limpiar(t.id)
+            return self._esperar_tras_error(cfg)
         if situacion == "error":
             _log.warning("el servicio DJ no pudo preparar el pedido %s: %s", t.id, estado.get("error") or "sin detalle")
             self._limpiar(t.id)
@@ -261,23 +271,35 @@ class Planificador:
     def _recibir(self, t: _Trabajo, estado: dict, cfg: ConfigDJ) -> None:
         if any(i.id == t.id for i in self._registro.todas()):
             return self._limpiar(t.id)       # ya estaba registrada (la radio se reinició a mitad de camino)
+        duracion = estado.get("duracion")
+        if (isinstance(duracion, bool) or not isinstance(duracion, (int, float)) or not math.isfinite(duracion)
+                or not 0 < duracion <= cfg.duracion_maxima_segundos):
+            _log.warning("el servicio DJ mandó una duración inválida para %s (%r): se descarta", t.id, duracion)
+            self._cancelar_en_el_servicio(t.id)
+            self._limpiar(t.id)
+            return self._esperar_tras_error(cfg)
         audio = self._dir_clips / f"{t.id}.wav"
         try:
             self._cliente.descargar_audio(t.id, audio)
         except ErrorDJ as e:
             return self._fallo(e, cfg)
-        try:
-            duracion = float(estado["duracion"])
-            intervencion = Intervencion(t.id, t.estacion, t.inicio_voz, duracion, audio,
-                                        str(estado.get("texto") or ""), t.pista_destino)
-            self._locutor.registrar(intervencion)
-        except (ValueError, KeyError, TypeError) as e:
-            audio.unlink(missing_ok=True)
-            _log.warning("no se pudo reservar la intervención %s de %r: %s", t.id, t.estacion, e)
-            self._limpiar(t.id)
-            return self._esperar_tras_error(cfg)
         with self._lock:
-            self._ultima[t.estacion] = Ultima(t.inicio_tema, t.inicio_voz + duracion)
+            if self._trabajo is not t:       # mientras tanto cambió la agenda de la estación: el hueco ya no vale
+                audio.unlink(missing_ok=True)
+                return
+            try:
+                intervencion = Intervencion(t.id, t.estacion, t.inicio_voz, float(duracion), audio,
+                                            str(estado.get("texto") or ""), t.pista_destino)
+                self._locutor.registrar(intervencion)
+            except ValueError as e:
+                audio.unlink(missing_ok=True)
+                _log.warning("no se pudo reservar la intervención %s de %r: %s", t.id, t.estacion, e)
+                self._trabajo = None
+                self._guardar()
+                self._espera_trabajo = self._siguiente(self._espera_trabajo, cfg)
+                self._no_antes_de = max(self._no_antes_de, self._reloj() + self._espera_trabajo)
+                return
+            self._ultima[t.estacion] = Ultima(t.inicio_tema, t.inicio_voz + float(duracion))
             ingredientes = [x for x in (estado.get("ingredientes") or []) if isinstance(x, str)]
             recientes = self._recientes.get(t.estacion, []) + ingredientes
             self._recientes[t.estacion] = recientes[-cfg.recientes_cantidad:] if cfg.recientes_cantidad else []
@@ -299,13 +321,19 @@ class Planificador:
             if hueco is None:
                 return
             id_ = uuid.uuid4().hex
+            epoca = self._epoca.get(estacion.nombre, 0)
             pedido = armar_pedido(id_, estacion.nombre, hueco, cfg, self._recientes.get(estacion.nombre, []))
         try:
-            self._cliente.enviar(pedido)
+            devuelto = self._cliente.enviar(pedido)
+            if devuelto != id_:
+                raise ErrorDJ(f"el servicio DJ contestó otro id ({devuelto!r}) al pedido {id_}")
         except ErrorDJ as e:
             return self._fallo(e, cfg)
         self._ok()
         with self._lock:
+            if self._epoca.get(estacion.nombre, 0) != epoca:     # la agenda cambió durante el POST
+                self._a_cancelar.append(id_)
+                return
             self._trabajo = _Trabajo(id_, estacion.nombre, hueco.inicio_tema, hueco.inicio_voz,
                                      str(hueco.pista.ruta), ahora, cfg.duracion_maxima_segundos)
             self._guardar()
