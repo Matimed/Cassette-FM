@@ -172,16 +172,16 @@ def test_el_ritmo_es_de_un_pedido_por_segundo(servidor_http):
     assert r.esperas[n:] == [pytest.approx(1.0)] * 2           # la búsqueda no espera; los otros dos sí
 
 
-@pytest.mark.parametrize("codigo", [429, 503, 500])
-def test_errores_http_dan_None_y_se_cachean_poco(servidor_http, codigo, caplog):
+@pytest.mark.parametrize("codigo, intentos", [(429, 3), (503, 3), (500, 1)])
+def test_errores_http_dan_None_y_se_cachean_poco(servidor_http, codigo, intentos, caplog):
     servidor_http.responder("/ws/2/recording", "ocupado", codigo=codigo)
     c, r = montar(servidor_http)
     with caplog.at_level(logging.WARNING, logger="cassette_fm"):
         assert c.datos_del_tema("a-ha", "Take On Me") is None and c.datos_del_tema("a-ha", "Take On Me") is None
-        assert len(servidor_http.pedidos) == 1
+        assert len(servidor_http.pedidos) == intentos              # 429/503 son pasajeros: se reintentan
         r.t += 10 * 60 + 1
         assert c.datos_del_tema("a-ha", "Take On Me") is None
-    assert len(servidor_http.pedidos) == 2
+    assert len(servidor_http.pedidos) == 2 * intentos
     assert len([x for x in caplog.records if x.levelno == logging.WARNING]) == 1
 
 
@@ -380,3 +380,15 @@ def test_un_fallo_en_los_release_groups_es_un_fallo_y_se_cachea_poco(servidor_ht
     c, r = montar(servidor_http, grabaciones=[grabacion(fecha="1984")])
     servidor_http.reglas.insert(0, ("/ws/2/release-group", {"error": "busy"}, 503, "application/json", 0.0))
     assert c.datos_del_tema("a-ha", "Take On Me") is None
+
+
+def test_un_503_pasajero_se_reintenta_con_espera_y_da_el_dato(servidor_http):
+    respuestas = [(503, "ocupado"), (503, "ocupado"), (200, {"recordings": [grabacion(fecha="1984")]})]
+    c, r = montar(servidor_http)
+    servidor_http.reglas.insert(0, ("/ws/2/recording", lambda ruta: respuestas.pop(0), 200, "application/json", 0))
+    assert c.datos_del_tema("a-ha", "Take On Me").anio == 1984
+    assert sum(1 for e in r.esperas if e >= 2) == 2                 # dos esperas largas antes de reintentar
+
+
+def test_el_timeout_por_defecto_da_tiempo_a_un_musicbrainz_lento():
+    assert ConfigServicioDJ().timeout_hechos_segundos >= 10

@@ -71,7 +71,7 @@ def hacer_pedido():
 @pytest.fixture
 def servidor_http():
     """Servidor HTTP de pruebas: `s.responder(prefijo, cuerpo, codigo=200, tipo="application/json", demora=0)`
-    (cuerpo: str/bytes/objeto JSON/callable(ruta_con_query) -> lo mismo). `s.pedidos`: [(ruta_con_query, headers)]."""
+    (cuerpo: str/bytes/objeto JSON/callable(ruta_con_query) -> lo mismo o (código, cuerpo)). `s.pedidos`: [(ruta_con_query, headers)]."""
     import json
     import threading
     import time
@@ -101,6 +101,8 @@ def servidor_http():
                         time.sleep(demora)
                     if callable(cuerpo):
                         cuerpo = cuerpo(self.path)
+                        if isinstance(cuerpo, tuple):        # (código, cuerpo): respuestas que cambian
+                            codigo, cuerpo = cuerpo
                     if not isinstance(cuerpo, (str, bytes)):
                         cuerpo = json.dumps(cuerpo)
                     datos = cuerpo.encode() if isinstance(cuerpo, str) else cuerpo

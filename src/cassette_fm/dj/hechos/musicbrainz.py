@@ -24,6 +24,7 @@ _GUIONES = "‐‑‒–—―"
 _LETRAS = str.maketrans({"ø": "o", "æ": "ae", "œ": "oe", "ł": "l", "đ": "d", "ß": "ss", "ð": "d", "þ": "th"})
 _GENERICOS = {"intro", "outro", "interlude", "skit", "prelude", "interludio", "intermezzo", "untitled",
               "sin titulo", "introduccion", "epilogo", "prologue", "prologo", "reprise", "bonus track"}
+_ESPERAS_REINTENTO = (2.0, 5.0)    # segundos antes de cada reintento si MusicBrainz está ocupado
 INTERVALO_SEGUNDOS = 1.0
 
 
@@ -35,6 +36,10 @@ class DatosTema:
     es_grupo: bool
     fuente: str                        # URL del artista en MusicBrainz
     wikidata: str | None = None        # el Q… del artista en Wikidata (relación de MusicBrainz), si lo tiene
+
+
+class _Pasajero(Exception):
+    """MusicBrainz ocupado (503/429) o lento (timeout): vale la pena reintentar (uso interno)."""
 
 
 class _Fallo(Exception):
@@ -294,6 +299,16 @@ class ClienteMusicBrainz:
         return buenas
 
     def _pedir(self, ruta: str, parametros: dict):
+        """Un GET a la API; un 503/429 o un timeout (MusicBrainz ocupado) se reintenta tras una espera."""
+        for espera in (*_ESPERAS_REINTENTO, None):
+            try:
+                return self._pedir_una_vez(ruta, parametros)
+            except _Pasajero as e:
+                if espera is None:
+                    raise _Fallo(str(e)) from None
+                self._dormir(espera)
+
+    def _pedir_una_vez(self, ruta: str, parametros: dict):
         c = self._config
         url = f"{c.musicbrainz_url.rstrip('/')}{ruta}?{urllib.parse.urlencode(parametros)}"
         req = urllib.request.Request(url, headers={"User-Agent": f"cassette-dj/{self._version} ({c.contacto})",
@@ -310,6 +325,14 @@ class ClienteMusicBrainz:
         except urllib.error.HTTPError as e:
             if e.code == 404:
                 raise _NoExiste(f"HTTPError: {e}") from None
+            if e.code in (429, 503):
+                raise _Pasajero(f"HTTPError: {e}") from None
             raise _Fallo(f"HTTPError: {e}") from None
+        except TimeoutError as e:
+            raise _Pasajero(f"{type(e).__name__}: {e}") from None
+        except urllib.error.URLError as e:
+            if isinstance(e.reason, TimeoutError):
+                raise _Pasajero(f"TimeoutError: {e.reason}") from None
+            raise _Fallo(f"{type(e).__name__}: {e}") from None
         except Exception as e:
             raise _Fallo(f"{type(e).__name__}: {e}") from None

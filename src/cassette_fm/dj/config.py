@@ -34,7 +34,7 @@ class ConfigServicioDJ:
     open_meteo_url: str = "https://api.open-meteo.com/v1/forecast"
     latitud: float = -34.6037               # Buenos Aires
     longitud: float = -58.3816
-    timeout_hechos_segundos: float = 5.0
+    timeout_hechos_segundos: float = 10.0
     cache_clima_minutos: float = 15.0
     cache_datos_dias: float = 90.0          # dato encontrado
     cache_sin_dato_dias: float = 14.0       # la consulta funcionó y no dio nada

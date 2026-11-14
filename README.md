@@ -256,7 +256,7 @@ clima = 0.12
 dato = 0.25
 ```
 
-Otras claves (con su valor por defecto): `latitud`/`longitud` (Buenos Aires), `timeout_hechos_segundos = 5`,
+Otras claves (con su valor por defecto): `latitud`/`longitud` (Buenos Aires), `timeout_hechos_segundos = 10`,
 `cache_clima_minutos = 15`, `cache_datos_dias = 90`, `cache_sin_dato_dias = 14`, `cache_error_minutos = 10`,
 `musicbrainz_url` y `open_meteo_url`. `cassette-dj hechos` muestra el clima de ahora y
 `cassette-dj hechos --artista "a-ha" --titulo "Take On Me"` los datos que se usarían; `cassette-dj guiones` y el

@@ -124,7 +124,7 @@ def test_defaults_de_los_hechos():
     c = ConfigServicioDJ()
     assert (c.contacto, c.musicbrainz_url, c.open_meteo_url) == ("", "https://musicbrainz.org/ws/2",
                                                                    "https://api.open-meteo.com/v1/forecast")
-    assert (c.latitud, c.longitud, c.timeout_hechos_segundos) == (-34.6037, -58.3816, 5.0)
+    assert (c.latitud, c.longitud, c.timeout_hechos_segundos) == (-34.6037, -58.3816, 10.0)
     assert (c.cache_clima_minutos, c.cache_datos_dias, c.cache_sin_dato_dias, c.cache_error_minutos) == (
         15.0, 90.0, 14.0, 10.0)
     assert (c.ingredientes_max, c.penalizacion_reciente) == (3, 0.3)
