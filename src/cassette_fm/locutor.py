@@ -32,6 +32,8 @@ class Locutor:
         self._hablando = False
         self._entrada: int | None = None         # id de la entrada de mpv que está sonando
         self._cfg_actual: ConfigDJ | None = None
+        self._estacion_voz: str | None = None    # estación de la intervención que suena
+        self._estacion_anclaje: str | None = None
         self._voz_id = 0
         self._t_seguridad: threading.Timer | None = None
         self._t_anclaje: threading.Timer | None = None
@@ -71,6 +73,15 @@ class Locutor:
                 if i.inicio <= ahora:
                     self._reproducidas.add(i.id)
 
+    def descartar_estacion(self, estacion: str) -> None:
+        """La agenda de la estación cambió: sus intervenciones ya no valen (y la voz en curso tampoco)."""
+        with self._lock:
+            self._registro.quitar_estacion(estacion)
+            if self._estacion_anclaje == estacion:
+                self._cancelar_anclaje()
+            if self._hablando and self._estacion_voz == estacion:
+                self._cortar()
+
     def pista_iniciada(self, pista: Pista, estacion: str) -> None:
         with self._lock:
             if estacion != self._sintonizada:
@@ -83,6 +94,7 @@ class Locutor:
                     self._reproducidas.add(i.id)     # evita dispararla otra vez en esta sintonía
                     sesion = self._sesion
                     self._cancelar_anclaje()
+                    self._estacion_anclaje = estacion
                     self._t_anclaje = threading.Timer(cfg.retraso_voz_segundos, self._hablar_anclada, (i, sesion))
                     self._t_anclaje.daemon = True
                     self._t_anclaje.start()
@@ -134,6 +146,7 @@ class Locutor:
         self._sonadas.add(i.id)
         self._hablando = True
         self._cfg_actual = cfg
+        self._estacion_voz = i.estacion
         try:
             self._musica.atenuar(cfg.nivel_musica_con_voz, cfg.rampa_bajada_segundos)
             self._poner_volumen_de_la_voz()

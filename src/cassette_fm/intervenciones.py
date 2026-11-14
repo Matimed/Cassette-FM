@@ -82,6 +82,18 @@ class RegistroIntervenciones:
             self._guardar()
             return sorted(vencidas, key=lambda i: i.inicio)
 
+    def quitar_estacion(self, estacion: str) -> list[Intervencion]:
+        """Quita todas las de una estación (la agenda cambió) y borra sus clips; persiste."""
+        with self._lock:
+            quitadas = [i for i in self._items if i.estacion == estacion]
+            if not quitadas:
+                return []
+            self._items = [i for i in self._items if i.estacion != estacion]
+            for i in quitadas:
+                self._borrar_clip(i)
+            self._guardar()
+            return sorted(quitadas, key=lambda i: i.inicio)
+
     def _borrar_clip(self, i: Intervencion) -> None:
         try:
             if i.audio.resolve().parent == self._dir_clips.resolve():

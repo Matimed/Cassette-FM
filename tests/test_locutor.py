@@ -318,3 +318,42 @@ def test_integracion_la_voz_entra_a_mitad_de_frase(dir_corto, tmp_path, crear_wa
         assert esperar(lambda: musica.llamadas[-1] == (1.0, 0.01), 6)     # el fin del clip restaura la música
     finally:
         loc.cerrar()
+
+
+def test_descartar_estacion_quita_sus_intervenciones(mundo):
+    a, b = mundo.iv(T0 + 100, estacion="A"), mundo.iv(T0 + 100, estacion="B")
+    mundo.locutor.registrar(a)
+    mundo.locutor.registrar(b)
+    mundo.locutor.descartar_estacion("A")
+    assert mundo.registro.todas() == [b]
+    assert not a.audio.exists()
+
+
+def test_descartar_estacion_corta_la_voz_si_es_de_esa_estacion(mundo):
+    mundo.locutor.al_sintonizar("E")
+    mundo.locutor.registrar(mundo.iv(T0 - 2))          # habla ya, desde el segundo 2
+    assert mundo.locutor.hablando
+    mundo.musica.llamadas.clear()
+    mundo.locutor.descartar_estacion("E")
+    assert not mundo.locutor.hablando
+    assert (("stop",), {}) in mundo.voz.comandos
+    assert mundo.musica.llamadas[-1][0] == 1.0          # la música vuelve
+    assert mundo.registro.todas() == []
+
+
+def test_descartar_otra_estacion_no_corta_la_voz(mundo):
+    mundo.locutor.al_sintonizar("E")
+    mundo.locutor.registrar(mundo.iv(T0 - 2))
+    mundo.locutor.descartar_estacion("OTRA")
+    assert mundo.locutor.hablando
+    assert (("stop",), {}) not in mundo.voz.comandos
+
+
+def test_descartar_la_estacion_cancela_el_anclaje_pendiente(mundo):
+    mundo.locutor.al_sintonizar("E")
+    mundo.locutor.registrar(mundo.iv(T0 + 100, destino="/m/t.mp3"))
+    mundo.reloj.t = T0 + 99.96
+    mundo.locutor.pista_iniciada(Pista(Path("/m/t.mp3"), 200, "t"), "E")
+    mundo.locutor.descartar_estacion("E")
+    time.sleep(0.2)
+    assert not mundo.voz.cargas() and not mundo.locutor.hablando

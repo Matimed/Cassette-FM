@@ -123,3 +123,28 @@ def test_al_cargar_descarta_vencidas_y_sin_archivo(entorno):
     reloj.t = 1050
     sin_clip.audio.unlink()
     assert nuevo().todas() == [vigente]
+
+
+def test_quitar_estacion_quita_y_borra_sus_clips(entorno):
+    nuevo, iv, _, archivo, clips = entorno
+    r = nuevo()
+    a1, a2 = iv("A", 1100, 10), iv("A", 1200, 10)
+    b = iv("B", 1100, 10)
+    fuera = iv("A", 1300, 10, nombre="afuera.wav", dentro=False)
+    for i in (a1, a2, b, fuera):
+        r.agregar(i)
+    quitadas = r.quitar_estacion("A")
+    assert sorted(i.id for i in quitadas) == sorted([a1.id, a2.id, fuera.id])
+    assert r.todas() == [b]
+    assert not a1.audio.exists() and not a2.audio.exists()
+    assert fuera.audio.exists() and b.audio.exists()      # el de fuera de dir_clips no se toca
+    assert nuevo().todas() == [b]                           # persistido
+
+
+def test_quitar_estacion_sin_intervenciones_no_hace_nada(entorno):
+    nuevo, iv, _, archivo, _ = entorno
+    r = nuevo()
+    b = iv("B", 1100, 10)
+    r.agregar(b)
+    assert r.quitar_estacion("A") == []
+    assert r.todas() == [b] and b.audio.exists()
