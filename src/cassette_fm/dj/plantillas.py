@@ -118,7 +118,7 @@ def redactar(pedido: Pedido, lexico: Lexico, azar: random.Random, palabras_maxim
     elegibles = [t for t in (_ES if es else _EN) if t.requiere <= disponibles]
 
     def m(nombre: str) -> str:
-        return marcar(nombre, lexico.idioma_de(nombre, lang))
+        return marcar(lexico.pronunciacion(nombre), lexico.idioma_de(nombre, lang))
 
     hora = frase_hora(momento, "es" if es else "en")
     campos = {

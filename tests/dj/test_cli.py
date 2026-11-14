@@ -25,7 +25,7 @@ class SintetizadorFalso:
         self.llamadas = []
         self._voces = list(voces)
 
-    def sintetizar(self, fonemas, voz, lang, salida):
+    def sintetizar(self, fonemas, voz, lang, salida, velocidad=None):
         self.llamadas.append((fonemas, voz, lang, Path(salida)))
         Path(salida).parent.mkdir(parents=True, exist_ok=True)
         with wave.open(str(salida), "wb") as w:

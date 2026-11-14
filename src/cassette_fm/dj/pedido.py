@@ -29,6 +29,7 @@ class Pedido:
     recientes: tuple[str, ...] = ()
     personalidad: str = ""
     duracion_maxima_segundos: float | None = None
+    velocidad: float | None = None      # pisa a la velocidad del servicio (0,5 a 2)
 
     @property
     def lang(self) -> str:
@@ -110,6 +111,14 @@ def leer_pedido(datos: object) -> Pedido:
             raise ValueError("campo 'duracion_maxima_segundos': tiene que ser un número mayor que 0")
         maxima = float(maxima)
 
+    velocidad = datos.get("velocidad")
+    if velocidad is not None:
+        if (isinstance(velocidad, bool) or not isinstance(velocidad, (int, float))
+                or not 0.5 <= velocidad <= 2.0):       # NaN tampoco pasa la comparación
+            raise ValueError("campo 'velocidad': tiene que ser un número entre 0,5 y 2")
+        velocidad = float(velocidad)
+
     return Pedido(id=id_, estacion=estacion, idioma=idioma, voz=voz, momento=momento, anterior=anterior,
                   siguiente=siguiente, recientes=tuple(recientes),
-                  personalidad=(personalidad or "").strip()[:_MAX_TEXTO], duracion_maxima_segundos=maxima)
+                  personalidad=(personalidad or "").strip()[:_MAX_TEXTO], duracion_maxima_segundos=maxima,
+                  velocidad=velocidad)

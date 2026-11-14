@@ -78,6 +78,8 @@ def armar_pedido(id: str, estacion: str, hueco: Hueco, cfg: ConfigDJ, recientes:
         "siguiente": siguiente, "recientes": list(recientes),
         "duracion_maxima_segundos": cfg.duracion_maxima_segundos,
     }
+    if cfg.velocidad is not None:
+        pedido["velocidad"] = cfg.velocidad
     if cfg.personalidad:
         pedido["personalidad"] = cfg.personalidad
     anterior = hueco.anterior

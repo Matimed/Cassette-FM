@@ -133,7 +133,7 @@ class Sintetizador:
             raise ErrorModelos(f"el archivo de voces está corrupto ({type(e).__name__}): borralo y corré "
                                "`cassette-dj modelos`") from e
 
-    def sintetizar(self, fonemas: str, voz: str, lang: str, salida: Path) -> float:
+    def sintetizar(self, fonemas: str, voz: str, lang: str, salida: Path, velocidad: float | None = None) -> float:
         salida = Path(salida)
         with self._lock:
             kokoro = self._modelo()
@@ -149,7 +149,7 @@ class Sintetizador:
                     raise ValueError(f"la voz {parte!r} no existe; disponibles: {', '.join(sorted(disponibles))}")
             estilo = voz if len(partes) == 1 else np.mean([kokoro.get_voice_style(p) for p in partes], axis=0)
             c = self._config
-            audio, frecuencia = kokoro.create(fonemas, voice=estilo, speed=c.velocidad, lang=lang, is_phonemes=True,
+            audio, frecuencia = kokoro.create(fonemas, voice=estilo, speed=velocidad or c.velocidad, lang=lang, is_phonemes=True,
                                               sentence_pause=c.pausa_oracion_segundos,
                                               clause_pause=c.pausa_coma_segundos, continuous=c.continuo)
             self._ultimo_uso = self._reloj()

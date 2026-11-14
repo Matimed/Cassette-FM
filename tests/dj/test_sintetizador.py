@@ -273,3 +273,10 @@ def test_integracion_descargar_libera_la_memoria(tmp_path, modelos_reales):
     despues = _rss_mb()
     assert cargado - antes > 150                       # el modelo ocupaba de verdad
     assert despues - antes < 150, f"quedaron {despues - antes:.0f} MB sin devolver"
+
+
+def test_la_velocidad_del_pedido_pisa_a_la_del_servicio(tmp_path, fabrica_falsa):
+    s = sint(fabrica_falsa, ConfigServicioDJ(velocidad=1.05))
+    s.sintetizar("fon", "em_santa", "es", tmp_path / "a.wav", velocidad=1.3)
+    s.sintetizar("fon", "em_santa", "es", tmp_path / "b.wav")
+    assert [l["speed"] for l in fabrica_falsa.estado.llamadas] == [1.3, 1.05]

@@ -177,3 +177,15 @@ def test_el_momento_del_dia_tambien_usa_la_zona():
     textos = " ".join(redactar(pedido("es", momento=mediodia_utc), Lexico(), random.Random(s), 45, ba).marcado
                       for s in range(80))
     assert "esta tarde" in textos and "esta noche" not in textos
+
+
+def test_redactar_dice_la_pronunciacion_del_lexico_y_el_idioma_del_nombre_original():
+    p = pedido(siguiente=("Nicky Jam", "Tu Y Yo"))
+    p = p.__class__(**{**p.__dict__, "estacion": "Regueton 2000"})
+    lex = Lexico({"Nicky Jam": "en-us"}, {"Regueton 2000": "Reguetón 2000"})
+    for s in range(60):
+        r = redactar(p, lex, random.Random(s), 45)
+        assert "Regueton" not in r.marcado
+        if "Reguetón" in r.marcado:
+            assert ("es", "Reguetón 2000") in MARCA.findall(r.marcado)
+        assert ("en-us", "Nicky Jam") in MARCA.findall(r.marcado) or "Nicky" not in r.marcado

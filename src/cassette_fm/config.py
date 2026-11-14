@@ -42,6 +42,7 @@ class ConfigDJ:
     espera_reintento_segundos: float = 5.0   # primera espera tras un fallo del servicio
     espera_reintento_maxima_segundos: float = 300.0   # tope de la espera creciente
     espera_trabajo_maxima_segundos: float = 600.0   # un trabajo que tarda más que esto se cancela
+    velocidad: float | None = None   # velocidad de la voz de la estación (0,5 a 2); None = la del servicio
     ganancia_voz_db: float = 10.0   # sube y comprime la voz de Kokoro (sale mucho más baja que la música); 0 = sin filtro
     recientes_cantidad: int = 6   # cuántos ingredientes recordar por estación
 
@@ -193,6 +194,11 @@ def _campos_dj(archivo: Path, tabla: dict, donde: str, base: ConfigDJ) -> dict:
                 raise ErrorConfig(f"{archivo}: '{nombre}' tiene que ser mayor que 0")
             if valor < 0:
                 raise ErrorConfig(f"{archivo}: '{nombre}' no puede ser negativo")
+            campos[clave] = valor
+        elif clave == "velocidad":
+            valor = _numero(archivo, nombre, valor)
+            if not 0.5 <= valor <= 2.0:
+                raise ErrorConfig(f"{archivo}: '{nombre}' tiene que estar entre 0,5 y 2")
             campos[clave] = valor
         elif clave == "recientes_cantidad":
             if isinstance(valor, bool) or not isinstance(valor, int) or valor < 0:

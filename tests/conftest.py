@@ -67,7 +67,7 @@ class SintetizadorFalso:
         self.cargado = False
         self.llamadas = []
 
-    def sintetizar(self, fonemas, voz, lang, salida):
+    def sintetizar(self, fonemas, voz, lang, salida, velocidad=None):
         import wave
         if self.puerta is not None:
             assert self.puerta.wait(10), "el sintetizador falso quedó bloqueado"

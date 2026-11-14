@@ -164,7 +164,13 @@ configura en `~/.config/cassette-dj/lexico.toml`:
 ```toml
 [idiomas]
 "Daddy Yankee" = "en-us"
+
+[pronunciacion]          # cómo escribir un nombre para que la voz lo diga bien (se busca sin mayúsculas ni acentos)
+"Regueton 2000" = "Reguetón 2000"
 ```
+
+La velocidad de la voz de cada estación se pone con `velocidad` (0,5 a 2) en `[dj.estaciones."X"]` de la configuración
+de la radio; si falta, vale la del servicio (`velocidad` de `cassette-dj`, 1,05).
 
 **Contrato HTTP** (JSON UTF-8; todo viaja en el pedido, el servicio no guarda estado entre pedidos):
 

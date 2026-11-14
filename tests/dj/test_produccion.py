@@ -23,10 +23,12 @@ class SintetizadorFalso:
     def __init__(self, duraciones=(5.0,), error=None):
         self.duraciones = list(duraciones)
         self.llamadas = []
+        self.velocidades = []
         self.error = error
 
-    def sintetizar(self, fonemas, voz, lang, salida):
+    def sintetizar(self, fonemas, voz, lang, salida, velocidad=None):
         self.llamadas.append((fonemas, voz, lang, Path(salida)))
+        self.velocidades.append(velocidad)
         if self.error:
             raise self.error
         dur = self.duraciones.pop(0) if len(self.duraciones) > 1 else self.duraciones[0]
@@ -146,3 +148,11 @@ def test_el_productor_habla_en_la_zona_horaria_configurada(montaje, hacer_pedido
         productor.producir(hacer_pedido(f"z{i}", momento="2026-11-14T00:47:00+00:00"))   # 21:47 en Buenos Aires
     textos = [g["texto"] for g in guiones.ultimos(100) if "hora" in g.get("ingredientes", [])]
     assert textos and all("diez menos cuarto" in t for t in textos)
+
+
+def test_la_velocidad_del_pedido_llega_al_sintetizador(montaje, hacer_pedido):
+    crear, _, _ = montaje
+    productor, sint = crear()
+    productor.producir(hacer_pedido("v1", velocidad=1.2))
+    productor.producir(hacer_pedido("v2"))
+    assert [v for v in sint.velocidades] == [1.2, None]

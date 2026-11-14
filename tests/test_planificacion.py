@@ -209,3 +209,9 @@ def test_con_una_ultima_de_hace_muchos_dias_igual_hay_hueco_rapido():
     t0 = time.monotonic()
     h = elegir_hueco(est, AHORA, cfg(margen_minutos=6, frecuencia=Frecuencia("temas", 2, 3)), vieja, random.Random(1))
     assert h is not None and h.inicio_tema >= AHORA + 360 and time.monotonic() - t0 < 0.5
+
+
+def test_el_pedido_lleva_la_velocidad_solo_si_esta_configurada():
+    h = hueco_de(estacion())
+    assert "velocidad" not in armar_pedido("x", "E", h, cfg(), [])
+    assert armar_pedido("x", "E", h, cfg(velocidad=1.2), [])["velocidad"] == 1.2

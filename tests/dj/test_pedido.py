@@ -167,3 +167,14 @@ def test_estacion_que_queda_vacia_al_limpiarla_se_rechaza():
     with pytest.raises(ValueError) as exc:
         leer_pedido(d)
     assert "estacion" in str(exc.value)
+
+
+def test_velocidad_opcional_y_validada():
+    d = pedido_valido()
+    assert leer_pedido(d).velocidad is None
+    d["velocidad"] = 1.15
+    assert leer_pedido(d).velocidad == 1.15
+    for malo in (0.3, 2.5, "rápido", True, float("nan")):
+        d["velocidad"] = malo
+        with pytest.raises(ValueError, match="velocidad"):
+            leer_pedido(d)

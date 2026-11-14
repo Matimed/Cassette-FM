@@ -227,3 +227,15 @@ def test_ganancia_de_la_voz_por_defecto_y_validacion(tmp_path):
         archivo.write_text(f"[dj]\nganancia_voz_db = {malo}\n")
         with pytest.raises(ErrorConfig):
             cargar_config(archivo)
+
+
+def test_velocidad_por_estacion(tmp_path):
+    assert ConfigDJ().velocidad is None
+    archivo = tmp_path / "config.toml"
+    archivo.write_text('[dj.estaciones."Lentos"]\nvelocidad = 1.15\n')
+    cfg = cargar_config(archivo)
+    assert configuracion_dj(cfg, "Lentos").velocidad == 1.15 and configuracion_dj(cfg, "X").velocidad is None
+    for malo in ("0.2", "3", '"x"', "true"):
+        archivo.write_text(f"[dj]\nvelocidad = {malo}\n")
+        with pytest.raises(ErrorConfig):
+            cargar_config(archivo)

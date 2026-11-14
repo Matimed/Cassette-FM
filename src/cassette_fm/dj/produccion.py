@@ -69,7 +69,8 @@ class Productor:
         for _ in range(INTENTOS):
             redaccion = redactar(pedido, self._lexico, self._azar, palabras, self._zona)
             prep = preparar(redaccion.marcado, pedido.lang, self._fonemizar)
-            duracion = self._sintetizador.sintetizar(prep.fonemas, pedido.voz, pedido.lang, ruta)
+            duracion = self._sintetizador.sintetizar(prep.fonemas, pedido.voz, pedido.lang, ruta,
+                                                   velocidad=pedido.velocidad)
             guion = dict(self._base(pedido), ingredientes=list(redaccion.ingredientes), texto=prep.texto,
                          marcado=prep.marcado, fonemas=prep.fonemas, duracion=duracion)
             if maxima is None or duracion <= maxima:

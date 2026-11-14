@@ -30,7 +30,7 @@ class SintetizadorFalso:
         self.puerta = None
         self.cargado = False
 
-    def sintetizar(self, fonemas, voz, lang, salida):
+    def sintetizar(self, fonemas, voz, lang, salida, velocidad=None):
         if self.puerta is not None:
             assert self.puerta.wait(5)
         salida = Path(salida)
