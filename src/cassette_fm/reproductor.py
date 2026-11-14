@@ -120,11 +120,17 @@ class Reproductor:
             with self._lock:
                 if token != self._rampa:
                     return
+                if not self._mpv.vivo():
+                    # mpv se cerró o se cayó: no se lo relanza desde acá (ya lo hará `_asegurar`) y el factor
+                    # queda en su destino, no en un valor intermedio
+                    self._factor = fin
+                    return
                 self._factor = fin if ultimo else inicio + (fin - inicio) * avance
                 try:
                     self._aplicar_volumen()
                 except ErrorMpv:
                     _log.warning("no se pudo aplicar la rampa de volumen")
+                    self._factor = fin
                     return
             if ultimo:
                 return

@@ -42,7 +42,8 @@ def servir(config: Config, rutas: Rutas, avisar: Callable[[str, str], None] | No
     if config.dj.activo:
         # el segundo mpv (la voz) no arranca hasta el primer clip y no lleva el filtro de volumen
         voz = ClienteMpv(rutas.runtime / "voz.sock", extra_args=list(extra_args_mpv))
-        locutor = Locutor(voz, reproductor, RegistroIntervenciones(rutas.intervenciones, rutas.clips),
+        locutor = Locutor(voz, reproductor, RegistroIntervenciones(rutas.intervenciones, rutas.clips,
+                                                    gracia_segundos=config.dj.tolerancia_desfase_segundos),
                           lambda nombre: configuracion_dj(config, nombre))
         extra_radio = dict(dj=locutor, configuracion_dj=lambda nombre: configuracion_dj(config, nombre),
                            dir_clips=rutas.clips)

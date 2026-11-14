@@ -21,8 +21,8 @@ def entorno(tmp_path):
     reloj = Reloj()
     archivo = tmp_path / "estado" / "intervenciones.json"
 
-    def nuevo():
-        return RegistroIntervenciones(archivo, clips, reloj)
+    def nuevo(gracia=0.0):
+        return RegistroIntervenciones(archivo, clips, reloj, gracia_segundos=gracia)
 
     def iv(estacion, inicio, dur, nombre=None, dentro=True):
         audio = (clips if dentro else tmp_path) / (nombre or f"{estacion}-{inicio}.wav")
@@ -81,6 +81,17 @@ def test_limpiar_quita_vencidas_y_borra_sus_clips(entorno):
     assert r.limpiar() == [vieja]
     assert not vieja.audio.exists() and nueva.audio.exists()
     assert [d["id"] for d in json.loads(archivo.read_text())] == [nueva.id]
+
+
+def test_la_gracia_posterga_la_limpieza_y_define_las_candidatas(entorno):
+    nuevo, iv, reloj, _, _ = entorno
+    r = nuevo(gracia=10.0)
+    i = iv("A", 1010, 10)                                        # fin = 1020
+    r.agregar(i)
+    reloj.t = 1025
+    assert r.limpiar() == [] and r.candidatas("A") == [i] and r.de_la_estacion("A") == []
+    reloj.t = 1031
+    assert r.candidatas("A") == [] and r.limpiar() == [i]
 
 
 def test_limpiar_no_borra_archivos_fuera_de_dir_clips(entorno):

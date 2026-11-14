@@ -28,7 +28,11 @@ class Intervencion:
 class RegistroIntervenciones:
     """Intervenciones reservadas en la agenda de cada estación; persisten en un JSON."""
 
-    def __init__(self, archivo: Path, dir_clips: Path, reloj: Callable[[], float] = time.time):
+    def __init__(self, archivo: Path, dir_clips: Path, reloj: Callable[[], float] = time.time,
+                 gracia_segundos: float = 0.0):
+        """`gracia_segundos`: cuánto se conserva una intervención después de su fin por el reloj. La voz se ancla
+        al inicio real del tema, que puede estar atrasado respecto del reloj más que la duración del clip."""
+        self._gracia = gracia_segundos
         self._archivo = Path(archivo)
         self._dir_clips = Path(dir_clips)
         self._reloj = reloj
@@ -53,6 +57,11 @@ class RegistroIntervenciones:
         ahora = self._reloj()
         return [i for i in self.todas() if i.estacion == estacion and i.fin > ahora]
 
+    def candidatas(self, estacion: str) -> list[Intervencion]:
+        """Las que todavía pueden dispararse por el inicio real del tema: vigentes o dentro de la gracia."""
+        ahora = self._reloj()
+        return [i for i in self.todas() if i.estacion == estacion and i.fin + self._gracia > ahora]
+
     def activa(self, estacion: str, instante: float) -> Intervencion | None:
         with self._lock:
             for i in self._items:
@@ -64,10 +73,10 @@ class RegistroIntervenciones:
         """Quita las vencidas, borra sus clips (solo los que están en el directorio de clips) y persiste."""
         with self._lock:
             ahora = self._reloj()
-            vencidas = [i for i in self._items if i.fin <= ahora]
+            vencidas = [i for i in self._items if i.fin + self._gracia <= ahora]
             if not vencidas:
                 return []
-            self._items = [i for i in self._items if i.fin > ahora]
+            self._items = [i for i in self._items if i.fin + self._gracia > ahora]
             for i in vencidas:
                 self._borrar_clip(i)
             self._guardar()

@@ -26,6 +26,7 @@ class Locutor:
         self._lock = threading.Lock()
         self._sintonizada: str | None = None
         self._reproducidas: set[str] = set()     # ids ya reproducidos en esta sintonía
+        self._sonadas: set[str] = set()          # ids que alguna vez sonaron (para avisar de las que vencen mudas)
         self._sesion = 0                         # invalida temporizadores de sintonías anteriores
         self._volumen: int | None = None
         self._hablando = False
@@ -57,11 +58,18 @@ class Locutor:
             self._cancelar_anclaje()
             self._cortar()
             self._reproducidas.clear()
+            self._expirar()
             self._sintonizada = estacion
             ahora = self._reloj()
             activa = self._registro.activa(estacion, ahora)
             if activa is not None:
                 self._hablar(activa, ahora - activa.inicio)
+            # El tema en el que se entra viene empezado: si el reloj dice que la voz ya debía haber empezado
+            # (sonó desde el segundo que correspondía, o ya no queda frase que valga), el `file-loaded` de ese
+            # tema NO es el inicio real de nada y no debe dispararla de nuevo.
+            for i in self._registro.candidatas(estacion):
+                if i.inicio <= ahora:
+                    self._reproducidas.add(i.id)
 
     def pista_iniciada(self, pista: Pista, estacion: str) -> None:
         with self._lock:
@@ -69,7 +77,7 @@ class Locutor:
                 return
             cfg = self._configuracion(estacion)
             ahora = self._reloj()
-            for i in self._registro.de_la_estacion(estacion):
+            for i in self._registro.candidatas(estacion):
                 if (i.pista_destino == str(pista.ruta) and i.id not in self._reproducidas
                         and abs(ahora - (i.inicio - cfg.retraso_voz_segundos)) <= cfg.tolerancia_desfase_segundos):
                     self._reproducidas.add(i.id)     # evita dispararla otra vez en esta sintonía
@@ -82,7 +90,7 @@ class Locutor:
 
     def vigentes(self) -> list[Intervencion]:
         with self._lock:
-            self._registro.limpiar()
+            self._expirar()
             ahora = self._reloj()
             return [i for i in self._registro.todas() if i.fin > ahora]
 
@@ -106,6 +114,13 @@ class Locutor:
 
     # --- internos (con el lock tomado) ---
 
+    def _expirar(self) -> None:
+        for i in self._registro.limpiar():
+            if i.id in self._sonadas:
+                self._sonadas.discard(i.id)
+            else:
+                _log.warning("la intervención %s de %r venció sin sonar", i.id, i.estacion)
+
     def _hablar_anclada(self, i: Intervencion, sesion: int) -> None:
         with self._lock:
             if sesion == self._sesion:
@@ -116,6 +131,7 @@ class Locutor:
         if self._hablando or self._volumen == 0 or i.duracion - desde < cfg.minimo_restante_segundos:
             return
         self._reproducidas.add(i.id)
+        self._sonadas.add(i.id)
         self._hablando = True
         self._cfg_actual = cfg
         try:

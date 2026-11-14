@@ -21,6 +21,9 @@ class MpvFalso:
     def asegurar(self):
         pass
 
+    def vivo(self):
+        return True
+
     def comando(self, *args, **nombrados):
         self.comandos.append((args, nombrados))
         if args[0] == "loadfile":
@@ -308,6 +311,18 @@ def test_volumen_cero_con_atenuacion_es_cero(rep, mpv):
     assert _volumenes(mpv)[-1] == pytest.approx(0.0)
 
 
+def test_una_rampa_que_encuentra_mpv_caido_deja_el_factor_en_el_destino(rep, mpv):
+    """Review: no dejar la música bajada a medias si la rampa se corta."""
+    rep.volumen(80)
+    rep.atenuar(0.5, 0)
+    mpv.vivo = lambda: False
+    rep.atenuar(1.0, 0.2)
+    time.sleep(0.4)
+    mpv.vivo = lambda: True
+    rep.volumen(80)
+    assert _volumenes(mpv)[-1] == pytest.approx(80.0)
+
+
 def test_relanzamiento_reaplica_el_volumen_efectivo(rep, mpv):
     rep.volumen(80)
     rep.atenuar(0.5, 0)
@@ -407,3 +422,18 @@ def test_integracion_primer_archivo_roto_sigue_con_el_siguiente(mpv_real, crear_
     rep.sintonizar(e)
     assert esperar(lambda: s[1] in vistas, 8)
     assert caidas == []
+
+
+def test_integracion_una_rampa_en_curso_no_relanza_mpv_tras_cerrar(dir_corto):
+    """Review: cerrar el servicio durante una rampa no puede dejar un mpv de música huérfano."""
+    import subprocess
+    cliente = ClienteMpv(dir_corto / "m.sock", extra_args=["--ao=null"])
+    cliente.iniciar()
+    rep = Reproductor(cliente)
+    rep.volumen(80)
+    rep.atenuar(0.3, 0)
+    rep.atenuar(1.0, 0.8)           # rampa de subida en curso
+    time.sleep(0.1)
+    cliente.cerrar()
+    time.sleep(1.3)                 # la rampa seguía hasta ~0,8 s: antes relanzaba mpv
+    assert subprocess.run(["pgrep", "-f", str(dir_corto / "m.sock")], capture_output=True).returncode == 1

@@ -65,7 +65,7 @@ def mundo(tmp_path, crear_wav):
     reloj = Reloj()
     clips = tmp_path / "clips"
     clips.mkdir()
-    registro = RegistroIntervenciones(tmp_path / "i.json", clips, reloj)
+    registro = RegistroIntervenciones(tmp_path / "i.json", clips, reloj, gracia_segundos=60.0)
     voz, musica = VozFalsa(), MusicaFalsa()
     cuenta = itertools.count()
 
@@ -260,6 +260,34 @@ def test_vigentes_lista_las_no_vencidas_por_inicio(mundo):
     assert mundo.locutor.vigentes() == [temprano, tarde]
     mundo.reloj.t = T0 + 75
     assert mundo.locutor.vigentes() == [tarde]
+
+
+def test_sintonizar_con_la_ventana_casi_terminada_no_dispara_el_anclaje(mundo):
+    """Review: el primer tema tras sintonizar viene empezado; si a la voz le queda menos del mínimo, no suena."""
+    mundo.locutor.registrar(mundo.iv(T0 - 7.55, dur=8.0))        # quedan 0,45 s
+    mundo.locutor.al_sintonizar("E")
+    assert mundo.voz.cargas() == []
+    mundo.locutor.pista_iniciada(Pista(Path("/m/t.mp3"), 200.0, "t"), "E")   # file-loaded del tema en que se entró
+    time.sleep(0.3)
+    assert mundo.voz.cargas() == []
+
+
+def test_la_voz_suena_aunque_la_musica_vaya_mas_atrasada_que_el_clip(mundo):
+    """Review: el desfase de la música real puede superar la duración del clip."""
+    mundo.locutor.al_sintonizar("E")
+    mundo.locutor.registrar(mundo.iv(T0 - 20, dur=8.0))          # por el reloj ya terminó hace 12 s
+    assert mundo.voz.cargas() == []
+    mundo.locutor.pista_iniciada(Pista(Path("/m/t.mp3"), 200.0, "t"), "E")   # el tema destino recién arranca
+    assert esperar(lambda: mundo.voz.cargas())
+    assert start_de(mundo.voz.cargas()[0]) == pytest.approx(0.0)
+
+
+def test_una_intervencion_que_vence_sin_sonar_se_avisa_en_el_log(mundo, caplog):
+    caplog.set_level(logging.WARNING, logger="cassette_fm")
+    mundo.locutor.registrar(mundo.iv(T0 + 30, dur=8.0))
+    mundo.reloj.t = T0 + 200                                     # pasó el fin y la gracia
+    assert mundo.locutor.vigentes() == []
+    assert "sin sonar" in caplog.text
 
 
 def test_cerrar_cierra_la_voz(mundo):
