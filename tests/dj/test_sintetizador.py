@@ -256,21 +256,34 @@ def test_fonemizador_funciona_sin_el_modelo():
     assert "bwˈenos" in f("Buenos Aires", "es")
 
 
-def _rss_mb() -> float:
-    import os
+_MEDIR_MEMORIA = """
+import json, os, sys
+from pathlib import Path
+from kokoro_onnx import Kokoro, Tokenizer
+from cassette_fm.dj.config import ConfigServicioDJ
+from cassette_fm.dj.sintetizador import Sintetizador
+
+def rss():
     with open("/proc/self/statm") as f:
         return int(f.read().split()[1]) * os.sysconf("SC_PAGE_SIZE") / 1e6
 
+s = Sintetizador(ConfigServicioDJ(modelos_dir=Path(sys.argv[1]), descargar_tras_minutos=0))
+fon = Tokenizer().phonemize("Qué tal gente son las nueve en Buenos Aires", "es")
+antes = rss()
+s.sintetizar(fon, "em_santa", "es", Path(sys.argv[2]))
+cargado = rss()
+assert s.descargar_si_ocioso() is True
+print(json.dumps([antes, cargado, rss()]))
+"""
+
 
 def test_integracion_descargar_libera_la_memoria(tmp_path, modelos_reales):
-    from kokoro_onnx import Kokoro, Tokenizer          # las librerías ya cargadas quedan en la línea de base
-    s = Sintetizador(ConfigServicioDJ(modelos_dir=modelos_reales, descargar_tras_minutos=0))
-    fon = Tokenizer().phonemize("Qué tal gente son las nueve en Buenos Aires", "es")
-    antes = _rss_mb()
-    s.sintetizar(fon, "em_santa", "es", tmp_path / "x.wav")
-    cargado = _rss_mb()
-    assert s.descargar_si_ocioso() is True
-    despues = _rss_mb()
+    # en un proceso aparte: el RSS de este proceso depende de lo que hicieron los tests anteriores
+    import json
+    import subprocess
+    salida = subprocess.run([sys.executable, "-I", "-c", _MEDIR_MEMORIA, str(modelos_reales), str(tmp_path / "x.wav")],
+                            capture_output=True, text=True, check=True, timeout=120)
+    antes, cargado, despues = json.loads(salida.stdout.strip().splitlines()[-1])
     assert cargado - antes > 150                       # el modelo ocupaba de verdad
     assert despues - antes < 150, f"quedaron {despues - antes:.0f} MB sin devolver"
 
