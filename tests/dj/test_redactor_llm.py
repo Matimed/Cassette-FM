@@ -66,6 +66,18 @@ def test_el_prompt_pone_la_personalidad_y_el_idioma():
     assert "Tono:" in es.sistema and "Tono:" not in peticion(["cancion"]).sistema
 
 
+@pytest.mark.parametrize("artista, texto, idioma", [
+    ("Wisin & Yandel", "Ahora suena Mírala Bien de Wisin y Yandel, un tema para bailar toda la noche.", "es"),
+    ("Ñejo & Dalmata", "Buenas tardes, ahora suena Mírala Bien de Ñejo y Dalmata para todos ustedes.", "es"),
+    ("Zion & Lennox", "Now playing Mírala Bien by Zion and Lennox, a song for dancing all night.", "en"),
+    ("Zion y Lennox", "Now playing Mírala Bien by Zion & Lennox, a song for dancing all night.", "en"),
+])
+def test_y_and_ampersand_son_lo_mismo_al_nombrar_al_artista(artista, texto, idioma):
+    p = pedido(idioma, siguiente=(artista, "Mírala Bien"))
+    pet = construir_peticion(p, ["cancion"], HECHOS, campos_de_voz(p, HECHOS), 45)
+    assert verificar(texto, p, pet, 45) is None
+
+
 def test_alcanza_con_nombrar_a_uno_de_los_artistas():
     en = pedido("en", siguiente=("Hilight Tribe, Vini Vici", "Free Tibet - Vini Vici Remix"))
     texto = "Now playing Free Tibet by Highlight Tribe and Vini Vici, an incredible journey."
@@ -171,6 +183,11 @@ def test_permitido_incluye_nombres_hechos_y_las_cifras():
      "Get ready to move."),
     ("Aquí tenés la intervención:\n\nAhora suena Take On Me de a-ha.", "Ahora suena Take On Me de a-ha."),
     ("Claro, acá va:\n\nAhora suena Take On Me de a-ha.\n\nSi querés otra, decime.", "Ahora suena Take On Me de a-ha."),
+    ("(Sound of a gentle guitar intro fades in)\n\nRight now, we’re playing Take On Me by a-ha.",
+     "Right now, we’re playing Take On Me by a-ha."),
+    ("*soft music fades in*\n\nAhora suena Take On Me de a-ha.", "Ahora suena Take On Me de a-ha."),
+    ("[Intro music]\n\nHello there, a-ha is next.", "Hello there, a-ha is next."),
+    ("(Sound of piano) Right now we play Take On Me by a-ha.", "Right now we play Take On Me by a-ha."),
     ("Ahora suena Take On Me 🎶 de a-ha 🔥.", "Ahora suena Take On Me de a-ha."),
     ("Ahora suena Take On Me.\n\nY seguimos con más música.", "Ahora suena Take On Me."),
     ("Here is the announcement:\nNow playing Take On Me.", "Now playing Take On Me."),

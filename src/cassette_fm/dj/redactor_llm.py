@@ -42,6 +42,11 @@ def _norm(texto: str) -> str:
     return re.sub(r"\s+", " ", re.sub(r"[\W_]+", " ", _sin_acentos(texto))).strip()
 
 
+def _norm_nombre(texto: str) -> str:
+    """Para comparar nombres: "Wisin & Yandel" y "Wisin y Yandel" (o "and", "e") son el mismo."""
+    return " ".join(t for t in _norm(texto).split() if t not in ("y", "and", "e"))
+
+
 def _titulo_limpio(titulo: str) -> str:
     t = re.sub(r"\s*[\(\[][^\)\]]*[\)\]]", "", titulo)
     t = re.sub(r"\s+[-–—]\s+.*$", "", t)
@@ -169,8 +174,13 @@ _INTERJECCION = re.compile(r"^[¡¿]?(?:claro|por supuesto|dale|listo|sure|of co
                            r"[!.,¡]*\s*", re.I)
 
 
+_ACOTACION = re.compile(r"\([^()]*\)|\[[^\[\]]*\]|\*[^*\n]*\*")      # "(suena una guitarra)", "[intro]", "*música*"
+
+
 def _es_preambulo(parrafo: str) -> bool:
     """Una línea corta de cortesía antes del texto ("Here's the announcement:", "Okay, here we go!")."""
+    if _ACOTACION.fullmatch(parrafo):
+        return True
     return len(parrafo.split()) <= 10 and (parrafo.endswith(":") or bool(_INTERJECCION.match(parrafo)))
 
 
@@ -186,6 +196,7 @@ def limpiar_salida(crudo: str) -> str:
     if len(lineas) > 1 and re.match(r"(?i)^(aqu[ií]|ac[aá]|here)\b.*:$", lineas[0]):
         lineas = lineas[1:]
     t = " ".join(lineas)
+    t = re.sub(r"^(?:\s*" + _ACOTACION.pattern + r")+\s*", "", t)              # acotación pegada al texto
     t = _INTERJECCION.sub("", t)
     t = _PREFIJO.sub("", t)
     t = _EMOJI.sub("", t)
@@ -245,9 +256,10 @@ def verificar(texto: str, pedido: Pedido, peticion: Peticion, palabras_maximas: 
         return "demasiado corto"
     if re.search(r"https?://|www\.|[@#]|\b[\w-]+\.(?:org|com|net|ar|io|fm|es|co|uk|tv|me|info)\b", texto, re.I):
         return "tiene enlaces o etiquetas"
-    plano = _norm(texto)
+    plano = _norm_nombre(texto)
     artistas = artistas_del_tag(pedido.siguiente.artista)
-    if _norm(_titulo_limpio(pedido.siguiente.titulo)) not in plano or not any(_norm(a) in plano for a in artistas):
+    if (_norm_nombre(_titulo_limpio(pedido.siguiente.titulo)) not in plano
+            or not any(_norm_nombre(a) in plano for a in artistas)):
         return "no nombra el tema o el artista"
     idioma = _idioma(pedido)
     resto = _sin_nombres(texto, pedido)                    # lo que dijo el LLM fuera de los nombres del pedido
