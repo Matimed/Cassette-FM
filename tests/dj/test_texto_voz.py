@@ -205,3 +205,17 @@ def test_integracion_con_el_fonemizador_real():
     assert "æ" in con_ingles.fonemas
     en = preparar("Nine twenty here in {es:Buenos Aires} tonight with the best music", "en-us", fon)
     assert "bwˈenos" in en.fonemas
+
+
+def test_los_tramos_contiguos_del_mismo_idioma_se_fonemizan_juntos():
+    llamadas = []
+
+    def registrador(texto, lang):
+        llamadas.append((texto, lang))
+        return f"<{lang}:{texto}>"
+
+    preparar("Ahora suena {es:Gasolina} de {es:Dadi Yanki} para todos nosotros.", "es", registrador)
+    assert llamadas == [("Ahora suena Gasolina de Dadi Yanki para todos nosotros.", "es")]
+    llamadas.clear()
+    preparar("Ahora suena {es:Gasolina} de {en-us:Daddy Yankee} para todos nosotros.", "es", registrador)
+    assert [l for _, l in llamadas] == ["es", "en-us", "es"]

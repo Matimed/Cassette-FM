@@ -137,8 +137,16 @@ def limpiar(marcado: str, lang_base: str, minimo_palabras: int = 4) -> str:
 def preparar(marcado: str, lang_base: str, fonemizar: Callable[[str, str], str],
              minimo_palabras: int = 4) -> Preparado:
     limpio = limpiar(marcado, lang_base, minimo_palabras)
-    trozos = []
+    # los tramos contiguos del mismo idioma se fonemizan juntos: por separado, una palabra suelta ("de") sale
+    # acentuada y se oye una pausa antes del nombre
+    unidos: list[list[str]] = []
     for texto, lang in tramos(limpio, lang_base):
+        if unidos and unidos[-1][1] == lang:
+            unidos[-1][0] += " " + texto
+        else:
+            unidos.append([texto, lang])
+    trozos = []
+    for texto, lang in unidos:
         fon = fonemizar(texto, lang)
         trozos.append(aplicar_seseo(fon) if lang == "es" else fon)
     return Preparado(texto=_MARCA.sub(lambda m: m.group(2), limpio), marcado=limpio, fonemas=" ".join(trozos))
