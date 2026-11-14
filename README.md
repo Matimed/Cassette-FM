@@ -122,6 +122,17 @@ estado`; (3) `cassette dj modo llm` y `cassette dj pedir --en 180` en varias est
 guiones` y el `guiones.jsonl` (prompts, crudos, descartados y motivos); (5) medir cuánto tarda cada frase; (6)
 `cassette dj modo plantillas` para volver. Si `gemma3:4b` se queda corto, probar otro modelo con `llm_modelo`.
 
+### Ensayo del DJ (probar todas las radios sin esperar)
+
+`scripts/ensayo-dj.py` arma transiciones reales de la agenda de cada radio (10 por defecto), le manda al servicio
+DJ los mismos pedidos que armaría el planificador (voz, idioma y personalidad de cada radio) y muestra los
+guiones en vivo: hora en cian, frases del LLM en verde, descartados en rojo y plantillas en amarillo. Al final
+resume por radio y por motivo de descarte, y guarda todos los registros (prompt, crudo, hechos) en
+`~/.local/state/cassette-dj/ensayos/`. Opciones: `--canciones N`, `--estacion "Nombre"` (repetible), `--modo
+llm|plantillas`, `--margen SEGUNDOS` (cuánto tiempo tiene el LLM para escribir, 300 por defecto),
+`--conservar-audio`, `--sin-color`. Los pedidos van de a uno (como el planificador, que pasa los `recientes`), y
+los clips se borran al terminar cada uno.
+
 ### Planificador (frases reales)
 
 Para que la radio le pida intervenciones al servicio DJ hay que poner **las dos cosas** (sin `url` no intenta
