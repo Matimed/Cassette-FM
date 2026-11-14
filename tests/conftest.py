@@ -40,3 +40,13 @@ def dir_corto():
     ruta = Path(tempfile.mkdtemp(prefix="cfm.", dir=base))
     yield ruta
     shutil.rmtree(ruta, ignore_errors=True)
+
+
+@pytest.fixture
+def crear_wav():
+    from cassette_fm.clips import generar_clip_de_prueba
+
+    def crear(ruta: Path, segundos: float = 4.0) -> Path:
+        return generar_clip_de_prueba(Path(ruta), segundos)
+
+    return crear
