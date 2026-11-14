@@ -116,3 +116,56 @@ def test_pausas_de_piper(tmp_path):
     archivo.write_text("piper_pausa_coma_segundos = -1\n")
     with pytest.raises(ErrorConfig):
         cargar_config_dj(archivo)
+
+
+# --- hechos reales (parte 3) ---
+
+def test_defaults_de_los_hechos():
+    c = ConfigServicioDJ()
+    assert (c.contacto, c.musicbrainz_url, c.open_meteo_url) == ("", "https://musicbrainz.org/ws/2",
+                                                                   "https://api.open-meteo.com/v1/forecast")
+    assert (c.latitud, c.longitud, c.timeout_hechos_segundos) == (-34.6037, -58.3816, 5.0)
+    assert (c.cache_clima_minutos, c.cache_datos_dias, c.cache_sin_dato_dias, c.cache_error_minutos) == (
+        15.0, 90.0, 14.0, 10.0)
+    assert (c.ingredientes_max, c.penalizacion_reciente) == (3, 0.3)
+    assert c.pesos_ingredientes == {"estacion": 0.5, "hora": 0.35, "momento": 0.3, "album": 0.3, "anterior": 0.3,
+                                    "clima": 0.12, "dato": 0.25}
+
+
+def test_contacto_y_urls_se_leen(tmp_path):
+    archivo = tmp_path / "config.toml"
+    archivo.write_text('contacto = "yo@example.com"\nmusicbrainz_url = "http://127.0.0.1:9/ws/2"\n'
+                       'open_meteo_url = "http://127.0.0.1:9/f"\nlatitud = -31.4\nlongitud = -64.2\n'
+                       'ingredientes_max = 2\n')
+    c = cargar_config_dj(archivo)
+    assert (c.contacto, c.musicbrainz_url, c.open_meteo_url) == ("yo@example.com", "http://127.0.0.1:9/ws/2",
+                                                                  "http://127.0.0.1:9/f")
+    assert (c.latitud, c.longitud, c.ingredientes_max) == (-31.4, -64.2, 2)
+
+
+def test_ingredientes_se_leen_y_se_funden_con_los_de_fabrica(tmp_path):
+    archivo = tmp_path / "config.toml"
+    archivo.write_text("[ingredientes]\nclima = 0.5\nhora = 0\n")
+    c = cargar_config_dj(archivo)
+    assert c.pesos_ingredientes["clima"] == 0.5 and c.pesos_ingredientes["hora"] == 0.0
+    assert c.pesos_ingredientes["dato"] == 0.25
+
+
+@pytest.mark.parametrize("contenido", ["[ingredientes]\ncancion = 1", "[ingredientes]\nclima = 2",
+                                       '[ingredientes]\nclima = "x"', "[ingredientes]\ninventado = 0.1",
+                                       "ingredientes = 3", "[ingredientes]\nclima = true",
+                                       "timeout_hechos_segundos = 0", "ingredientes_max = 0",
+                                       "penalizacion_reciente = 1.5", "latitud = 200", "longitud = -181",
+                                       'musicbrainz_url = "ftp://x"', 'open_meteo_url = "x"',
+                                       "cache_datos_dias = -1", "contacto = 5"])
+def test_valores_invalidos_de_los_hechos(tmp_path, contenido):
+    archivo = tmp_path / "config.toml"
+    archivo.write_text(contenido + "\n")
+    with pytest.raises(ErrorConfig) as e:
+        cargar_config_dj(archivo)
+    assert str(archivo) in str(e.value)
+
+
+def test_rutas_hechos(tmp_path):
+    r = RutasDJ(config=tmp_path / "c.toml", estado=tmp_path / "estado", clips=tmp_path / "clips")
+    assert r.hechos == tmp_path / "estado" / "hechos.sqlite"

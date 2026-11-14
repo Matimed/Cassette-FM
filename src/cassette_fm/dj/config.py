@@ -9,6 +9,10 @@ from pathlib import Path
 from cassette_fm.config import ErrorConfig
 
 
+PESOS_POR_DEFECTO: Mapping[str, float] = {"estacion": 0.5, "hora": 0.35, "momento": 0.3, "album": 0.3,
+                                          "anterior": 0.3, "clima": 0.12, "dato": 0.25}
+
+
 @dataclass(frozen=True)
 class ConfigServicioDJ:
     host: str = "127.0.0.1"
@@ -25,6 +29,19 @@ class ConfigServicioDJ:
     zona_horaria: str = "America/Argentina/Buenos_Aires"
     piper_pausa_coma_segundos: float = 0.15     # silencio en cada coma (Piper no hace pausas por sí solo)
     piper_pausa_oracion_segundos: float = 0.4   # silencio entre oraciones
+    contacto: str = ""                      # va en el User-Agent de MusicBrainz; vacío = no se consulta
+    musicbrainz_url: str = "https://musicbrainz.org/ws/2"
+    open_meteo_url: str = "https://api.open-meteo.com/v1/forecast"
+    latitud: float = -34.6037               # Buenos Aires
+    longitud: float = -58.3816
+    timeout_hechos_segundos: float = 5.0
+    cache_clima_minutos: float = 15.0
+    cache_datos_dias: float = 90.0          # dato encontrado
+    cache_sin_dato_dias: float = 14.0       # la consulta funcionó y no dio nada
+    cache_error_minutos: float = 10.0       # la red falló: no reintentar enseguida
+    ingredientes_max: int = 3               # cuántos ingredientes combina una frase (el tema cuenta)
+    penalizacion_reciente: float = 0.3      # cada aparición en `recientes` multiplica el peso por esto
+    pesos_ingredientes: Mapping[str, float] = field(default_factory=lambda: dict(PESOS_POR_DEFECTO))
     voces: Mapping[str, str] = field(default_factory=dict)   # voces con nombre: alias -> voz o mezcla ("em_alex+em_santa")
 
 
@@ -37,6 +54,10 @@ class RutasDJ:
     @property
     def guiones(self) -> Path:
         return self.estado / "guiones.jsonl"
+
+    @property
+    def hechos(self) -> Path:
+        return self.estado / "hechos.sqlite"
 
     @property
     def lexico(self) -> Path:
@@ -58,7 +79,8 @@ def rutas_dj() -> RutasDJ:
 
 
 _TIPOS = {c.name: {"host": str, "modelos_dir": str, "zona_horaria": str, "continuo": bool,
-                   "puerto": int, "trabajadores": int, "palabras_maximas": int}.get(c.name, float)
+                   "puerto": int, "trabajadores": int, "palabras_maximas": int,
+                   "contacto": str, "musicbrainz_url": str, "open_meteo_url": str, "ingredientes_max": int}.get(c.name, float)
           for c in fields(ConfigServicioDJ)}
 _NOMBRE_TIPO = {str: "un texto", int: "un número entero", float: "un número", bool: "true o false"}
 
@@ -72,6 +94,8 @@ def cargar_config_dj(archivo: Path) -> ConfigServicioDJ:
     except (tomllib.TOMLDecodeError, OSError) as e:
         raise ErrorConfig(f"{archivo}: {e}")
     voces = _leer_voces(archivo, datos.pop("voces", {}))
+    pesos = _leer_pesos(archivo, datos.pop("ingredientes", {}))
+    datos.pop("pesos_ingredientes", None)
     campos = {}
     for clave, valor in datos.items():
         tipo = _TIPOS.get(clave)
@@ -89,7 +113,7 @@ def cargar_config_dj(archivo: Path) -> ConfigServicioDJ:
     _validar(archivo, campos)
     if "modelos_dir" in campos:
         campos["modelos_dir"] = Path(campos["modelos_dir"]).expanduser()
-    return replace(ConfigServicioDJ(), voces=voces, **campos)
+    return replace(ConfigServicioDJ(), voces=voces, pesos_ingredientes=pesos, **campos)
 
 
 _NOMBRE_VOZ = re.compile(r"[A-Za-z0-9_.-]+")
@@ -108,6 +132,20 @@ def _leer_voces(archivo: Path, tabla) -> dict[str, str]:
         if any(parte in tabla for parte in voz.split("+")):
             raise ErrorConfig(f"{archivo}: la voz {nombre!r} no puede apuntar a otra voz con nombre")
     return dict(tabla)
+
+
+def _leer_pesos(archivo: Path, tabla) -> dict[str, float]:
+    if not isinstance(tabla, dict):
+        raise ErrorConfig(f"{archivo}: 'ingredientes' tiene que ser una tabla de ingrediente = peso")
+    pesos = dict(PESOS_POR_DEFECTO)
+    for nombre, peso in tabla.items():
+        if nombre not in PESOS_POR_DEFECTO:
+            raise ErrorConfig(f"{archivo}: ingrediente desconocido {nombre!r} (los válidos son: "
+                              f"{', '.join(PESOS_POR_DEFECTO)}; la canción siempre va)")
+        if isinstance(peso, bool) or not isinstance(peso, (int, float)) or not 0 <= peso <= 1:
+            raise ErrorConfig(f"{archivo}: el peso de {nombre!r} tiene que ser un número entre 0 y 1")
+        pesos[nombre] = float(peso)
+    return pesos
 
 
 def _validar(archivo: Path, c: dict) -> None:
@@ -132,6 +170,22 @@ def _validar(archivo: Path, c: dict) -> None:
         ruta = Path(c["modelos_dir"]).expanduser()
         if not c["modelos_dir"].strip() or not ruta.is_absolute():
             error("modelos_dir", "tiene que ser una ruta absoluta (o empezar con ~)")
+    if "timeout_hechos_segundos" in c and c["timeout_hechos_segundos"] <= 0:
+        error("timeout_hechos_segundos", "tiene que ser mayor que 0")
+    if "ingredientes_max" in c and c["ingredientes_max"] < 1:
+        error("ingredientes_max", "tiene que ser al menos 1")
+    if "penalizacion_reciente" in c and not 0 <= c["penalizacion_reciente"] <= 1:
+        error("penalizacion_reciente", "tiene que estar entre 0 y 1")
+    if "latitud" in c and not -90 <= c["latitud"] <= 90:
+        error("latitud", "tiene que estar entre -90 y 90")
+    if "longitud" in c and not -180 <= c["longitud"] <= 180:
+        error("longitud", "tiene que estar entre -180 y 180")
+    for clave in ("cache_clima_minutos", "cache_datos_dias", "cache_sin_dato_dias", "cache_error_minutos"):
+        if clave in c and c[clave] < 0:
+            error(clave, "no puede ser negativo")
+    for clave in ("musicbrainz_url", "open_meteo_url"):
+        if clave in c and not re.fullmatch(r"https?://\S+", c[clave]):
+            error(clave, "tiene que empezar con http:// o https://")
     if "host" in c and not c["host"].strip():
         error("host", "no puede estar vacío")
     if "zona_horaria" in c:
