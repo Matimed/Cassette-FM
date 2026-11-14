@@ -133,7 +133,7 @@ def servicio_dj(tmp_path):
 def servidor_http():
     """Servidor HTTP de pruebas: `s.responder(prefijo, cuerpo, codigo=200, tipo="application/json", demora=0)`
     (cuerpo: str/bytes/objeto JSON/callable(ruta_con_query) -> lo mismo o (código, cuerpo)). `s.pedidos`: [(ruta_con_query, headers)];
-    `s.cuerpos`: [(ruta, cuerpo)] de los POST."""
+    `s.cuerpos`: [(ruta, cuerpo)] de los POST y PUT."""
     import json
     import threading
     import time
@@ -161,6 +161,8 @@ def servidor_http():
             with s.lock:
                 s.cuerpos.append((self.path, datos))
             self.do_GET()
+
+        do_PUT = do_POST
 
         def do_GET(self):
             with s.lock:

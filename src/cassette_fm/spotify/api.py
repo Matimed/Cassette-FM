@@ -29,13 +29,19 @@ class ClienteSpotify:
 
     def get(self, ruta: str, params: dict | None = None) -> dict:
         """`ruta` relativa a la API ("/playlists/x") o una URL absoluta de la misma API (el `next` de una página)."""
+        return self._llamar("GET", ruta, params, None)
+
+    def put(self, ruta: str, params: dict | None = None, cuerpo: dict | None = None) -> None:
+        self._llamar("PUT", ruta, params, cuerpo)
+
+    def _llamar(self, metodo: str, ruta: str, params: dict | None, cuerpo: dict | None):
         url = ruta if ruta.startswith("http") else self._config.api_url + ruta
         if params:
             url += ("&" if "?" in url else "?") + urllib.parse.urlencode(params)
         forzado = esperado = False
         while True:
             try:
-                return self._pedir(url, self._token(forzado))
+                return self._pedir(metodo, url, self._token(forzado), cuerpo)
             except _Respuesta as r:
                 if r.codigo == 401 and not forzado:
                     forzado = True
@@ -61,8 +67,10 @@ class ClienteSpotify:
         except ErrorSesion as e:
             raise ErrorSpotify(str(e)) from None
 
-    def _pedir(self, url: str, token: str) -> dict:
-        req = urllib.request.Request(url, headers={"Authorization": f"Bearer {token}"})
+    def _pedir(self, metodo: str, url: str, token: str, cuerpo: dict | None) -> dict | None:
+        datos = json.dumps(cuerpo).encode() if cuerpo is not None else (b"" if metodo != "GET" else None)
+        req = urllib.request.Request(url, data=datos, method=metodo,
+                                     headers={"Authorization": f"Bearer {token}", "Content-Type": "application/json"})
         try:
             with urllib.request.urlopen(req, timeout=self._config.timeout_segundos) as r:
                 crudo = r.read()
@@ -70,6 +78,8 @@ class ClienteSpotify:
             raise _Respuesta(e.code, _mensaje(e), _espera(e.headers.get("Retry-After"))) from None
         except (urllib.error.URLError, http.client.HTTPException, OSError) as e:
             raise ErrorSpotify(f"Spotify no responde ({getattr(e, 'reason', e)})") from None
+        if metodo != "GET":
+            return None                    # 200/202/204 de un comando: no interesa el cuerpo
         try:
             datos = json.loads(crudo)
         except ValueError:

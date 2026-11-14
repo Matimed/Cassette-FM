@@ -106,3 +106,21 @@ def test_sin_sesion_es_error_spotify_con_el_mensaje(servidor_http):
     c, _ = cliente(servidor_http, SesionFalsa(ErrorSesion("no hay sesión de Spotify: corré cassette spotify login")))
     with pytest.raises(ErrorSpotify, match="cassette spotify login"):
         c.get("/me")
+
+
+def test_put_manda_cuerpo_json_y_acepta_204(servidor_http):
+    import json as _json
+    servidor_http.responder("/v1/me/player/play", "", 204)
+    c, _ = cliente(servidor_http)
+    assert c.put("/me/player/play", {"device_id": "D"}, {"uris": ["spotify:track:x"], "position_ms": 5}) is None
+    ((ruta, cuerpo),) = servidor_http.cuerpos
+    assert ruta == "/v1/me/player/play?device_id=D" and _json.loads(cuerpo) == {"uris": ["spotify:track:x"], "position_ms": 5}
+    assert servidor_http.pedidos[0][1]["Authorization"] == "Bearer A0"
+
+
+def test_put_con_error_es_error_spotify(servidor_http):
+    servidor_http.responder("/v1/me/player/play", {"error": {"status": 404, "message": "Device not found"}}, 404)
+    c, _ = cliente(servidor_http)
+    with pytest.raises(ErrorSpotify, match="Device not found") as e:
+        c.put("/me/player/play")
+    assert e.value.codigo == 404
