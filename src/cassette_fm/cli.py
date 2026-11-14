@@ -71,6 +71,9 @@ def _armar_parser() -> argparse.ArgumentParser:
     tune.add_argument("nombre", nargs="+")
     vol = sub.add_parser("vol", parents=[comun], help="volumen: N, +N o -N")
     vol.add_argument("valor")
+    spotify = sub.add_parser("spotify", help="Spotify como fuente de emisoras: sesión y estado")
+    spotify_sub = spotify.add_subparsers(dest="accion", required=True)
+    spotify_sub.add_parser("login", help="abre el navegador para darle permiso a cassette-fm en tu cuenta")
     dj = sub.add_parser("dj", help="el DJ: ver el estado, probar un clip o pedir una intervención")
     dj_sub = dj.add_subparsers(dest="accion", required=True)
     dj_sub.add_parser("estado", parents=[comun], help="qué tiene programado el DJ")
@@ -194,6 +197,20 @@ def _instalar_applet() -> int:
     return 0
 
 
+def _spotify(args, cfg, rutas) -> int:
+    from cassette_fm.spotify import sesion
+    s = sesion.Sesion(rutas.spotify_token, cfg.spotify)
+    try:
+        if args.accion == "login":
+            print("Se abre el navegador: aceptá los permisos de cassette-fm y volvé acá.")
+            sesion.login(s, cfg.spotify)
+            print("Listo: sesión de Spotify guardada.")
+    except sesion.ErrorSesion as e:
+        print(e, file=sys.stderr)
+        return 1
+    return 0
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = _armar_parser()
     args = parser.parse_args(argv)
@@ -213,6 +230,8 @@ def main(argv: list[str] | None = None) -> int:
     except config.ErrorConfig as e:
         print(e, file=sys.stderr)
         return 1
+    if args.comando == "spotify":
+        return _spotify(args, cfg, rutas)
     if args.comando == "serve":
         from cassette_fm import servicio
         logging.basicConfig(level=logging.INFO, format="%(levelname)s %(name)s: %(message)s")

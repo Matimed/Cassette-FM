@@ -48,6 +48,16 @@ class ConfigDJ:
 
 
 @dataclass(frozen=True)
+class ConfigSpotify:
+    """La app de desarrollador de Spotify (PKCE, sin secreto) y adónde hablarle."""
+    client_id: str = "c8f7703801e64bc890d65527fc620248"
+    puerto_login: int = 8888        # redirect http://127.0.0.1:<puerto>/callback (registrado en la app)
+    timeout_segundos: float = 10.0
+    cuentas_url: str = "https://accounts.spotify.com"
+    api_url: str = "https://api.spotify.com/v1"
+
+
+@dataclass(frozen=True)
 class Config:
     raiz_musica: Path = Path.home() / "Música"
     puerto: int = 7710
@@ -55,6 +65,7 @@ class Config:
     normalizar: bool = True   # filtro dynaudnorm de mpv: parejiza el volumen entre temas
     dj: ConfigDJ = ConfigDJ()
     estaciones_dj: Mapping[str, ConfigDJ] = field(default_factory=dict)   # overrides ya fusionados
+    spotify: ConfigSpotify = ConfigSpotify()
 
 
 def configuracion_dj(config: Config, estacion: str) -> ConfigDJ:
@@ -77,6 +88,14 @@ class Rutas:
     @property
     def emisoras(self) -> Path:
         return self.config.with_name("estaciones.json")
+
+    @property
+    def spotify_token(self) -> Path:
+        return self.estado.with_name("spotify-token.json")
+
+    @property
+    def spotify_cache(self) -> Path:
+        return self.cache.with_name("spotify.json")
 
     @property
     def intervenciones(self) -> Path:
@@ -120,6 +139,7 @@ def cargar_config(archivo: Path) -> Config:
     except (tomllib.TOMLDecodeError, OSError) as e:
         raise ErrorConfig(f"{archivo}: {e}")
     tabla_dj = datos.pop("dj", None)
+    spotify = _leer_spotify(archivo, datos.pop("spotify", None))
     conocidas = {"raiz_musica", "puerto", "avisos", "normalizar"}
     datos = {k: v for k, v in datos.items() if k in conocidas}
     for clave, valor in datos.items():
@@ -131,7 +151,34 @@ def cargar_config(archivo: Path) -> Config:
     if "raiz_musica" in datos:
         datos["raiz_musica"] = Path(datos["raiz_musica"]).expanduser()
     dj, por_estacion = _leer_dj(archivo, tabla_dj)
-    return Config(**datos, dj=dj, estaciones_dj=por_estacion)
+    return Config(**datos, dj=dj, estaciones_dj=por_estacion, spotify=spotify)
+
+
+def _leer_spotify(archivo: Path, tabla) -> "ConfigSpotify":
+    if tabla is None:
+        return ConfigSpotify()
+    if not isinstance(tabla, dict):
+        raise ErrorConfig(f"{archivo}: 'spotify' tiene que ser una tabla")
+    campos = {}
+    for clave in ("client_id", "cuentas_url", "api_url"):
+        if clave in tabla:
+            valor = _texto(archivo, f"spotify.{clave}", tabla[clave]).strip()
+            if not valor:
+                raise ErrorConfig(f"{archivo}: 'spotify.{clave}' no puede quedar vacío")
+            if clave != "client_id" and not re.match(r"^https?://\S+$", valor):
+                raise ErrorConfig(f"{archivo}: 'spotify.{clave}' tiene que empezar con http:// o https://")
+            campos[clave] = valor.rstrip("/")
+    if "puerto_login" in tabla:
+        valor = tabla["puerto_login"]
+        if isinstance(valor, bool) or not isinstance(valor, int) or not 1 <= valor <= 65535:
+            raise ErrorConfig(f"{archivo}: 'spotify.puerto_login' tiene que ser un entero entre 1 y 65535")
+        campos["puerto_login"] = valor
+    if "timeout_segundos" in tabla:
+        valor = _numero(archivo, "spotify.timeout_segundos", tabla["timeout_segundos"])
+        if valor <= 0:
+            raise ErrorConfig(f"{archivo}: 'spotify.timeout_segundos' tiene que ser mayor que 0")
+        campos["timeout_segundos"] = valor
+    return ConfigSpotify(**campos)
 
 
 _CAMPOS_NUMERICOS_DJ = {c.name for c in fields(ConfigDJ)

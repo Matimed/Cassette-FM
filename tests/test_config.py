@@ -3,7 +3,7 @@ import os
 import pytest
 from pathlib import Path
 
-from cassette_fm.config import (Config, ErrorConfig, Estado, cargar_config, cargar_estado,
+from cassette_fm.config import (Config, ErrorConfig, Estado, Rutas, cargar_config, cargar_estado,
                                 guardar_estado, rutas)
 
 
@@ -246,3 +246,32 @@ def test_voz_de_piper_y_alias_validos_en_la_config_de_la_radio(tmp_path):
     archivo.write_text('[dj]\nvoz = "piper:es_AR-daniela-high"\n[dj.estaciones."X"]\nvoz = "alex_santa"\n')
     cfg = cargar_config(archivo)
     assert cfg.dj.voz == "piper:es_AR-daniela-high" and configuracion_dj(cfg, "X").voz == "alex_santa"
+
+
+# --- Spotify ---
+
+def test_spotify_por_defecto_y_rutas(tmp_path):
+    from cassette_fm.config import ConfigSpotify
+    s = Config().spotify
+    assert s == ConfigSpotify() and s.client_id == "c8f7703801e64bc890d65527fc620248" and s.puerto_login == 8888
+    assert s.api_url == "https://api.spotify.com/v1" and s.cuentas_url == "https://accounts.spotify.com"
+    r = Rutas(config=tmp_path / "c.toml", estado=tmp_path / "s" / "estado.json", cache=tmp_path / "ca" / "d.json",
+              runtime=tmp_path)
+    assert r.spotify_token == tmp_path / "s" / "spotify-token.json" and r.spotify_cache == tmp_path / "ca" / "spotify.json"
+
+
+def test_spotify_se_lee_del_toml(tmp_path):
+    archivo = tmp_path / "config.toml"
+    archivo.write_text('[spotify]\nclient_id = "abc"\npuerto_login = 9999\ntimeout_segundos = 3\n')
+    s = cargar_config(archivo).spotify
+    assert (s.client_id, s.puerto_login, s.timeout_segundos) == ("abc", 9999, 3.0)
+
+
+@pytest.mark.parametrize("texto, mensaje", [("puerto_login = 0", "puerto_login"), ("puerto_login = true", "puerto_login"),
+                                            ('api_url = "ftp://x"', "api_url"), ("timeout_segundos = 0", "timeout"),
+                                            ('client_id = ""', "client_id")])
+def test_spotify_valores_invalidos(tmp_path, texto, mensaje):
+    archivo = tmp_path / "config.toml"
+    archivo.write_text(f"[spotify]\n{texto}\n")
+    with pytest.raises(ErrorConfig, match=mensaje):
+        cargar_config(archivo)

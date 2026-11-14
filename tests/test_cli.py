@@ -320,3 +320,31 @@ def test_serve_con_estaciones_json_roto_sale_con_1(tmp_path, monkeypatch, capsys
     monkeypatch.setattr(servicio, "servir", roto)
     assert main(["serve"]) == 1
     assert "estaciones.json: línea 3" in capsys.readouterr().err
+
+
+def _rutas_tmp(monkeypatch, tmp_path):
+    from cassette_fm import config
+    from cassette_fm.config import Rutas
+    r = Rutas(tmp_path / "c.toml", tmp_path / "s" / "e.json", tmp_path / "ca" / "d.json", tmp_path)
+    monkeypatch.setattr(config, "rutas", lambda: r)
+    return r
+
+
+def test_spotify_login_ok(tmp_path, monkeypatch, capsys):
+    from cassette_fm.spotify import sesion
+    r = _rutas_tmp(monkeypatch, tmp_path)
+    llamado = {}
+    monkeypatch.setattr(sesion, "login", lambda s, cfg, **kw: llamado.update(archivo=s._archivo, cfg=cfg))
+    assert main(["spotify", "login"]) == 0
+    assert llamado["archivo"] == r.spotify_token and "Listo" in capsys.readouterr().out
+
+
+def test_spotify_login_con_error_sale_con_1(tmp_path, monkeypatch, capsys):
+    from cassette_fm.spotify import sesion
+    _rutas_tmp(monkeypatch, tmp_path)
+
+    def falla(*a, **kw):
+        raise sesion.ErrorSesion("cancelaste el permiso en Spotify (access_denied)")
+    monkeypatch.setattr(sesion, "login", falla)
+    assert main(["spotify", "login"]) == 1
+    assert "cancelaste" in capsys.readouterr().err
