@@ -226,12 +226,18 @@ from cassette_fm.dj.texto_voz import texto_para_piper
 
 @pytest.mark.parametrize("marcado, esperado", [
     ("Estamos en {es:Reguetón 2000} esta noche y ahora suena {es:Sexy Movimiento} de {es:Dadi Yanki} para todos nosotros.",
-     "Estamos en Reguetón 2000 esta noche, y ahora suena Sexy Movimiento, de Dadi Yanki, para todos nosotros."),
-    ("En {es:Reguetón 2000} son las dos en punto y toca el turno de {es:Nicky Jam} con {es:Sexy Movimiento} sin cortes.",
-     "En Reguetón 2000 son las dos en punto, y toca el turno de Nicky Jam, con Sexy Movimiento, sin cortes."),
+     "Estamos en Reguetón 2000 esta noche y ahora suena Sexy Movimiento de Dadi Yanki, para todos nosotros."),
+    ("Seguimos con {es:Arcángel} y su tema {es:Sexy Movimiento} para acompañar este momento de la mejor manera.",
+     "Seguimos con Arcángel y su tema Sexy Movimiento, para acompañar este momento de la mejor manera."),
+    ("Terminamos con {es:Wisin y Yandel} y seguimos ahora con {es:Nicky Jam} y su tema {es:Sexy Movimiento}.",
+     "Terminamos con Wisin y Yandel y seguimos ahora con Nicky Jam y su tema Sexy Movimiento."),
+    ("En {es:Reguetón 2000} son las dos y toca el turno de {es:Nicky Jam} con {es:Sexy Movimiento} sin cortes.",
+     "En Reguetón 2000 son las dos y toca el turno de Nicky Jam con Sexy Movimiento, sin cortes."),
     ("Ahora suena {es:Gasolina} de {en-us:Daddy Yankee}.", "Ahora suena Gasolina de Daddy Yankee."),
-    ("Sigue {es:Gasolina}. Y después {es:Lo Que Pasó}, para todos.", "Sigue Gasolina. Y después Lo Que Pasó, para todos."),
+    ("Sigue {es:Gasolina} y mucho más. Y después {es:Lo Que Pasó} y {es:Más}, para todos.",
+     "Sigue Gasolina y mucho más. Y después Lo Que Pasó y Más, para todos."),
+    ("Sigue {es:Gasolina} de {es:Don Omar} ya mismo.", "Sigue Gasolina de Don Omar, ya mismo."),
     ("Hola gente y bienvenidos.", "Hola gente y bienvenidos."),
 ])
-def test_texto_para_piper_pone_comas_donde_se_respira(marcado, esperado):
+def test_texto_para_piper_pone_una_sola_coma_antes_de_la_cola(marcado, esperado):
     assert texto_para_piper(marcado) == esperado
