@@ -150,3 +150,40 @@ def preparar(marcado: str, lang_base: str, fonemizar: Callable[[str, str], str],
         fon = fonemizar(texto, lang)
         trozos.append(aplicar_seseo(fon) if lang == "es" else fon)
     return Preparado(texto=_MARCA.sub(lambda m: m.group(2), limpio), marcado=limpio, fonemas=" ".join(trozos))
+
+
+def texto_para_piper(marcado: str) -> str:
+    """El texto limpio con comas donde se respira, para motores que no hacen pausas solos (Piper).
+
+    Por oración: una coma después de cada nombre marcado que no sea el primero ni cierre la oración, y antes de
+    una "y"/"and" que ya tenga cuatro palabras o más delante."""
+    salida = []
+    for oracion in re.split(r"(?<=[.?])\s+", marcado.strip()):
+        nombres = 0
+
+        def poner(m: re.Match) -> str:
+            nonlocal nombres
+            nombres += 1
+            return f"{_INICIO}{m.group(2).strip()}{_FIN}" if nombres == 1 else f"{_INICIO}{m.group(2).strip()}{_FIN}{_COMA}"
+
+        t = _MARCA.sub(poner, oracion)
+        t = re.sub(f"{_COMA}(?=\\s*[.?]?$)", "", t)           # nada después del último nombre de la oración
+        t = t.replace(_COMA, ",")
+        t = t.replace(_INICIO, "").replace(_FIN, "")
+        t = _coma_antes_de_la_y(t)
+        salida.append(t)
+    return re.sub(r"\s+", " ", " ".join(salida)).strip()
+
+
+_COMA = "\x00"
+
+
+def _coma_antes_de_la_y(oracion: str) -> str:
+    palabras = oracion.split(" ")
+    desde = 0
+    for i, p in enumerate(palabras):
+        if p.lower() in ("y", "and") and i - desde >= 4 and i + 2 < len(palabras):
+            palabras[i - 1] = palabras[i - 1] if palabras[i - 1].endswith(",") else palabras[i - 1] + ","
+        if p.endswith(","):
+            desde = i + 1
+    return " ".join(palabras)

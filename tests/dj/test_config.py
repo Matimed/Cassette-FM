@@ -104,3 +104,15 @@ def test_voces_con_nombre_invalidas(tmp_path, contenido):
     with pytest.raises(ErrorConfig) as e:
         cargar_config_dj(archivo)
     assert str(archivo) in str(e.value)
+
+
+def test_pausas_de_piper(tmp_path):
+    c = ConfigServicioDJ()
+    assert (c.piper_pausa_coma_segundos, c.piper_pausa_oracion_segundos) == (0.15, 0.4)
+    archivo = tmp_path / "config.toml"
+    archivo.write_text("piper_pausa_coma_segundos = 0.2\npiper_pausa_oracion_segundos = 0.6\n")
+    c = cargar_config_dj(archivo)
+    assert (c.piper_pausa_coma_segundos, c.piper_pausa_oracion_segundos) == (0.2, 0.6)
+    archivo.write_text("piper_pausa_coma_segundos = -1\n")
+    with pytest.raises(ErrorConfig):
+        cargar_config_dj(archivo)

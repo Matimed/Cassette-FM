@@ -133,11 +133,23 @@ class Sintetizador:
             ajustes = SynthesisConfig(length_scale=1.0 / (velocidad or 1.0))
         except ImportError:
             ajustes = SimpleNamespace(length_scale=1.0 / (velocidad or 1.0))
+        # Piper no hace pausas por sí solo: se sintetiza trozo a trozo y se mete silencio en comas y puntos
+        c = self._config
+        trozos = [(t.strip(), c.piper_pausa_coma_segundos if t.rstrip()[-1] == "," else c.piper_pausa_oracion_segundos)
+                  for t in re.findall(r"[^,.?]+[,.?]?", texto) if re.search(r"\w", t)]
+        frecuencia = modelo.config.sample_rate
         salida.parent.mkdir(parents=True, exist_ok=True)
         parcial = salida.with_name(salida.name + ".part")
         try:
             with wave.open(str(parcial), "wb") as w:
-                modelo.synthesize_wav(texto, w, syn_config=ajustes)
+                w.setnchannels(1)
+                w.setsampwidth(2)
+                w.setframerate(frecuencia)
+                for i, (trozo, pausa) in enumerate(trozos):
+                    for audio in modelo.synthesize(trozo.rstrip(",.?").strip(), syn_config=ajustes):
+                        w.writeframes(audio.audio_int16_bytes)
+                    if i < len(trozos) - 1:
+                        w.writeframes(b"\0\0" * int(frecuencia * pausa))
             with wave.open(str(parcial)) as w:
                 duracion = w.getnframes() / w.getframerate()
             os.replace(parcial, salida)

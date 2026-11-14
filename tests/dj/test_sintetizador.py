@@ -285,18 +285,18 @@ def test_la_velocidad_del_pedido_pisa_a_la_del_servicio(tmp_path, fabrica_falsa)
 # --- voces con nombre y motor Piper ---
 
 class PiperFalso:
-    """Imita a piper.PiperVoice: escribe `largo` segundos de silencio con el length_scale recibido."""
+    """Imita a piper.PiperVoice: `synthesize` da un trozo de 1 s por frase y registra lo que se le pidió."""
 
     def __init__(self, ruta, registro):
+        from types import SimpleNamespace
         self.ruta = ruta
         self.registro = registro
+        self.config = SimpleNamespace(sample_rate=22050)
 
-    def synthesize_wav(self, texto, wav_file, syn_config=None):
+    def synthesize(self, texto, syn_config=None):
+        from types import SimpleNamespace
         self.registro.append((self.ruta.name, texto, syn_config.length_scale if syn_config else None))
-        wav_file.setnchannels(1)
-        wav_file.setsampwidth(2)
-        wav_file.setframerate(22050)
-        wav_file.writeframes(b"\x00\x00" * 22050)           # 1 s
+        yield SimpleNamespace(audio_int16_bytes=b"\x01\x00" * 22050, sample_rate=22050)      # 1 s
 
 
 def sint_piper(tmp_path, fabrica_falsa, voces=None):
@@ -325,7 +325,7 @@ def test_piper_usa_el_texto_y_la_velocidad_como_length_scale(tmp_path, fabrica_f
     s, registro, cargas = sint_piper(tmp_path, fabrica_falsa)
     salida = tmp_path / "out" / "a.wav"
     dur = s.sintetizar("fon-de-kokoro", "piper:es_AR-daniela-high", "es", salida, velocidad=0.8, texto="Hola gente.")
-    assert registro == [("es_AR-daniela-high.onnx", "Hola gente.", pytest.approx(1 / 0.8))]
+    assert registro == [("es_AR-daniela-high.onnx", "Hola gente", pytest.approx(1 / 0.8))]
     assert dur == pytest.approx(1.0) and mutagen.File(salida).info.length == pytest.approx(1.0, abs=0.02)
     assert fabrica_falsa.estado.cargas == 0 and not list(salida.parent.glob("*.part"))   # Kokoro ni se cargó
     s.sintetizar("x", "piper:es_AR-daniela-high", "es", tmp_path / "b.wav", texto="Otra.")
@@ -373,3 +373,17 @@ def test_integracion_con_piper_real(tmp_path, modelos_reales):
     lento = s.sintetizar("", "piper:es_AR-daniela-high", "es", tmp_path / "l.wav", velocidad=0.8,
                          texto="Estamos en Reguetón dos mil.")
     assert 1.0 < normal < 8.0 and lento == pytest.approx(normal / 0.8, rel=0.1)
+
+
+def test_piper_mete_silencios_en_las_comas_y_entre_oraciones(tmp_path, fabrica_falsa):
+    s, registro, _ = sint_piper(tmp_path, fabrica_falsa)
+    s._config = ConfigServicioDJ(modelos_dir=tmp_path, piper_pausa_coma_segundos=0.5, piper_pausa_oracion_segundos=1.0)
+    dur = s.sintetizar("x", "piper:es_AR-daniela-high", "es", tmp_path / "a.wav",
+                       texto="Uno dos, tres cuatro. Cinco seis.")
+    assert [r[1] for r in registro] == ["Uno dos", "tres cuatro", "Cinco seis"]
+    assert dur == pytest.approx(3 * 1.0 + 0.5 + 1.0, abs=0.01)         # tres trozos + una coma + un punto
+
+
+def test_piper_sin_puntuacion_es_un_solo_trozo_sin_silencios(tmp_path, fabrica_falsa):
+    s, registro, _ = sint_piper(tmp_path, fabrica_falsa)
+    assert s.sintetizar("x", "piper:es_AR-daniela-high", "es", tmp_path / "a.wav", texto="Hola gente") == pytest.approx(1.0, abs=0.01)

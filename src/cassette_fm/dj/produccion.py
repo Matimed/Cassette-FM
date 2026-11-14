@@ -10,7 +10,7 @@ from cassette_fm.dj.guiones import RegistroGuiones
 from cassette_fm.dj.lexico import Lexico
 from cassette_fm.dj.pedido import Pedido
 from cassette_fm.dj.plantillas import redactar
-from cassette_fm.dj.texto_voz import preparar
+from cassette_fm.dj.texto_voz import preparar, texto_para_piper
 
 _ID = re.compile(r"[A-Za-z0-9_-]{1,64}")
 INTENTOS = 3
@@ -70,7 +70,7 @@ class Productor:
             redaccion = redactar(pedido, self._lexico, self._azar, palabras, self._zona)
             prep = preparar(redaccion.marcado, pedido.lang, self._fonemizar)
             duracion = self._sintetizador.sintetizar(prep.fonemas, pedido.voz, pedido.lang, ruta,
-                                                   velocidad=pedido.velocidad, texto=prep.texto)
+                                                   velocidad=pedido.velocidad, texto=texto_para_piper(prep.marcado))
             guion = dict(self._base(pedido), ingredientes=list(redaccion.ingredientes), texto=prep.texto,
                          marcado=prep.marcado, fonemas=prep.fonemas, duracion=duracion)
             if maxima is None or duracion <= maxima:

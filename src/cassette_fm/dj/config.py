@@ -23,6 +23,8 @@ class ConfigServicioDJ:
     pausa_coma_segundos: float = 0.1         # `clause_pause` de Kokoro
     continuo: bool = False                   # `continuous` de Kokoro
     zona_horaria: str = "America/Argentina/Buenos_Aires"
+    piper_pausa_coma_segundos: float = 0.15     # silencio en cada coma (Piper no hace pausas por sí solo)
+    piper_pausa_oracion_segundos: float = 0.4   # silencio entre oraciones
     voces: Mapping[str, str] = field(default_factory=dict)   # voces con nombre: alias -> voz o mezcla ("em_alex+em_santa")
 
 
@@ -122,7 +124,8 @@ def _validar(archivo: Path, c: dict) -> None:
         error("velocidad", "tiene que estar entre 0,5 y 2")
     if "retencion_minutos" in c and c["retencion_minutos"] <= 0:
         error("retencion_minutos", "tiene que ser mayor que 0")
-    for clave in ("pausa_oracion_segundos", "pausa_coma_segundos", "descargar_tras_minutos"):
+    for clave in ("pausa_oracion_segundos", "pausa_coma_segundos", "descargar_tras_minutos",
+                  "piper_pausa_coma_segundos", "piper_pausa_oracion_segundos"):
         if clave in c and c[clave] < 0:
             error(clave, "no puede ser negativo")
     if "modelos_dir" in c:

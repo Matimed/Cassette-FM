@@ -164,4 +164,5 @@ def test_el_texto_limpio_llega_al_sintetizador_para_los_motores_que_no_usan_fone
     crear, _, _ = montaje
     productor, sint = crear()
     r = productor.producir(hacer_pedido("t1"))
-    assert sint.textos == [r.texto]
+    from cassette_fm.dj.texto_voz import texto_para_piper
+    assert sint.textos == [texto_para_piper(r.marcado)]

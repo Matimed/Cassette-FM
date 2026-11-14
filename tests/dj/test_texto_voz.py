@@ -219,3 +219,19 @@ def test_los_tramos_contiguos_del_mismo_idioma_se_fonemizan_juntos():
     llamadas.clear()
     preparar("Ahora suena {es:Gasolina} de {en-us:Daddy Yankee} para todos nosotros.", "es", registrador)
     assert [l for _, l in llamadas] == ["es", "en-us", "es"]
+
+
+from cassette_fm.dj.texto_voz import texto_para_piper
+
+
+@pytest.mark.parametrize("marcado, esperado", [
+    ("Estamos en {es:Reguetón 2000} esta noche y ahora suena {es:Sexy Movimiento} de {es:Dadi Yanki} para todos nosotros.",
+     "Estamos en Reguetón 2000 esta noche, y ahora suena Sexy Movimiento, de Dadi Yanki, para todos nosotros."),
+    ("En {es:Reguetón 2000} son las dos en punto y toca el turno de {es:Nicky Jam} con {es:Sexy Movimiento} sin cortes.",
+     "En Reguetón 2000 son las dos en punto, y toca el turno de Nicky Jam, con Sexy Movimiento, sin cortes."),
+    ("Ahora suena {es:Gasolina} de {en-us:Daddy Yankee}.", "Ahora suena Gasolina de Daddy Yankee."),
+    ("Sigue {es:Gasolina}. Y después {es:Lo Que Pasó}, para todos.", "Sigue Gasolina. Y después Lo Que Pasó, para todos."),
+    ("Hola gente y bienvenidos.", "Hola gente y bienvenidos."),
+])
+def test_texto_para_piper_pone_comas_donde_se_respira(marcado, esperado):
+    assert texto_para_piper(marcado) == esperado
