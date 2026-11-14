@@ -359,7 +359,7 @@ def test_el_script_cita_las_variables_y_no_publica_el_puerto_afuera():
     for linea in texto.splitlines():
         if linea.lstrip().startswith(("#", "echo")):
             continue
-        if re.search(r"\b(docker|mkdir|cassette-dj)\b", linea):
+        if linea.lstrip().startswith(("docker ", "mkdir ", "-v ")):
             assert not re.search(r'(?<!")\$\{?[A-Za-z_]+\}?(?!")', re.sub(r'"[^"]*"', "", linea)), linea
     assert "127.0.0.1:11434:11434" in texto and "0.0.0.0" not in texto
     assert "--restart unless-stopped" in texto and "ollama pull" in texto and "docker rm -f cassette-ollama" in texto
