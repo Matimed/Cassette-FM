@@ -348,3 +348,27 @@ def test_spotify_login_con_error_sale_con_1(tmp_path, monkeypatch, capsys):
     monkeypatch.setattr(sesion, "login", falla)
     assert main(["spotify", "login"]) == 1
     assert "cancelaste" in capsys.readouterr().err
+
+
+def test_spotify_estado_muestra_sesion_y_emisoras(tmp_path, monkeypatch, capsys, servidor_http):
+    import json as _json
+    r = _rutas_tmp(monkeypatch, tmp_path)
+    r.config.write_text(f'[spotify]\napi_url = "{servidor_http.url}/v1"\n')
+    r.spotify_token.parent.mkdir(parents=True, exist_ok=True)
+    r.spotify_token.write_text(_json.dumps({"access_token": "A", "refresh_token": "R", "expira": 9e18}))
+    r.emisoras.write_text(_json.dumps([{"nombre": "Sing", "fuente": {"spotify": "spotify:playlist:4iHcTVQbU4QvIJV5Xao0fs"}},
+                                       {"nombre": "Local", "fuente": {"carpeta": "/m"}}]))
+    servidor_http.responder("/v1/me", {"display_name": "Matimed", "product": "premium"})
+    servidor_http.responder("/v1/playlists/4iHcTVQbU4QvIJV5Xao0fs/items", {"items": [
+        {"is_local": False, "item": {"type": "track", "uri": "spotify:track:44AyOl4qVkzS48vBsbNXaC", "name": "T",
+                                     "duration_ms": 1000, "artists": [{"name": "A"}]}}], "next": None})
+    servidor_http.responder("/v1/playlists/4iHcTVQbU4QvIJV5Xao0fs", {"snapshot_id": "S", "name": "Sing"})
+    assert main(["spotify", "estado"]) == 0
+    salida = capsys.readouterr().out
+    assert "Matimed (premium)" in salida and "«Sing»: 1 temas (playlist «Sing»)" in salida and "Local" not in salida
+
+
+def test_spotify_estado_sin_sesion_sale_con_1(tmp_path, monkeypatch, capsys):
+    _rutas_tmp(monkeypatch, tmp_path)
+    assert main(["spotify", "estado"]) == 1
+    assert "cassette spotify login" in capsys.readouterr().err

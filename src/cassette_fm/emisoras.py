@@ -145,9 +145,11 @@ class Catalogo:
     """Las emisoras vigentes: relee `estaciones.json` en cada escaneo (lo migra la primera vez) y da los ajustes del
     DJ de cada una. Si el archivo está roto, el escaneo lanza ErrorConfig y lo anterior queda como estaba."""
 
-    def __init__(self, config: Config, rutas: Rutas):
+    def __init__(self, config: Config, rutas: Rutas, spotify=None, reproduce_spotify: bool = False):
         self._config = config
         self._rutas = rutas
+        self._spotify = spotify                    # CatalogoSpotify (o None: las emisoras de Spotify se omiten)
+        self._reproduce_spotify = reproduce_spotify   # hasta la parte 4c no hay reproductor de Spotify
         self._dj: dict[str, ConfigDJ] = {}
         self._lock = threading.Lock()
         self._avisado_toml = False
@@ -162,16 +164,40 @@ class Catalogo:
             self._avisado_toml = True
             _log.warning("[dj.estaciones] del config.toml se ignora: los ajustes de cada emisora están en %s",
                          archivo)
-        pares = []
+        locales = {e.nombre: e for e in biblioteca.escanear_carpetas(
+            [(e.nombre, Path(e.fuente.valor)) for e in emisoras if e.fuente.tipo == "carpeta"], self._rutas.cache)}
+        estaciones = []
         for e in emisoras:
             if e.fuente.tipo == "carpeta":
-                pares.append((e.nombre, Path(e.fuente.valor)))
+                if e.nombre in locales:
+                    estaciones.append(locales[e.nombre])
+                continue
+            estacion = self._de_spotify(e)
+            if estacion is None:
+                continue
+            if self._reproduce_spotify:
+                estaciones.append(estacion)
             else:
-                _log.warning("la emisora %r es de Spotify: llega en la próxima parte (4b)", e.nombre)
-        estaciones = biblioteca.escanear_carpetas(pares, self._rutas.cache)
+                _log.info("la emisora %r tiene %d temas de Spotify listos; la reproducción llega en la parte 4c",
+                          e.nombre, len(estacion.pistas))
         with self._lock:
             self._dj = {e.nombre: e.dj for e in emisoras}
         return estaciones
+
+    def _de_spotify(self, e: DefEmisora) -> Estacion | None:
+        from cassette_fm.spotify.api import ErrorSpotify
+        if self._spotify is None:
+            _log.warning("la emisora %r es de Spotify y no hay catálogo de Spotify: se omite", e.nombre)
+            return None
+        try:
+            pistas = self._spotify.pistas(e.fuente.valor)
+        except ErrorSpotify as error:
+            _log.warning("la emisora %r: %s", e.nombre, error)
+            return None
+        if not pistas:
+            _log.warning("la playlist de %r no tiene temas que se puedan escuchar", e.nombre)
+            return None
+        return Estacion(e.nombre, tuple(pistas), fuente="spotify")
 
     def configuracion_dj(self, nombre: str) -> ConfigDJ:
         with self._lock:

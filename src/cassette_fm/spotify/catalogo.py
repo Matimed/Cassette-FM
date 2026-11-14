@@ -72,6 +72,11 @@ class CatalogoSpotify:
             self._guardar_cache(cache)
             return pistas
 
+    def nombre(self, playlist: str) -> str | None:
+        """El nombre de la playlist según la caché (después de `pistas`)."""
+        with self._lock:
+            return self._leer_cache().get(playlist, {}).get("nombre")
+
     def _bajar(self, playlist: str, nombre: str) -> tuple[Pista, ...]:
         pistas = []
         try:

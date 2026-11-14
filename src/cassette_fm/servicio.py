@@ -29,6 +29,14 @@ def argumentos_voz(dj, extra: Sequence[str] = ()) -> list[str]:
     return args
 
 
+def catalogo_spotify(config: Config, rutas: Rutas):
+    from cassette_fm.spotify.api import ClienteSpotify
+    from cassette_fm.spotify.catalogo import CatalogoSpotify
+    from cassette_fm.spotify.sesion import Sesion
+    return CatalogoSpotify(ClienteSpotify(Sesion(rutas.spotify_token, config.spotify), config.spotify),
+                           rutas.spotify_cache)
+
+
 def servir(config: Config, rutas: Rutas, avisar: Callable[[str, str], None] | None = None,
            parar: threading.Event | None = None, extra_args_mpv: Sequence[str] = ()) -> None:
     """Arma la radio y sirve la API hasta SIGTERM/SIGINT o hasta que se setee `parar`."""
@@ -39,7 +47,7 @@ def servir(config: Config, rutas: Rutas, avisar: Callable[[str, str], None] | No
         for senal in (signal.SIGTERM, signal.SIGINT):
             signal.signal(senal, lambda *_: parar.set())
 
-    catalogo = Catalogo(config, rutas)
+    catalogo = Catalogo(config, rutas, spotify=catalogo_spotify(config, rutas))
     escanear = catalogo.escanear
 
     estado = cargar_estado(rutas.estado)

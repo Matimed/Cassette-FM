@@ -74,6 +74,7 @@ def _armar_parser() -> argparse.ArgumentParser:
     spotify = sub.add_parser("spotify", help="Spotify como fuente de emisoras: sesión y estado")
     spotify_sub = spotify.add_subparsers(dest="accion", required=True)
     spotify_sub.add_parser("login", help="abre el navegador para darle permiso a cassette-fm en tu cuenta")
+    spotify_sub.add_parser("estado", help="la sesión de Spotify y los temas de cada emisora de Spotify")
     dj = sub.add_parser("dj", help="el DJ: ver el estado, probar un clip o pedir una intervención")
     dj_sub = dj.add_subparsers(dest="accion", required=True)
     dj_sub.add_parser("estado", parents=[comun], help="qué tiene programado el DJ")
@@ -205,9 +206,35 @@ def _spotify(args, cfg, rutas) -> int:
             print("Se abre el navegador: aceptá los permisos de cassette-fm y volvé acá.")
             sesion.login(s, cfg.spotify)
             print("Listo: sesión de Spotify guardada.")
+        elif args.accion == "estado":
+            return _spotify_estado(cfg, rutas, s)
     except sesion.ErrorSesion as e:
         print(e, file=sys.stderr)
         return 1
+    return 0
+
+
+def _spotify_estado(cfg, rutas, s) -> int:
+    from cassette_fm import emisoras, servicio
+    from cassette_fm.spotify.api import ClienteSpotify, ErrorSpotify
+    try:
+        yo = ClienteSpotify(s, cfg.spotify).get("/me")
+    except ErrorSpotify as e:
+        print(f"Sesión de Spotify: {e}", file=sys.stderr)
+        return 1
+    print(f"Sesión de Spotify: {yo.get('display_name') or yo.get('id', '?')} ({yo.get('product', '?')})")
+    try:
+        definidas = emisoras.leer_emisoras(rutas.emisoras, cfg.dj) if rutas.emisoras.exists() else []
+    except config.ErrorConfig as e:
+        print(e, file=sys.stderr)
+        return 1
+    catalogo = servicio.catalogo_spotify(cfg, rutas)
+    for e in (e for e in definidas if e.fuente.tipo == "spotify"):
+        try:
+            n = len(catalogo.pistas(e.fuente.valor))
+            print(f"«{e.nombre}»: {n} temas (playlist «{catalogo.nombre(e.fuente.valor) or e.fuente.valor}»)")
+        except ErrorSpotify as error:
+            print(f"«{e.nombre}»: {error}")
     return 0
 
 

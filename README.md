@@ -318,6 +318,20 @@ normalizar = true          # parejiza el volumen entre temas (filtro dynaudnorm 
 
 El estado (última estación y volumen) se guarda en `~/.local/state/cassette-fm/estado.json`.
 
+### Spotify
+
+Una emisora puede ser una playlist de Spotify. Requisitos: cuenta **Premium** y que la playlist sea **tuya** (creada
+por vos o colaborativa): desde febrero de 2026 Spotify no deja leer los temas de las playlists que solo seguís; para
+usar una de esas, copiala a una playlist propia.
+
+- `cassette spotify login` abre el navegador para darle permiso a cassette-fm (una sola vez; la sesión se guarda en
+  `~/.local/state/cassette-fm/spotify-token.json` y se renueva sola).
+- `cassette spotify estado` muestra la cuenta y cuántos temas tiene cada emisora de Spotify.
+- Los temas se guardan en `~/.cache/cassette-fm/spotify.json`: el rescan solo los vuelve a bajar si la playlist cambió,
+  y si Spotify no responde usa los guardados.
+- **Todavía no suenan** (parte 4c, con Spotify Soloist): por ahora el rescan las lee y avisa en el log cuántos temas
+  tienen listos. `[spotify]` del `config.toml` admite `client_id`, `puerto_login` (8888) y `timeout_segundos`.
+
 ### Emisoras
 
 Las emisoras están en `~/.config/cassette-fm/estaciones.json`, una lista en el orden en que se rotan:
@@ -331,7 +345,7 @@ Las emisoras están en `~/.config/cassette-fm/estaciones.json`, una lista en el 
 ```
 
 - `fuente` es una carpeta (ruta absoluta o con `~`, en cualquier lugar del disco) o una playlist de Spotify (link o
-  URI; **llega en la parte 4b**: hasta entonces esas emisoras se omiten con un aviso en el log).
+  URI; ver [Spotify](#spotify)).
 - `dj` (opcional) pisa los ajustes de `[dj]` del `config.toml` para esa emisora.
 - **La primera vez** el archivo se crea solo con las subcarpetas de `raiz_musica` y los `[dj.estaciones."X"]` que
   hubiera en el `config.toml`. Desde entonces `[dj.estaciones]` del `config.toml` se ignora (avisa una vez en el log).

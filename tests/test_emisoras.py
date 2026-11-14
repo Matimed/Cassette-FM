@@ -224,7 +224,7 @@ def test_catalogo_omite_spotify_con_aviso(tmp_path, crear_mp3, caplog):
                                           {"nombre": "A", "fuente": {"carpeta": str(musica / "A")}}]))
     with caplog.at_level(logging.WARNING, logger="cassette_fm"):
         assert [e.nombre for e in cat.escanear()] == ["A"]
-    assert "Sing" in caplog.text and "4b" in caplog.text
+    assert "Sing" in caplog.text and "Spotify" in caplog.text
 
 
 def test_catalogo_avisa_que_dj_estaciones_del_toml_se_ignora(tmp_path, crear_mp3, caplog):
@@ -242,3 +242,75 @@ def test_tilde_sin_barra_es_error_de_config(tmp_path):
     a = escribir(tmp_path, [{"nombre": "A", "fuente": {"carpeta": "~Música/Lentos"}}])
     with pytest.raises(ErrorConfig, match="barra"):
         leer_emisoras(a, ConfigDJ())
+
+
+# --- emisoras de Spotify ---
+
+class CatalogoSpotifyFalso:
+    def __init__(self, respuestas):
+        self.respuestas = respuestas
+        self.pedidas = []
+
+    def pistas(self, playlist):
+        self.pedidas.append(playlist)
+        r = self.respuestas[playlist]
+        if isinstance(r, Exception):
+            raise r
+        return r
+
+
+def pistas_spotify(n):
+    from cassette_fm.biblioteca import Pista
+    return tuple(Pista(ruta=None, duracion=200.0, titulo=f"A - T{i}", fuente="spotify", artista="A",
+                       cancion=f"T{i}", uri=f"spotify:track:{i:022d}") for i in range(n))
+
+
+OTRA = "37i9dQZF1DXcBWIGoYBM5M"
+
+
+def montar_spotify(tmp_path, crear_mp3, respuestas, reproduce=False):
+    cat, rutas, musica = montar(tmp_path, crear_mp3)
+    rutas.emisoras.parent.mkdir(parents=True, exist_ok=True)
+    rutas.emisoras.write_text(json.dumps([
+        {"nombre": "Sing", "fuente": {"spotify": f"spotify:playlist:{PLAYLIST}"}, "dj": {"voz": "af_heart"}},
+        {"nombre": "A", "fuente": {"carpeta": str(musica / "A")}},
+        {"nombre": "Ajena", "fuente": {"spotify": f"spotify:playlist:{OTRA}"}}]))
+    falso = CatalogoSpotifyFalso(respuestas)
+    return Catalogo(cargar_config(rutas.config), rutas, spotify=falso, reproduce_spotify=reproduce), falso
+
+
+def test_catalogo_arma_la_emisora_spotify_y_en_4b_la_omite_con_aviso(tmp_path, crear_mp3, caplog):
+    cat, falso = montar_spotify(tmp_path, crear_mp3, {PLAYLIST: pistas_spotify(12), OTRA: pistas_spotify(3)})
+    with caplog.at_level(logging.INFO, logger="cassette_fm"):
+        assert [e.nombre for e in cat.escanear()] == ["A"]
+    assert falso.pedidas == [PLAYLIST, OTRA]
+    assert "Sing" in caplog.text and "12 temas" in caplog.text and "4c" in caplog.text
+
+
+def test_catalogo_con_reproduce_spotify_incluye_la_emisora_en_su_lugar(tmp_path, crear_mp3):
+    cat, _ = montar_spotify(tmp_path, crear_mp3, {PLAYLIST: pistas_spotify(12), OTRA: pistas_spotify(3)}, reproduce=True)
+    estaciones = cat.escanear()
+    assert [(e.nombre, e.fuente, len(e.pistas)) for e in estaciones] == [("Sing", "spotify", 12), ("A", "carpeta", 1),
+                                                                         ("Ajena", "spotify", 3)]
+
+
+def test_catalogo_error_de_spotify_omite_solo_esa_emisora(tmp_path, crear_mp3, caplog):
+    from cassette_fm.spotify.api import ErrorSpotify
+    error = ErrorSpotify("la playlist «X» no es tuya: Spotify no deja leer sus temas; copiala a una playlist propia", 403)
+    cat, _ = montar_spotify(tmp_path, crear_mp3, {PLAYLIST: pistas_spotify(12), OTRA: error}, reproduce=True)
+    with caplog.at_level(logging.WARNING, logger="cassette_fm"):
+        assert [e.nombre for e in cat.escanear()] == ["Sing", "A"]
+    assert "Ajena" in caplog.text and "no es tuya" in caplog.text
+
+
+def test_catalogo_playlist_sin_temas_avisa(tmp_path, crear_mp3, caplog):
+    cat, _ = montar_spotify(tmp_path, crear_mp3, {PLAYLIST: (), OTRA: pistas_spotify(3)}, reproduce=True)
+    with caplog.at_level(logging.WARNING, logger="cassette_fm"):
+        assert [e.nombre for e in cat.escanear()] == ["A", "Ajena"]
+    assert "Sing" in caplog.text and "no tiene temas" in caplog.text
+
+
+def test_catalogo_dj_de_la_emisora_spotify_disponible(tmp_path, crear_mp3):
+    cat, _ = montar_spotify(tmp_path, crear_mp3, {PLAYLIST: pistas_spotify(1), OTRA: pistas_spotify(1)})
+    cat.escanear()
+    assert cat.configuracion_dj("Sing").voz == "af_heart"
