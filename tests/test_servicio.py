@@ -366,3 +366,12 @@ def test_el_servicio_dj_caido_no_afecta_a_la_radio(tmp_path, dir_corto, crear_mp
         parar.set()
         hilo.join(8)
     assert not hilo.is_alive()
+
+
+def test_la_voz_lleva_compresor_y_ganancia_configurables():
+    from cassette_fm.config import ConfigDJ
+    args = servicio.argumentos_voz(ConfigDJ(ganancia_voz_db=12), ["--ao=null"])
+    assert args[0] == "--ao=null"
+    filtro = next(a for a in args if a.startswith("--af="))
+    assert "volume=12dB" in filtro and "acompressor" in filtro and "alimiter" in filtro
+    assert not any(a.startswith("--af=") for a in servicio.argumentos_voz(ConfigDJ(ganancia_voz_db=0), []))

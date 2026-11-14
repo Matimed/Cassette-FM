@@ -42,6 +42,7 @@ class ConfigDJ:
     espera_reintento_segundos: float = 5.0   # primera espera tras un fallo del servicio
     espera_reintento_maxima_segundos: float = 300.0   # tope de la espera creciente
     espera_trabajo_maxima_segundos: float = 600.0   # un trabajo que tarda más que esto se cancela
+    ganancia_voz_db: float = 10.0   # sube y comprime la voz de Kokoro (sale mucho más baja que la música); 0 = sin filtro
     recientes_cantidad: int = 6   # cuántos ingredientes recordar por estación
 
 
@@ -186,6 +187,8 @@ def _campos_dj(archivo: Path, tabla: dict, donde: str, base: ConfigDJ) -> dict:
             valor = _numero(archivo, nombre, valor)
             if clave == "nivel_musica_con_voz" and not 0 < valor <= 1:
                 raise ErrorConfig(f"{archivo}: '{nombre}' tiene que estar entre 0 (sin incluir) y 1")
+            if clave == "ganancia_voz_db" and valor > 30:
+                raise ErrorConfig(f"{archivo}: '{nombre}' no puede pasar de 30 dB")
             if clave in _POSITIVOS and valor <= 0:
                 raise ErrorConfig(f"{archivo}: '{nombre}' tiene que ser mayor que 0")
             if valor < 0:

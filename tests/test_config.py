@@ -216,3 +216,14 @@ def test_rutas_del_dj(tmp_path):
               cache=tmp_path / "k" / "duraciones.json", runtime=tmp_path / "r")
     assert r.intervenciones == tmp_path / "s" / "intervenciones.json"
     assert r.clips == tmp_path / "k" / "dj"
+
+
+def test_ganancia_de_la_voz_por_defecto_y_validacion(tmp_path):
+    assert ConfigDJ().ganancia_voz_db == 10.0
+    archivo = tmp_path / "config.toml"
+    archivo.write_text("[dj]\nganancia_voz_db = 14\n")
+    assert cargar_config(archivo).dj.ganancia_voz_db == 14.0
+    for malo in ("-1", "40", '"mucho"'):
+        archivo.write_text(f"[dj]\nganancia_voz_db = {malo}\n")
+        with pytest.raises(ErrorConfig):
+            cargar_config(archivo)

@@ -20,6 +20,15 @@ from cassette_fm.reproductor import Reproductor
 _log = logging.getLogger("cassette_fm")
 
 
+def argumentos_voz(dj, extra: Sequence[str] = ()) -> list[str]:
+    """Argumentos del mpv de la voz: compresor + ganancia + limitador, para que se oiga a la par de la música."""
+    args = list(extra)
+    if dj.ganancia_voz_db > 0:
+        args.append(f"--af=lavfi=[acompressor=threshold=-26dB:ratio=3:attack=5:release=80:makeup=2,"
+                    f"volume={dj.ganancia_voz_db:g}dB,alimiter=limit=0.95]")
+    return args
+
+
 def servir(config: Config, rutas: Rutas, avisar: Callable[[str, str], None] | None = None,
            parar: threading.Event | None = None, extra_args_mpv: Sequence[str] = ()) -> None:
     """Arma la radio y sirve la API hasta SIGTERM/SIGINT o hasta que se setee `parar`."""
@@ -44,7 +53,7 @@ def servir(config: Config, rutas: Rutas, avisar: Callable[[str, str], None] | No
     extra_radio = {}
     if config.dj.activo:
         # el segundo mpv (la voz) no arranca hasta el primer clip y no lleva el filtro de volumen
-        voz = ClienteMpv(rutas.runtime / "voz.sock", extra_args=list(extra_args_mpv))
+        voz = ClienteMpv(rutas.runtime / "voz.sock", extra_args=argumentos_voz(config.dj, extra_args_mpv))
         registro = RegistroIntervenciones(rutas.intervenciones, rutas.clips,
                                           gracia_segundos=config.dj.tolerancia_desfase_segundos)
         locutor = Locutor(voz, reproductor, registro, lambda nombre: configuracion_dj(config, nombre))
