@@ -62,6 +62,8 @@ class ReproductorSpotify:
         self._temporizador = temporizador
         self._en_segundo_plano = en_segundo_plano
         self._lock = threading.RLock()
+        self._orden_lock = threading.Lock()       # una orden a Spotify por vez, en el orden en que se pidieron
+        self._perdido = False                     # otro dispositivo tomó Spotify: no mandarle comandos
         self._sintonia = 0
         self._estacion: Estacion | None = None
         self._por_clave: dict[str, Pista] = {}
@@ -97,20 +99,33 @@ class ReproductorSpotify:
             posicion_ms = int(lista[0][1] * 1000)
             self._esperado, self._visto_esperado, self._esperando_sonido = uris[0], False, True
             self._activo, self._enviados, self._vistos, self._primero_pendiente = False, len(uris), 0, True
+            self._perdido = False
             self._cancelar_espera()
             self._espera_timer = self._temporizador(self._espera, lambda: self._no_sono(n))
         self._en_segundo_plano(lambda: self._reproducir(n, estacion, uris, posicion_ms))
 
     def _reproducir(self, n: int, estacion: Estacion, uris: list[str], posicion_ms: int) -> None:
-        if not self._soloist.conectado:
-            self._fallar(n, estacion, "Soloist no responde: ¿está corriendo? "
-                                      "(systemctl --user status cassette-soloist)")
-            return
-        try:
-            self._aplicar_volumen()
-            self._control.reproducir(uris, posicion_ms)
-        except ErrorSpotify as e:
-            self._fallar(n, estacion, str(e))
+        with self._orden_lock:
+            if n != self._sintonia:
+                return                            # ya se pidió otra cosa: esta orden no sale
+            if not self._soloist.conectado:
+                self._fallar(n, estacion, "Soloist no responde: ¿está corriendo o venció su build? "
+                                          "(systemctl --user status cassette-soloist · cassette spotify estado)")
+                return
+            try:
+                self._aplicar_volumen()
+                self._control.reproducir(uris, posicion_ms)
+            except ErrorSpotify as e:
+                self._fallar(n, estacion, str(e))
+                return
+            with self._lock:
+                vieja, sin_emisora = n != self._sintonia, self._estacion is None
+            if vieja and sin_emisora and not self._perdido:
+                # mientras viajaba el play se detuvo la emisora: la pausa de `detener` llegó antes que el play
+                try:
+                    self._soloist.comando("pause")
+                except ErrorSpotify:
+                    pass
 
     def _resintonizar(self) -> None:
         """Vuelve a mandar la agenda desde ahora, en un borde de tema (sin estática ni `al_sonar`): corrige el
@@ -154,6 +169,9 @@ class ReproductorSpotify:
             self._posicion = None
             self._esperando_sonido = False
             self._cancelar_espera()
+            perdido = self._perdido
+        if perdido:
+            return                # Soloist ya no es el dispositivo activo: una pausa iría al celular
         try:
             self._soloist.comando("pause")
         except ErrorSpotify:
@@ -176,6 +194,8 @@ class ReproductorSpotify:
                 pista = self._pista_del_item(evento.get("item"))
                 if pista is None:
                     return
+                if self._esperando_sonido and not self._visto_esperado and pista.clave != self._esperado:
+                    return        # lo que sonaba antes en la cuenta o un evento de la sintonía anterior
                 if pista.clave == self._esperado:
                     self._visto_esperado = True
                 repetido = (self._primero_pendiente and self.pista_actual is not None
@@ -198,6 +218,7 @@ class ReproductorSpotify:
                     self._activo = True
                 elif self._activo:
                     self._activo = False
+                    self._perdido = True
                     perdido = (self._sintonia, estacion)
             elif tipo == "position_sync":
                 p = evento.get("position") or {}
@@ -253,6 +274,14 @@ class ReproductorSpotify:
                 self._fallar(n, estacion, "se perdió la conexión con Soloist")
         self._temporizador(self._espera, revisar)
 
+    def soloist_reconectado(self) -> None:
+        """Volvió el WebSocket (p. ej. systemd reinició Soloist): el Soloist nuevo no está sonando nada, así que se
+        vuelve a mandar la agenda desde ahora."""
+        with self._lock:
+            if self._estacion is None or self._perdido:
+                return
+        self._resintonizar()
+
     def posicion(self) -> float | None:
         with self._lock:
             if self.pista_actual is None or self._posicion is None:
@@ -298,17 +327,17 @@ class ReproductorSpotify:
             time.sleep(self.PASO_RAMPA)
 
     def _aplicar_volumen(self) -> None:
+        """Se manda bajo el lock (como en mpv): así el último valor calculado es el último que llega. Sin emisora
+        de Spotify sintonizada no se manda nada (Soloist podría reenviarlo al dispositivo activo)."""
         with self._lock:
-            if self._volumen is None:
+            if self._volumen is None or self._estacion is None or self._perdido or not self._soloist.conectado:
                 return
             objetivo = self._volumen * self._factor * self._ganancia
-        if not self._soloist.conectado:
-            return
-        try:
-            self._soloist.comando("set_volume", volume=min(100, round(objetivo)))
-        except ErrorSpotify:
-            return
-        stream = min(150, round(objetivo)) if objetivo > 100 else 100
-        if stream != self._stream:
-            self._stream = stream
-            self._subir_stream(stream)
+            try:
+                self._soloist.comando("set_volume", volume=min(100, round(objetivo)))
+            except ErrorSpotify:
+                return
+            stream = min(150, round(objetivo)) if objetivo > 100 else 100
+            if stream != self._stream:
+                self._stream = stream
+                self._subir_stream(stream)

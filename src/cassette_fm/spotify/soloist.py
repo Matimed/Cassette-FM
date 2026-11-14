@@ -16,10 +16,12 @@ _log = logging.getLogger("cassette_fm")
 
 class ClienteSoloist:
     def __init__(self, url: str, al_evento: Callable[[dict], None],
-                 al_desconectar: Callable[[], None] | None = None, reintento_segundos: float = 2.0):
+                 al_desconectar: Callable[[], None] | None = None, reintento_segundos: float = 2.0,
+                 al_reconectar: Callable[[], None] | None = None):
         self._url = url
         self._al_evento = al_evento
         self._al_desconectar = al_desconectar
+        self._al_reconectar = al_reconectar
         self._reintento = reintento_segundos
         self._ws = None
         self._lock = threading.Lock()
@@ -81,6 +83,11 @@ class ClienteSoloist:
                     if not primera:
                         with self._lock:
                             ws.send(json.dumps({"type": "command", "command": "get_state"}))
+                        if self._al_reconectar is not None:
+                            try:
+                                self._al_reconectar()
+                            except Exception:
+                                _log.exception("error al avisar que volvió Soloist")
                     primera = False
                     for crudo in ws:
                         self._entregar(crudo)

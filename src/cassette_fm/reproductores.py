@@ -33,7 +33,11 @@ class Reproductores:
             if estacion.fuente == "spotify":
                 if self._spotify is None:
                     raise ValueError(f"la emisora {estacion.nombre!r} es de Spotify y Spotify no está configurado")
-                self._local.detener()
+                if self._activo is self._spotify:
+                    self._spotify.detener()          # de Spotify a Spotify: que no siga sonando la anterior
+                else:
+                    self._local.detener()
+                    self._local.atenuar(1.0)         # si el DJ estaba hablando, la estática va a volumen pleno
                 if self._estatica is not None:
                     self._local.estatica(self._estatica)
                 self._activo = self._spotify
@@ -41,6 +45,7 @@ class Reproductores:
             else:
                 if self._activo is self._spotify:
                     self._spotify.detener()
+                    self._spotify.atenuar(1.0)       # la bajada del DJ no queda pegada para la próxima vez
                 self._activo = self._local
                 self._local.sintonizar(estacion)
 
@@ -48,6 +53,7 @@ class Reproductores:
         with self._lock:
             if self._activo is self._spotify:
                 self._spotify.detener()
+                self._spotify.atenuar(1.0)
             self._local.detener()
             self._activo = self._local
 

@@ -444,8 +444,8 @@ def test_estatica_en_bucle_y_al_sacarla_para(mpv):
     rep.sintonizar(E)
     mpv.comandos.clear()
     rep.estatica(Path("/tmp/estatica.wav"))
-    assert mpv.comandos[0] == (("loadfile",), {"url": "/tmp/estatica.wav", "flags": "replace"})
-    assert (("set_property", "loop-file", "inf"), {}) in mpv.comandos
+    assert mpv.comandos == [(("loadfile",), {"url": "/tmp/estatica.wav", "flags": "replace",
+                                             "options": {"loop-file": "inf"}})]   # solo para ese archivo
     assert rep.pista_actual is None
     rep.manejar_evento({"event": "file-loaded"})        # el clip de estática no es un tema de la emisora
     mpv.comandos.clear()

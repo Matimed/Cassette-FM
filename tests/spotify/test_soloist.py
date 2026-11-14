@@ -132,3 +132,17 @@ def test_iniciar_conecta_en_segundo_plano_cuando_soloist_aparece():
     assert esperar(lambda: c.conectado, 5)
     c.cerrar()
     s.servidor.shutdown()
+
+
+def test_al_reconectar_avisa_y_no_en_la_primera_conexion(soloist):
+    reconexiones = []
+    c = ClienteSoloist(f"ws://127.0.0.1:{soloist.puerto}", al_evento=lambda e: None,
+                       al_reconectar=lambda: reconexiones.append(1), reintento_segundos=0.1)
+    c.conectar(2)
+    soloist.listo.wait(2)
+    assert reconexiones == []
+    soloist.cortar()
+    assert esperar(lambda: not c.conectado)
+    soloist.volver()
+    assert esperar(lambda: reconexiones == [1], 5)
+    c.cerrar()

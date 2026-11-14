@@ -215,6 +215,8 @@ def armar_vol(ajuste_db=0.0, **kw):
     r, control, soloist, reloj, tempo = armar(**kw)
     r._ganancia = 10 ** (ajuste_db / 60)
     r._subir_stream = subidas.append
+    r.sintonizar(estacion())
+    soloist.comandos.clear()
     return r, soloist, subidas
 
 
@@ -345,3 +347,104 @@ def test_la_resintonia_no_avisa_dos_veces_el_mismo_tema():
     assert len(control.llamadas) == 2
     r.manejar_evento(cambio(control.llamadas[-1][0][0]))   # Spotify vuelve a empezar ese mismo tema
     assert [c for c, _ in r.eventos["cambios"]].count(pista.uri) == 1
+
+
+# --- arreglos de la revisión final ---
+
+class Diferido:
+    """`en_segundo_plano` que guarda la orden para correrla cuando el test quiera (la orden "en vuelo")."""
+    def __init__(self):
+        self.pendientes = []
+
+    def __call__(self, f):
+        self.pendientes.append(f)
+
+    def correr(self):
+        while self.pendientes:
+            self.pendientes.pop(0)()
+
+
+def armar_diferido(control=None):
+    diferido = Diferido()
+    control, soloist, reloj = control or ControlFalso(), SoloistFalso(), Reloj()
+    r = ReproductorSpotify(control, soloist, reloj=reloj, uris_por_pedido=20, temporizador=Temporizadores(),
+                           en_segundo_plano=diferido)
+    r.al_sonar = r.al_fallar = r.al_cambiar_pista = lambda *a, **k: None
+    return r, control, soloist, reloj, diferido
+
+
+def test_una_orden_vieja_que_no_salio_no_se_manda():
+    r, control, soloist, _, diferido = armar_diferido()
+    r.sintonizar(estacion())
+    r.detener()
+    diferido.correr()
+    assert control.llamadas == []
+
+
+def test_una_orden_en_vuelo_que_termina_despues_de_detener_se_pausa():
+    class ControlLento(ControlFalso):
+        def reproducir(self, uris, posicion_ms):
+            super().reproducir(uris, posicion_ms)
+            self.durante()                       # el usuario cambió de emisora mientras viajaba el play…
+            self.soloist.comandos.append(("play", {}))   # …y el play le llega a Soloist después de la pausa
+    control = ControlLento()
+    r, _, soloist, _, diferido = armar_diferido(control)
+    control.durante, control.soloist = r.detener, soloist
+    r.sintonizar(estacion())
+    diferido.correr()
+    assert soloist.comandos[-1] == ("pause", {})
+
+
+def test_las_ordenes_no_se_cruzan_entre_sintonias():
+    r, control, _, reloj, diferido = armar_diferido()
+    r.sintonizar(estacion("A"))
+    reloj.t += 30
+    r.sintonizar(estacion("B", n=6))
+    diferido.correr()                            # la de A ya es vieja: solo sale la de B
+    assert len(control.llamadas) == 1
+
+
+def test_mientras_arranca_un_tema_ajeno_no_cuenta():
+    r, control, *_ = armar()
+    r.sintonizar(estacion())
+    r.manejar_evento(cambio("spotify:track:ultimo00000000000000", "Lo que sonaba antes en la cuenta"))
+    assert r.eventos["cambios"] == [] and r.pista_actual is None
+    r.manejar_evento(cambio(control.llamadas[0][0][0]))
+    assert len(r.eventos["cambios"]) == 1
+
+
+def test_si_soloist_se_reinicia_se_vuelve_a_sintonizar():
+    r, control, soloist, _, tempo = armar()
+    r.sintonizar(estacion())
+    sonando(r, control)
+    soloist.conectado = False
+    r.soloist_desconectado()
+    soloist.conectado = True
+    r.soloist_reconectado()
+    tempo.disparar()
+    assert len(control.llamadas) == 2 and r.eventos["fallas"] == []
+
+
+def test_sin_emisora_el_volumen_no_se_le_manda_a_soloist():
+    r, control, soloist, *_ = armar()
+    r.volumen(50)
+    assert soloist.comandos == []
+    r.sintonizar(estacion())
+    assert ("set_volume", {"volume": 50}) in soloist.comandos
+
+
+def test_si_otro_dispositivo_tomo_spotify_no_se_le_manda_pausa():
+    r, control, soloist, *_ = armar()
+    r.sintonizar(estacion())
+    r.manejar_evento({"type": "device_changed", "is_active": True})
+    sonando(r, control)
+    r.manejar_evento({"type": "device_changed", "is_active": False})
+    soloist.comandos.clear()
+    r.detener()
+    assert ("pause", {}) not in soloist.comandos
+
+
+def test_soloist_caido_dice_tambien_que_puede_haber_vencido():
+    r, *_ = armar(soloist=SoloistFalso(conectado=False))
+    r.sintonizar(estacion())
+    assert "cassette spotify estado" in r.eventos["fallas"][0][1]

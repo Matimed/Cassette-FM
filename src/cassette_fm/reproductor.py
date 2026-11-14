@@ -78,8 +78,9 @@ class Reproductor:
             self._asegurar(restaurar_estacion=False)
             self._detener(parar=ruta is None)        # el loadfile con "replace" ya reemplaza lo que suena
             if ruta is not None:
-                self._mpv.comando("loadfile", url=str(ruta), flags="replace")
-                self._mpv.comando("set_property", "loop-file", "inf")
+                # el bucle es opción de ese archivo: un `loop-file` global dejaría a la emisora local
+                # repitiendo su primer tema
+                self._mpv.comando("loadfile", url=str(ruta), flags="replace", options={"loop-file": "inf"})
 
     def _detener(self, parar: bool = True) -> None:
         self._estacion = None

@@ -51,7 +51,8 @@ def reproductor_spotify(config: Config, rutas: Rutas, cliente):
     c = config.spotify
     rep: list = []
     soloist = ClienteSoloist(c.soloist_ws, al_evento=lambda e: rep[0].manejar_evento(e) if rep else None,
-                             al_desconectar=lambda: rep[0].soloist_desconectado() if rep else None)
+                             al_desconectar=lambda: rep[0].soloist_desconectado() if rep else None,
+                             al_reconectar=lambda: rep[0].soloist_reconectado() if rep else None)
     rep.append(ReproductorSpotify(ControlSpotify(cliente, c.nombre_dispositivo), soloist,
                                   uris_por_pedido=c.uris_por_pedido, ajuste_volumen_db=c.ajuste_volumen_db,
                                   tolerancia_resync_segundos=c.tolerancia_resync_segundos))

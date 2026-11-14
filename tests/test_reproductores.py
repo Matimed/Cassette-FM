@@ -38,7 +38,8 @@ def armar():
 def test_sintonizar_spotify_pone_la_estatica_y_la_saca_al_sonar():
     r, mpv, spot, reg = armar()
     r.sintonizar(est("Sing", "spotify"))
-    assert reg == [("mpv", "detener"), ("mpv", "estatica", ESTATICA), ("spotify", "sintonizar", "Sing")]
+    assert reg == [("mpv", "detener"), ("mpv", "atenuar", 1.0, 0.0), ("mpv", "estatica", ESTATICA),
+                   ("spotify", "sintonizar", "Sing")]
     spot.al_sonar()
     assert reg[-1] == ("mpv", "estatica", None)
 
@@ -48,7 +49,7 @@ def test_de_spotify_a_local_detiene_spotify_y_nunca_suenan_dos():
     r.sintonizar(est("Sing", "spotify"))
     reg.clear()
     r.sintonizar(est("Local", "carpeta"))
-    assert reg == [("spotify", "detener"), ("mpv", "sintonizar", "Local")]
+    assert reg == [("spotify", "detener"), ("spotify", "atenuar", 1.0, 0.0), ("mpv", "sintonizar", "Local")]
     reg.clear()
     r.sintonizar(est("Otra", "carpeta"))
     assert reg == [("mpv", "sintonizar", "Otra")]          # local a local: Spotify no se toca
@@ -106,3 +107,28 @@ def test_sin_spotify_configurado_una_emisora_de_spotify_es_un_error_claro():
     r = Reproductores(Falso("mpv", []), None, ESTATICA)
     with pytest.raises(ValueError, match="Spotify"):
         r.sintonizar(est("Sing", "spotify"))
+
+
+def test_de_spotify_a_spotify_se_detiene_el_anterior():
+    r, mpv, spot, reg = armar()
+    r.sintonizar(est("A", "spotify"))
+    reg.clear()
+    r.sintonizar(est("B", "spotify"))
+    assert reg.index(("spotify", "detener")) < reg.index(("spotify", "sintonizar", "B"))
+
+
+def test_el_reproductor_que_se_deja_vuelve_al_volumen_pleno():
+    r, mpv, spot, reg = armar()
+    r.sintonizar(est("Sing", "spotify"))
+    r.atenuar(0.6)
+    reg.clear()
+    r.sintonizar(est("Local", "carpeta"))
+    assert ("spotify", "atenuar", 1.0, 0.0) in reg
+    r.atenuar(0.6)
+    reg.clear()
+    r.sintonizar(est("Sing", "spotify"))
+    assert ("mpv", "atenuar", 1.0, 0.0) in reg
+    r.atenuar(0.6)
+    reg.clear()
+    r.detener()
+    assert ("spotify", "atenuar", 1.0, 0.0) in reg
