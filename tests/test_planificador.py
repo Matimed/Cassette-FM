@@ -44,6 +44,7 @@ class ClienteFalso:
         self.respuestas = {}                 # id -> dict de estado (si falta: "trabajando")
         self.error_enviar = self.error_estado = self.error_audio = None
         self.llamadas_estado = 0
+        self._modo, self.error_modo = "plantillas", None
 
     def enviar(self, pedido):
         if self.error_enviar:
@@ -66,6 +67,17 @@ class ClienteFalso:
     def cancelar(self, id):
         self.cancelados.append(id)
         return True
+
+    def modo(self):
+        if self.error_modo:
+            raise self.error_modo
+        return self._modo
+
+    def poner_modo(self, modo):
+        if self.error_modo:
+            raise self.error_modo
+        self._modo = modo
+        return {"modo": modo, **({"llm": "ok"} if modo == "llm" else {})}
 
 
 class LocutorFalso:
@@ -610,3 +622,13 @@ def test_una_ultima_muy_vieja_no_deja_a_la_estacion_sin_DJ(mundo):
     t0 = time.monotonic()
     mundo.p.paso()
     assert len(mundo.cliente.enviados) == 1 and time.monotonic() - t0 < 1.0
+
+
+def test_modo_delega_en_el_cliente_y_convierte_errores(mundo):
+    assert mundo.p.modo() == {"modo": "plantillas"}
+    assert mundo.p.modo("llm") == {"modo": "llm", "llm": "ok"} and mundo.p.modo() == {"modo": "llm"}
+    mundo.cliente.error_modo = ErrorDJ("el servicio DJ no responde en http://x")
+    with pytest.raises(ValueError, match="no responde"):
+        mundo.p.modo()
+    with pytest.raises(ValueError, match="no responde"):
+        mundo.p.modo("plantillas")

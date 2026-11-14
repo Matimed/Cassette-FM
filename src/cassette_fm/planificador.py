@@ -145,6 +145,14 @@ class Planificador:
             return {"id": id_, "estacion": estacion.nombre, "inicio": hueco.inicio_voz,
                     "en_segundos": hueco.inicio_voz - ahora, "tema": hueco.pista.titulo}
 
+    def modo(self, nuevo: str | None = None) -> dict:
+        """El modo del servicio DJ (plantillas | llm); con `nuevo` lo cambia. ValueError con el mensaje si el
+        servicio no responde o lo rechaza."""
+        try:
+            return {"modo": self._cliente.modo()} if nuevo is None else self._cliente.poner_modo(nuevo)
+        except ErrorDJ as e:
+            raise ValueError(str(e)) from None
+
     # --- la vuelta ---
 
     def paso(self) -> None:

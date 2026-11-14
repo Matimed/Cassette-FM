@@ -68,6 +68,20 @@ class ClienteDJ:
             return False
         return bool(isinstance(datos, dict) and datos.get("cancelado"))
 
+    def modo(self) -> str:
+        datos = self._json(self._pedir("GET", "/modo"))
+        modo = datos.get("modo") if isinstance(datos, dict) else None
+        if not isinstance(modo, str):
+            raise ErrorDJ("el servicio DJ contestó una respuesta ilegible (sin modo)")
+        return modo
+
+    def poner_modo(self, modo: str) -> dict:
+        cuerpo = json.dumps({"modo": modo}).encode("utf-8")
+        datos = self._json(self._pedir("POST", "/modo", cuerpo))
+        if not isinstance(datos, dict) or not isinstance(datos.get("modo"), str):
+            raise ErrorDJ("el servicio DJ contestó una respuesta ilegible (sin modo)")
+        return datos
+
     def salud(self) -> dict:
         datos = self._json(self._pedir("GET", "/salud"))
         if not isinstance(datos, dict):

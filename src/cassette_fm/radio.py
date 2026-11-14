@@ -247,6 +247,12 @@ class Radio:
                 raise RadioApagada("no hay una estación sintonizada")
         return self._planificador.pedir_ahora(en_segundos)
 
+    def dj_modo(self, nuevo: str | None = None) -> dict:
+        """Muestra o cambia cómo redacta el servicio DJ (plantillas | llm)."""
+        if self._planificador is None:
+            raise DJInactivo("el DJ no está activo o no tiene la url del servicio")
+        return self._planificador.modo(nuevo)
+
     def dj_probar(self, audio: Path | None = None, en_segundos: float = 20.0) -> dict:
         """Registra una intervención de prueba en la próxima transición de la estación sintonizada."""
         if self._dj is None:

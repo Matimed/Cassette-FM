@@ -16,6 +16,7 @@ class RadioFalsa:
         self.llamadas = []
         self.encendida = True
         self.error = None
+        self.llm, self.modo_actual = "ok", "plantillas"
         self.dj = {"activo": False, "hablando": False, "desfase_segundos": None, "intervenciones": []}
 
     def _hacer(self, nombre, *args, **kw):
@@ -39,6 +40,12 @@ class RadioFalsa:
         self._hacer("dj_probar", audio=audio, en_segundos=en_segundos)
         return {"estacion": "Regueton 2000", "inicio": 1.0, "duracion": 8.0,
                 "pista_destino": "/m/Daddy Yankee - Gasolina.mp3", "en_segundos": 24.6}
+
+    def dj_modo(self, nuevo=None):
+        self._hacer("dj_modo", nuevo=nuevo)
+        if nuevo == "llm":
+            return {"modo": "llm", "llm": self.llm}
+        return {"modo": nuevo or self.modo_actual}
 
     def dj_pedir(self, en_segundos=20.0):
         self._hacer("dj_pedir", en_segundos=en_segundos)
@@ -257,3 +264,39 @@ def test_dj_estado_sin_planificador_no_agrega_lineas(servicio, capsys):
                          "planificador": None}
     main(["dj", "estado", "--puerto", servicio.puerto])
     assert capsys.readouterr().out.splitlines() == ["DJ activo · habla: no · desfase: —"]
+
+
+def test_dj_modo_imprime_el_estado(servicio, capsys):
+    assert main(["dj", "modo", "--puerto", servicio.puerto]) == 0
+    assert capsys.readouterr().out.strip() == "Modo del DJ: plantillas."
+    servicio.radio.modo_actual = "llm"
+    assert main(["dj", "modo", "--puerto", servicio.puerto]) == 0
+    assert capsys.readouterr().out.splitlines() == ["Modo del DJ: llm.",
+                                                    "(vuelve a plantillas al reiniciar el servicio DJ)"]
+
+
+def test_dj_modo_llm_avisa_si_el_llm_responde_o_no(servicio, capsys):
+    assert main(["dj", "modo", "llm", "--puerto", servicio.puerto]) == 0
+    assert capsys.readouterr().out.splitlines() == ["Modo del DJ: llm (el LLM responde).",
+                                                    "(vuelve a plantillas al reiniciar el servicio DJ)"]
+    servicio.radio.llm = "no responde"
+    assert main(["dj", "modo", "llm", "--puerto", servicio.puerto]) == 0
+    assert "¡el LLM no responde!" in capsys.readouterr().out
+
+
+def test_dj_modo_plantillas(servicio, capsys):
+    assert main(["dj", "modo", "plantillas", "--puerto", servicio.puerto]) == 0
+    assert capsys.readouterr().out.strip() == "Modo del DJ: plantillas."
+    assert servicio.radio.llamadas[-1] == ("dj_modo", (), {"nuevo": "plantillas"})
+
+
+def test_dj_modo_error_de_la_api_da_codigo_1(servicio, capsys):
+    from cassette_fm.radio import DJInactivo
+    servicio.radio.error = DJInactivo("sin planificador")
+    assert main(["dj", "modo", "llm", "--puerto", servicio.puerto]) == 1
+    assert "url" in capsys.readouterr().err
+
+
+def test_dj_modo_argumento_invalido(servicio):
+    with pytest.raises(SystemExit):
+        main(["dj", "modo", "otro", "--puerto", servicio.puerto])

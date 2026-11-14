@@ -79,6 +79,23 @@ Parámetros de la sección `[dj]` (todos opcionales; también se pueden pisar po
 | `desfase_aviso_segundos` | 5 | desfase a partir del cual se avisa en el log |
 | `margen_seguridad_voz_segundos` | 2 | espera extra del temporizador que restaura la música |
 
+### DJ con LLM (plantillas o LLM)
+
+El servicio DJ redacta de dos maneras: con **plantillas** (por defecto, siempre) o con un **LLM** local que usa los hechos
+verificados y, además, el resumen de Wikipedia del artista. El modo se cambia en caliente:
+
+| Comando | Qué hace |
+|---|---|
+| `cassette dj modo` | muestra el modo actual (`plantillas` o `llm`) |
+| `cassette dj modo llm` | pasa a LLM; avisa si el servidor de LLM (Ollama) no responde |
+| `cassette dj modo plantillas` | vuelve a las plantillas |
+
+El cambio **no se guarda**: al reiniciar el servicio DJ vuelve a `plantillas`. Para arrancar siempre en LLM, poné
+`modo = "llm"` en `~/.config/cassette-dj/config.toml`. En modo `plantillas` no se hace ningún pedido al LLM ni a Wikipedia.
+Si el LLM no responde, tarda de más o su frase no pasa la verificación (año o cifra inventados, nombres que no están en
+los hechos, enlaces…), esa frase sale por plantillas. `cassette-dj modo [llm|plantillas]` hace lo mismo hablando
+directo con el servicio.
+
 ### Planificador (frases reales)
 
 Para que la radio le pida intervenciones al servicio DJ hay que poner **las dos cosas** (sin `url` no intenta

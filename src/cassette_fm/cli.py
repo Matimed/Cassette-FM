@@ -80,6 +80,9 @@ def _armar_parser() -> argparse.ArgumentParser:
     pedir = dj_sub.add_parser("pedir", parents=[comun],
                               help="le pide una intervención real al servicio DJ para el próximo hueco")
     pedir.add_argument("--en", type=float, default=20.0, help="segundos mínimos de antelación (20)")
+    modo = dj_sub.add_parser("modo", parents=[comun],
+                             help="muestra o cambia cómo redacta el DJ: plantillas (por defecto) o llm")
+    modo.add_argument("nuevo", nargs="?", choices=["plantillas", "llm"])
     return parser
 
 
@@ -106,6 +109,16 @@ def _ejecutar_dj(args, puerto: int) -> None:
         for i in e["intervenciones"]:
             print(f"  {i['estacion']} · en {i['en_segundos']:.0f} s · {i['duracion']:.1f} s · {i['texto']}")
         _imprimir_planificador(e.get("planificador"))
+    elif args.accion == "modo":
+        r = _llamar(puerto, "GET" if args.nuevo is None else "POST", "/dj/modo",
+                    None if args.nuevo is None else {"modo": args.nuevo})
+        extra = ""
+        if args.nuevo == "llm":
+            extra = (" (el LLM responde)" if r.get("llm") == "ok" else
+                     " (¡el LLM no responde! las frases van a salir por plantillas hasta que arranque Ollama)")
+        print(f"Modo del DJ: {r['modo']}{extra}.")
+        if r["modo"] == "llm":
+            print("(vuelve a plantillas al reiniciar el servicio DJ)")
     elif args.accion == "pedir":
         r = _llamar(puerto, "POST", "/dj/pedir", {"en_segundos": args.en})
         print(f"Se le pidió una intervención al servicio DJ para «{r['tema']}» en {r['estacion']}: "

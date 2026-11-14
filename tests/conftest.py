@@ -95,6 +95,7 @@ def servicio_dj(tmp_path):
     from cassette_fm.dj.config import ConfigServicioDJ, RutasDJ
     from cassette_fm.dj.guiones import RegistroGuiones
     from cassette_fm.dj.lexico import Lexico
+    from cassette_fm.dj.modo import ModoDJ
     from cassette_fm.dj.produccion import Productor
     from cassette_fm.dj.servidor import crear_servidor
 
@@ -110,7 +111,9 @@ def servicio_dj(tmp_path):
         productor = Productor(config, s.rutas, s.sintetizador, lambda t, lang: t, Lexico(), s.guiones,
                               azar=random.Random(1))
         s.cola = Cola(productor, trabajadores=1)
-        s.servidor = crear_servidor(s.cola, s.sintetizador, "127.0.0.1", 0, config.modelos_dir)
+        s.modo = ModoDJ()
+        s.servidor = crear_servidor(s.cola, s.sintetizador, "127.0.0.1", 0, config.modelos_dir, modo=s.modo,
+                                    probar_llm=lambda: True)
         threading.Thread(target=lambda: s.servidor.serve_forever(poll_interval=0.02), daemon=True,
                          name="dj-http-test").start()
         s.url = f"http://127.0.0.1:{s.servidor.server_address[1]}"

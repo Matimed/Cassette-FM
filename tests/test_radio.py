@@ -525,6 +525,10 @@ class PlanificadorFalso:
             h.join(1.0)
             self.rescan_estado = r[0] if r else "bloqueado"
 
+    def modo(self, nuevo=None):
+        self.modos = getattr(self, "modos", []) + [nuevo]
+        return {"modo": nuevo or "plantillas"}
+
     def pedir_ahora(self, en_segundos):
         self.pedidos.append(en_segundos)
         return {"id": "x", "estacion": "A", "inicio": 1.0, "en_segundos": en_segundos}
@@ -605,3 +609,20 @@ def test_dj_pedir_delega_en_el_planificador(tmp_path):
     assert radio.dj_pedir(45.0)["en_segundos"] == 45.0
     radio.dj_pedir()
     assert plan.pedidos == [45.0, 20.0]
+
+
+def test_dj_modo_sin_planificador_da_DJInactivo(tmp_path):
+    from cassette_fm.radio import DJInactivo
+    radio, rep, loc = con_dj(tmp_path)
+    with pytest.raises(DJInactivo):
+        radio.dj_modo()
+    sin_dj, _, _, _ = crear()
+    with pytest.raises(DJInactivo):
+        sin_dj.dj_modo("llm")
+
+
+def test_dj_modo_delega(tmp_path):
+    radio, rep, loc, plan = crear_con_planificador(tmp_path)
+    assert radio.dj_modo() == {"modo": "plantillas"}
+    assert radio.dj_modo("llm") == {"modo": "llm"}
+    assert plan.modos == [None, "llm"]

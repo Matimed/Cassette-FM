@@ -11,6 +11,10 @@ _log = logging.getLogger("cassette_fm")
 ACCIONES = ("siguiente", "anterior", "encender", "apagar", "alternar", "rescan")
 
 
+_MENSAJE_DJ_INACTIVO = ("El DJ está apagado: poné `activo = true` (y, para pedirle intervenciones al servicio DJ, la "
+                        "`url` del servicio) en la sección [dj] de config.toml y reiniciá el servicio")
+
+
 class _SolicitudInvalida(Exception):
     pass
 
@@ -56,6 +60,13 @@ def crear_servidor(radio, host: str = "127.0.0.1", puerto: int = 7710,
                 self._responder(200, radio.estado())
             elif self.path == "/dj":
                 self._responder(200, radio.dj_estado())
+            elif self.path == "/dj/modo":
+                try:
+                    self._responder(200, radio.dj_modo())
+                except DJInactivo:
+                    self._error(409, _MENSAJE_DJ_INACTIVO)
+                except ValueError as e:
+                    self._error(400, str(e))
             elif self.path == "/estaciones":
                 self._responder(200, [{"nombre": e.nombre, "pistas": len(e.pistas)}
                                       for e in radio.estaciones()])
@@ -64,7 +75,7 @@ def crear_servidor(radio, host: str = "127.0.0.1", puerto: int = 7710,
 
         def do_POST(self):
             ruta = self.path.lstrip("/")
-            if ruta not in ACCIONES + ("sintonizar", "volumen", "dj/probar", "dj/pedir"):
+            if ruta not in ACCIONES + ("sintonizar", "volumen", "dj/probar", "dj/pedir", "dj/modo"):
                 self._error(404, f"ruta desconocida: {self.path}")
                 return
             respuesta = None
@@ -74,6 +85,8 @@ def crear_servidor(radio, host: str = "127.0.0.1", puerto: int = 7710,
                     respuesta = self._dj_probar(datos)
                 elif ruta == "dj/pedir":
                     respuesta = self._dj_pedir(datos)
+                elif ruta == "dj/modo":
+                    respuesta = self._dj_modo(datos)
                 elif ruta == "sintonizar":
                     if not isinstance(datos.get("estacion"), str):
                         raise _SolicitudInvalida("falta el campo 'estacion'")
@@ -95,9 +108,7 @@ def crear_servidor(radio, host: str = "127.0.0.1", puerto: int = 7710,
             except ErrorMpv as e:
                 self._error(503, f"mpv: {e}")
             except DJInactivo:
-                self._error(409, "El DJ está apagado: poné `activo = true` (y, para pedirle intervenciones al "
-                                 "servicio DJ, la `url` del servicio) en la sección [dj] de config.toml y "
-                                 "reiniciá el servicio")
+                self._error(409, _MENSAJE_DJ_INACTIVO)
             except RadioApagada:
                 self._error(409, "No hay una estación sintonizada: encendé la radio primero")
             except SinEstaciones:
@@ -108,6 +119,15 @@ def crear_servidor(radio, host: str = "127.0.0.1", puerto: int = 7710,
                 self._error(500, "error interno (mirá el log del servicio)")
             else:
                 self._responder(200, respuesta if respuesta is not None else radio.estado())
+
+        def _dj_modo(self, datos: dict) -> dict:
+            modo = datos.get("modo")
+            if modo not in ("plantillas", "llm"):
+                raise _SolicitudInvalida("'modo' tiene que ser \"plantillas\" o \"llm\"")
+            try:
+                return radio.dj_modo(modo)
+            except ValueError as e:
+                raise _SolicitudInvalida(str(e))
 
         def _dj_pedir(self, datos: dict) -> dict:
             en = datos.get("en_segundos", 20.0)

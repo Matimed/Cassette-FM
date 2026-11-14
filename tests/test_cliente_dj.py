@@ -166,3 +166,53 @@ def test_id_peligroso_da_ValueError(id_, tmp_path):
 def test_salud(servicio_dj):
     s = ClienteDJ(servicio_dj().url).salud()
     assert s["ok"] is True and "trabajos" in s
+
+
+def test_modo_y_poner_modo(servicio_dj):
+    s = servicio_dj()
+    c = ClienteDJ(s.url)
+    assert c.modo() == "plantillas"
+    assert c.poner_modo("llm") == {"modo": "llm", "llm": "ok"} and c.modo() == "llm" and s.modo.actual() == "llm"
+    assert c.poner_modo("plantillas") == {"modo": "plantillas"}
+
+
+def test_poner_un_modo_invalido_da_ErrorDJ_con_el_mensaje(servicio_dj):
+    c = ClienteDJ(servicio_dj().url)
+    with pytest.raises(ErrorDJ, match="modo"):
+        c.poner_modo("otro")
+    assert c.modo() == "plantillas"
+
+
+def test_modo_con_el_servicio_caido_da_ErrorDJ():
+    with socket.socket() as s:
+        s.bind(("127.0.0.1", 0))
+        puerto = s.getsockname()[1]
+    c = ClienteDJ(f"http://127.0.0.1:{puerto}", timeout=1)
+    for llamada in (c.modo, lambda: c.poner_modo("llm")):
+        with pytest.raises(ErrorDJ, match="no responde"):
+            llamada()
+
+
+def test_modo_con_respuesta_ilegible_da_ErrorDJ():
+    class H(BaseHTTPRequestHandler):
+        def log_message(self, *a):
+            pass
+
+        def _r(self):
+            cuerpo = b'{"otra": "cosa"}'
+            self.send_response(200)
+            self.send_header("Content-Length", str(len(cuerpo)))
+            self.end_headers()
+            self.wfile.write(cuerpo)
+
+        do_GET = do_POST = _r
+
+    srv, url = servidor_a_mano(H)
+    try:
+        with pytest.raises(ErrorDJ, match="ilegible"):
+            ClienteDJ(url).modo()
+        with pytest.raises(ErrorDJ, match="ilegible"):
+            ClienteDJ(url).poner_modo("llm")
+    finally:
+        srv.shutdown()
+        srv.server_close()

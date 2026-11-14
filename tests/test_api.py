@@ -37,6 +37,10 @@ class RadioFalsa:
         self._hacer("dj_probar", audio=audio, en_segundos=en_segundos)
         return {"estacion": "A", "inicio": 1.0, "duracion": 8.0, "pista_destino": "/m/t.mp3", "en_segundos": 20.0}
 
+    def dj_modo(self, nuevo=None):
+        self._hacer("dj_modo", nuevo=nuevo)
+        return {"modo": nuevo or "plantillas", **({"llm": "ok"} if nuevo == "llm" else {})}
+
     def dj_pedir(self, en_segundos=20.0):
         self._hacer("dj_pedir", en_segundos=en_segundos)
         return {"id": "x", "estacion": "A", "inicio": 1.0, "en_segundos": en_segundos, "tema": "Artista - Tema"}
@@ -232,4 +236,35 @@ def test_post_dj_pedir_valueerror_400(servidor):
                                     {"en_segundos": None}])
 def test_post_dj_pedir_tipos_invalidos_400(servidor, cuerpo):
     assert pedir(servidor, "POST", "/dj/pedir", cuerpo)[0] == 400
+    assert servidor.radio.llamadas == []
+
+
+def test_get_dj_modo(servidor):
+    assert pedir(servidor, "GET", "/dj/modo") == (200, {"modo": "plantillas"})
+    assert servidor.radio.llamadas == [("dj_modo", (), {"nuevo": None})]
+
+
+def test_post_dj_modo_pasa_el_modo(servidor):
+    assert pedir(servidor, "POST", "/dj/modo", {"modo": "llm"}) == (200, {"modo": "llm", "llm": "ok"})
+    assert pedir(servidor, "POST", "/dj/modo", {"modo": "plantillas"}) == (200, {"modo": "plantillas"})
+    assert [l[2]["nuevo"] for l in servidor.radio.llamadas] == ["llm", "plantillas"]
+
+
+def test_dj_modo_inactivo_409(servidor):
+    servidor.radio.error = DJInactivo("sin planificador")
+    for metodo, cuerpo in (("GET", None), ("POST", {"modo": "llm"})):
+        codigo, resp = pedir(servidor, metodo, "/dj/modo", cuerpo)
+        assert codigo == 409 and "url" in resp["error"]
+
+
+def test_dj_modo_valueerror_400(servidor):
+    servidor.radio.error = ValueError("el servicio DJ no responde en http://x")
+    for metodo, cuerpo in (("GET", None), ("POST", {"modo": "llm"})):
+        codigo, resp = pedir(servidor, metodo, "/dj/modo", cuerpo)
+        assert codigo == 400 and "no responde" in resp["error"]
+
+
+@pytest.mark.parametrize("cuerpo", [{}, {"modo": "otro"}, {"modo": 3}, {"modo": None}])
+def test_post_dj_modo_invalido_400(servidor, cuerpo):
+    assert pedir(servidor, "POST", "/dj/modo", cuerpo)[0] == 400
     assert servidor.radio.llamadas == []
