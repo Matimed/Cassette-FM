@@ -32,7 +32,7 @@ class MBFalso:
         self.valor, self.demora, self.error = valor, demora, error
         self.llamadas = []
 
-    def datos_del_tema(self, artista, titulo, isrc=None):
+    def datos_del_tema(self, artista, titulo, isrc=None, album=None):
         self.llamadas.append((artista, titulo, isrc))
         time.sleep(self.demora)
         if self.error:

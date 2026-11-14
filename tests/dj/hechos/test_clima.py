@@ -129,3 +129,10 @@ def test_la_url_lleva_coordenadas_y_zona(servidor_http):
     assert "latitude=-31.4" in ruta and "longitude=-64.2" in ruta
     assert "timezone=America%2FArgentina%2FBuenos_Aires" in ruta
     assert "current=temperature_2m,weather_code,is_day" in ruta or "current=temperature_2m%2Cweather_code%2Cis_day" in ruta
+
+
+@pytest.mark.parametrize("temp", [150, -120, float("nan"), float("inf"), 99.6])
+def test_una_temperatura_absurda_es_un_fallo_y_no_tumba_nada(servidor_http, temp):
+    import json as _json
+    servidor_http.responder("/v1/forecast", _json.dumps(actual(0, temp)).replace("NaN", "NaN"))
+    assert cliente(servidor_http).actual() is None

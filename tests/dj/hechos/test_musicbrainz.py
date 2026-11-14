@@ -231,3 +231,83 @@ def test_un_pedido_cacheado_no_rearma_el_aviso(servidor_http, caplog):
         r.t += 11 * 60
         c.datos_del_tema("a-ha", "Take On Me")
     assert len([x for x in caplog.records if x.levelno == logging.WARNING]) == 1
+
+
+# --- revisión final ---
+
+def test_los_alfabetos_no_latinos_no_comparten_clave_ni_coinciden(servidor_http):
+    c, _ = montar(servidor_http, grabaciones=[grabacion("Группа крови", "Кино", fecha="1988")])
+    assert c.datos_del_tema("Кино", "Группа крови").anio == 1988
+    servidor_http.reglas.clear()
+    c2, _ = montar(servidor_http, grabaciones=[])
+    c2._cache = c._cache                              # misma caché: no se puede contaminar
+    assert c2.datos_del_tema("Ария", "Беспечный ангел") is None
+    assert len(servidor_http.pedidos) >= 3            # se consultó de verdad, no salió de la caché del otro
+
+
+@pytest.mark.parametrize("artista, titulo", [("!!!", "Me and Giuliani"), ("a-ha", "???"), ("", "x"), ("x", "   ")])
+def test_un_nombre_vacio_al_normalizar_no_consulta(servidor_http, artista, titulo):
+    c, _ = montar(servidor_http, grabaciones=[grabacion(fecha="1984")])
+    assert c.datos_del_tema(artista, titulo) is None and servidor_http.pedidos == []
+
+
+def test_normalizar_conserva_letras_no_latinas_y_distingue_mo_de_m():
+    assert normalizar("Кино") != normalizar("Ария") and normalizar("Кино") != ""
+    assert normalizar("宇多田ヒカル") != ""
+    assert normalizar("MØ") != normalizar("-M-")
+
+
+def test_un_isrc_desconocido_prueba_igual_la_busqueda(servidor_http, caplog):
+    servidor_http.responder("/ws/2/isrc/", {"error": "Not Found"}, codigo=404)
+    c, _ = montar(servidor_http, grabaciones=[grabacion(fecha="1984")])
+    with caplog.at_level(logging.WARNING, logger="cassette_fm"):
+        assert c.datos_del_tema("a-ha", "Take On Me", "NOA018500001").anio == 1984
+    assert not [r for r in caplog.records if r.levelno == logging.WARNING]
+
+
+def test_un_titulo_generico_sin_album_que_lo_confirme_no_da_datos(servidor_http):
+    c, _ = montar(servidor_http, grabaciones=[grabacion("Intro", "a-ha", fecha="2018"),
+                                              grabacion("Intro", "a-ha", fecha="2022")])
+    assert c.datos_del_tema("a-ha", "Intro") is None
+
+
+def test_el_album_desempata_y_da_el_anio_de_ese_disco(servidor_http):
+    g1 = grabacion("Intro", "a-ha", fecha="2018", extra={"releases": [{"title": "Disco Viejo"}]})
+    g2 = grabacion("Intro", "a-ha", fecha="2022", extra={"releases": [{"title": "Disco Nuevo (Deluxe)"}]})
+    c, _ = montar(servidor_http, grabaciones=[g1, g2])
+    assert c.datos_del_tema("a-ha", "Intro", album="Disco Nuevo").anio == 2022
+    c2, _ = montar(servidor_http, grabaciones=[g1, g2])
+    assert c2.datos_del_tema("a-ha", "Intro", album="Disco Viejo").anio == 2018
+
+
+def test_un_album_que_no_aparece_no_estorba_en_un_titulo_normal(servidor_http):
+    c, _ = montar(servidor_http, grabaciones=[grabacion(fecha="2019"), grabacion(fecha="1984")])
+    assert c.datos_del_tema("a-ha", "Take On Me", album="Un disco de otro nombre").anio == 1984
+
+
+@pytest.mark.parametrize("cuerpo", [{}, {"count": 0}])
+def test_un_200_sin_recordings_es_un_fallo_y_se_cachea_poco(servidor_http, cuerpo):
+    c, r = montar(servidor_http)
+    servidor_http.reglas.insert(0, ("/ws/2/recording", cuerpo, 200, "application/json", 0))
+    assert c.datos_del_tema("a-ha", "Take On Me") is None
+    r.t += 10 * 60 + 1                      # vence el error (10 min), no hace falta esperar 14 días
+    c.datos_del_tema("a-ha", "Take On Me")
+    assert len(servidor_http.pedidos) == 2
+
+
+def test_un_artista_vacio_es_un_fallo_y_se_cachea_poco(servidor_http):
+    c, r = montar(servidor_http, grabaciones=[grabacion(fecha="1984")], artista={})
+    assert c.datos_del_tema("a-ha", "Take On Me") is None
+    r.t += 10 * 60 + 1
+    c.datos_del_tema("a-ha", "Take On Me")
+    assert len(servidor_http.pedidos) == 4          # 2 + 2: se reintentó
+
+
+def test_la_consulta_escapa_la_barra_y_las_comillas(servidor_http):
+    c, _ = montar(servidor_http, grabaciones=[])
+    c.datos_del_tema("X", 'Back\\')
+    consulta = urllib.parse.parse_qs(urllib.parse.urlparse(servidor_http.pedidos[0][0]).query)["query"][0]
+    assert consulta == 'recording:"Back\\\\" AND artist:"X"'
+    c.datos_del_tema('Tito "El Bambino"', "Algo")
+    consulta = urllib.parse.parse_qs(urllib.parse.urlparse(servidor_http.pedidos[1][0]).query)["query"][0]
+    assert 'artist:"Tito \\"El Bambino\\""' in consulta

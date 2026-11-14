@@ -242,7 +242,10 @@ def test_el_clima_se_dice_en_palabras_y_con_menos():
     for temp, esperado_es, esperado_en in [(22, "veintidós grados", "twenty two degrees"),
                                            (-3, "menos tres grados", "minus three degrees"),
                                            (1, "un grado", "one degree"), (-1, "menos un grado", "minus one degree"),
-                                           (0, "cero grados", "zero degrees")]:
+                                           (0, "cero grados", "zero degrees"),
+                                           (21, "veintiún grados", "twenty one degrees"),
+                                           (31, "treinta y un grados", "thirty one degrees"),
+                                           (-21, "menos veintiún grados", "minus twenty one degrees")]:
         h = Hechos(Clima(temp, "nublado", True))
         for idioma, esperado in (("es", esperado_es), ("en", esperado_en)):
             vistos = [redactar(pedido(idioma), Lexico(), random.Random(s), 60, hechos=h, pesos=ALTOS, maximo=9)
@@ -255,7 +258,7 @@ def test_el_cielo_de_noche_despejado_es_la_noche():
     h = Hechos(Clima(18, "despejado", False))
     junto = " ".join(sin_marcas(redactar(pedido("es"), Lexico(), random.Random(s), 60, hechos=h, pesos=ALTOS, maximo=9))
                      for s in range(150))
-    assert "la noche está despejada" in junto or "Ahora mismo en Buenos Aires" in junto
+    assert "la noche está despejada" in junto
     assert "el cielo está despejado" not in junto
 
 
@@ -361,3 +364,11 @@ def test_la_madrugada_tiene_su_frase():
     junto = " ".join(sin_marcas(redactar(pedido("es", momento=a(3, 0)), Lexico(), random.Random(s), 60, pesos=ALTOS))
                      for s in range(200))
     assert "esta madrugada" in junto and "esta noche" not in junto
+
+
+def test_un_clima_absurdo_no_se_ofrece_y_no_tumba_la_frase():
+    for clima in (Clima(150, "lluvia", True), Clima(-120, "lluvia", True), Clima(20, "granizo", True)):
+        h = Hechos(clima=clima)
+        assert "clima" not in ingredientes_disponibles(pedido(), h)
+        for s in range(100):
+            assert "clima" not in redactar(pedido("es"), Lexico(), random.Random(s), 45, hechos=h, pesos=ALTOS).ingredientes

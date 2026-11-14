@@ -135,7 +135,10 @@ def _grados(temperatura: int, idioma: str) -> str:
     if n == 1:
         cuerpo = "un grado" if idioma == "es" else "one degree"
         return (f"menos {cuerpo}" if idioma == "es" else f"minus {cuerpo}") if temperatura < 0 else cuerpo
-    return f"{en_palabras(temperatura, idioma)} {'grados' if idioma == 'es' else 'degrees'}"
+    palabras = en_palabras(temperatura, idioma)
+    if idioma == "es" and palabras.endswith("uno"):          # "veintiún grados", "treinta y un grados"
+        palabras = palabras[:-3] + ("ún" if palabras.endswith("veintiuno") else "un")
+    return f"{palabras} {'grados' if idioma == 'es' else 'degrees'}"
 
 
 def _variantes_de_dato(hechos: Hechos, idioma: str) -> list[str]:
@@ -156,7 +159,8 @@ def ingredientes_disponibles(pedido: Pedido, hechos: Hechos = Hechos()) -> set[s
         disponibles.add("album")
     if pedido.anterior is not None:
         disponibles.add("anterior")
-    if hechos.clima is not None:
+    c = hechos.clima
+    if c is not None and -99 <= c.temperatura <= 99 and c.cielo in _CIELO["es"]:
         disponibles.add("clima")
     idioma = "es" if pedido.idioma == "es" else "en"
     if _variantes_de_dato(hechos, idioma):
@@ -189,7 +193,8 @@ def redactar(pedido: Pedido, lexico: Lexico, azar: random.Random, palabras_maxim
     if pedido.anterior is not None:
         campos["artista_ant"] = m(pedido.anterior.artista)
         campos["titulo_ant"] = m(pedido.anterior.titulo)
-    if hechos.clima is not None:
+    disponibles = ingredientes_disponibles(pedido, hechos)
+    if "clima" in disponibles:
         c = hechos.clima
         cielo = (_NOCHE_DESPEJADA[idioma] if not c.es_de_dia and c.cielo == "despejado" else _CIELO[idioma][c.cielo])
         campos["grados"] = _grados(c.temperatura, idioma)
@@ -203,7 +208,7 @@ def redactar(pedido: Pedido, lexico: Lexico, azar: random.Random, palabras_maxim
         if t.anio_inicio_artista is not None and 1900 <= t.anio_inicio_artista <= 2099:
             campos["inicio"] = anio_en_palabras(t.anio_inicio_artista, idioma)
 
-    elegidos = elegir_ingredientes(ingredientes_disponibles(pedido, hechos), pesos, pedido.recientes, azar,
+    elegidos = elegir_ingredientes(disponibles, pesos, pedido.recientes, azar,
                                    maximo, penalizacion)
 
     def extra(ingrediente: str) -> str:

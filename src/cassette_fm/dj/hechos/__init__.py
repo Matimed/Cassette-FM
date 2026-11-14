@@ -44,7 +44,7 @@ class FuenteHechos:
             s = pedido.siguiente
             hilos.append(threading.Thread(target=pedir, daemon=True, name="hechos-musicbrainz",
                                           args=("musicbrainz", lambda: self._musicbrainz.datos_del_tema(
-                                              s.artista, s.titulo, s.isrc))))
+                                              s.artista, s.titulo, s.isrc, s.album))))
         for h in hilos:
             h.start()
         for h in hilos:

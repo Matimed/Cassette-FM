@@ -1,4 +1,5 @@
 import json
+import math
 import logging
 import time
 import urllib.parse
@@ -100,6 +101,8 @@ class ClienteClima:
         if (isinstance(temp, bool) or not isinstance(temp, (int, float)) or isinstance(codigo, bool)
                 or not isinstance(codigo, int) or dia not in (0, 1) or isinstance(dia, bool)):
             raise _Fallo("open-meteo: los campos de 'current' no son los esperados")
+        if not math.isfinite(temp) or not -99 <= round(temp) <= 99:
+            raise _Fallo(f"open-meteo: temperatura absurda ({temp})")
         cielo = _cielo(codigo)
         if cielo is None:
             raise _Fallo(f"open-meteo: código de clima desconocido ({codigo})")

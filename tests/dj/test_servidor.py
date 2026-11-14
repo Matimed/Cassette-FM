@@ -331,7 +331,7 @@ def test_servicio_con_hechos_falsos_de_punta_a_punta(servicio, servidor_http):
     servidor_http.responder("/ws/2/recording", {"recordings": [{
         "id": "r1", "title": "Waiting for a Girl Like You", "first-release-date": "1981-09-02",
         "artist-credit": [{"name": "Foreigner", "artist": {"id": aha, "name": "Foreigner"}}]}]})
-    servidor_http.responder(f"/ws/2/artist/{aha}", {"type": "Group", "country": "GB", "life-span": {"begin": "1976"}})
+    servidor_http.responder(f"/ws/2/artist/{aha}", {"id": aha, "name": "Foreigner", "type": "Group", "country": "GB", "life-span": {"begin": "1976"}})
     cfg = ConfigServicioDJ(contacto="t@example.com", open_meteo_url=servidor_http.url + "/v1/forecast",
                            musicbrainz_url=servidor_http.url + "/ws/2", timeout_hechos_segundos=1.0,
                            pesos_ingredientes={"estacion": 0.0, "hora": 0.0, "momento": 0.0, "album": 0.0,
