@@ -282,7 +282,7 @@ se pueden cambiar, y los de la estación pisan a los generales:
 ```toml
 [dj]
 activo = false
-url = "http://127.0.0.1:7720"          # el servicio DJ
+url = ""                              # el servicio DJ (p. ej. "http://127.0.0.1:7720"); vacío = sin planificador
 margen_minutos = 6                      # antelación mínima para planificar
 duracion_maxima_segundos = 15           # tope de la voz
 palabras_maximas = 45
