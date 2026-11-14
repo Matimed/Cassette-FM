@@ -387,3 +387,20 @@ en cualquier lugar o a una playlist de Spotify, y que la voz se elija al crearla
 - Probar más nombres reales de la biblioteca con el léxico de idiomas.
 - Rehilamiento rioplatense de `y` y `ll` en la voz (no se probó).
 - Dato de contacto para el `User-Agent` de MusicBrainz (lo pone el usuario en la configuración del servicio).
+
+
+## Parte 4: decisiones del 14/11
+
+- **Servidor de LLM:** Ollama dentro de **Docker** (`ollama/ollama`), con los modelos en `~/.local/share/cassette-dj/ollama`,
+  escuchando solo en `127.0.0.1:11434`; la radio y el servicio DJ lo ven por la API compatible con OpenAI
+  (`http://127.0.0.1:11434/v1`). Modelo inicial de **4 mil millones de parámetros** (`gemma3:4b`, configurable; se prueba
+  con frases reales y, si se queda corto, se pasa a uno de 8 mil millones). La máquina tiene 13 GB de RAM y no tiene GPU.
+- **Modo del DJ:** el servicio tiene un **modo** `plantillas` | `llm`. **Por defecto siempre `plantillas`**: arranca así
+  salvo que la configuración diga otra cosa (`modo = "llm"`), y el cambio en caliente **no se guarda** (al reiniciar el
+  servicio vuelve al de la configuración). Se cambia con `cassette dj modo llm|plantillas` (en la radio, que se lo pide
+  al servicio) o `cassette-dj modo llm|plantillas`; sin argumento muestran el modo actual. Con el modo `llm` el servicio
+  además pide **Wikipedia** (MusicBrainz → Wikidata → Wikipedia, solo el artista) y se la da al LLM junto con los hechos
+  que ya junta; con `plantillas` no hace pedidos a Wikipedia ni al LLM.
+- Si el LLM falla, tarda más que `llm_timeout_segundos` o su frase no pasa la verificación, esa frase sale por plantillas
+  y el guion lo anota (`fuente: "plantilla"`, `motivo`). **Todo guion generado por el LLM se registra con el texto crudo
+  y el prompt**, para reusarlo en las pruebas de voz.
