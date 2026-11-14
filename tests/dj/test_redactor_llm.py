@@ -93,6 +93,11 @@ def test_el_prompt_prohibe_mencionar_momento_dia_o_clima_que_no_se_dieron():
     assert "time of day" in peticion(["cancion"], p=pedido("en")).sistema
 
 
+def test_el_prompt_prohibe_hablar_de_popularidad():
+    assert "popularidad" in peticion(["cancion"]).sistema
+    assert "popular" in peticion(["cancion"], p=pedido("en")).sistema and "charts" in peticion(["cancion"], p=pedido("en")).sistema
+
+
 def test_el_prompt_no_lleva_el_feat_del_titulo():
     p = pedido(siguiente=("Cardi B & 21 Savage", "Bartier Cardi (feat 21 Savage)"))
     u = peticion(["cancion", "anterior"], p=p).usuario
@@ -232,8 +237,8 @@ def test_inicio_de_oracion_comun_no_cuenta_como_nombre():
     assert ver("Madrugada tranquila. Ahora suena Take On Me de a-ha. Gracias por escuchar.") is None
 
 
-def test_cuatro_oraciones_pasan():
-    assert ver("Hola gente linda. Ahora suena Take On Me de a-ha. Es un clásico. Gracias por escuchar.") is None
+def test_no_hay_limite_de_oraciones_solo_de_palabras():
+    assert ver("Hola gente linda. Ahora suena Take On Me de a-ha. Es un clásico. Gracias por escuchar. Un abrazo.") is None
 
 
 def test_un_dia_de_la_semana_que_no_es_hoy_no_pasa():
@@ -259,8 +264,23 @@ def test_un_dia_dentro_del_titulo_no_cuenta():
     assert ver("Now playing Friday I'm in Love by The Cure, a fantastic song.", p=p) is None
 
 
-def test_demasiadas_oraciones():
-    assert "oraciones" in ver("Hola gente linda. Ahora suena Take On Me. De a-ha. Para todos. Siempre así.")
+@pytest.mark.parametrize("texto, idioma", [
+    ("Now playing Take On Me by a-ha, a hugely popular hit that fans love.", "en"),
+    ("Now playing Take On Me by a-ha, a track that has been streamed millions of times.", "en"),
+    ("Now playing Take On Me by a-ha, climbing the charts right now.", "en"),
+    ("Now playing Take On Me by a-ha, one of the best-selling songs ever.", "en"),
+    ("Ahora suena Take On Me de a-ha, un éxito enorme que todos conocen.", "es"),
+    ("Ahora suena Take On Me de a-ha, un tema muy popular en todo el mundo.", "es"),
+    ("Ahora suena Take On Me de a-ha, que está subiendo en el ranking.", "es"),
+])
+def test_la_popularidad_que_no_esta_en_los_hechos_no_pasa(texto, idioma):
+    assert "popularidad" in ver(texto, p=pedido(idioma))
+
+
+def test_la_popularidad_que_si_esta_en_los_hechos_pasa():
+    sin_wiki = Hechos(None, HECHOS.tema, Resumen("A-ha vendió más de 10 millones de discos y fue un éxito en las listas de éxitos.", "A-ha", "es", "https://x"))
+    texto = "Ahora suena Take On Me de a-ha, una banda que fue un éxito en las listas de éxitos."
+    assert ver(texto, ingredientes=("cancion", "dato"), hechos=sin_wiki) is None
 
 
 @pytest.mark.parametrize("texto", ["Ahora suena Take On Me de a-ha con 1,5 millones de fans.",
