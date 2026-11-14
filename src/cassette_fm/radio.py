@@ -137,8 +137,13 @@ class Radio:
                 "pista": pista.titulo if self.encendida and pista else None,
                 "volumen": self._estado.volumen,
                 "estaciones": [e.nombre for e in self._estaciones],
+                "fuente": self._fuente_actual() if self.encendida else None,
                 "segundo": round(segundo, 1) if segundo is not None else None,
             }
+
+    def _fuente_actual(self) -> str | None:
+        i = self._indice_actual()
+        return self._estaciones[i].fuente if i is not None else None
 
     def _requerir_estaciones(self) -> None:
         if not self._estaciones:
@@ -296,8 +301,11 @@ class Radio:
                 clip.unlink(missing_ok=True)
                 raise
 
-    def _al_fallar(self, estacion) -> None:
+    def _al_fallar(self, estacion, motivo: str | None = None) -> None:
         with self._lock:
             # el aviso llega con la estación que falló: si el usuario ya cambió, no se la apaga
-            if self.encendida and self._estado.estacion == estacion.nombre:
-                self._apagar()
+            if not (self.encendida and self._estado.estacion == estacion.nombre):
+                return
+            self._apagar()
+        if motivo and self._avisar is not None:
+            self._avisar(estacion.nombre, motivo)

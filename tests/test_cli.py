@@ -382,3 +382,10 @@ def test_rescan_espera_mas_que_los_demas_comandos(monkeypatch):
     main(["rescan"])
     main(["next"])
     assert vistos[0] == ("/rescan", 120) and vistos[1][1] == 10
+
+
+def test_status_muestra_spotify():
+    from cassette_fm.cli import _linea_estado
+    base = {"encendida": True, "estacion": "Sing", "pista": "A - T", "volumen": 70}
+    assert "Spotify" in _linea_estado({**base, "fuente": "spotify"})
+    assert "Spotify" not in _linea_estado({**base, "fuente": "carpeta"})

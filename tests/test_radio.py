@@ -172,7 +172,7 @@ def test_estado_dict():
     radio, rep, _, _ = crear(estado=Estado(estacion="A", volumen=60))
     assert radio.estado() == {"encendida": False, "estacion": "A", "pista": None,
                               "volumen": 60, "estaciones": ["A", "B", "Regueton 2000"],
-                              "segundo": None}
+                              "segundo": None, "fuente": None}
     radio.encender()
     rep.pista_actual = est("A").pistas[0]
     assert radio.estado()["pista"] == "tema de A"
@@ -626,3 +626,18 @@ def test_dj_modo_delega(tmp_path):
     assert radio.dj_modo() == {"modo": "plantillas"}
     assert radio.dj_modo("llm") == {"modo": "llm"}
     assert plan.modos == [None, "llm"]
+
+
+def test_una_falla_con_motivo_apaga_y_avisa():
+    avisos = []
+    radio, rep, _, _ = crear(avisar=lambda e, t: avisos.append((e, t)))
+    radio.encender()
+    rep.al_fallar(est("A"), "Spotify se está escuchando en otro dispositivo")
+    assert not radio.encendida and ("A", "Spotify se está escuchando en otro dispositivo") in avisos
+
+
+def test_el_estado_dice_la_fuente():
+    radio, _, _, _ = crear()
+    assert radio.estado()["fuente"] is None
+    radio.encender()
+    assert radio.estado()["fuente"] == "carpeta"

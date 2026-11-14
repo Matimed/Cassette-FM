@@ -26,7 +26,8 @@ def _linea_estado(estado: dict) -> str:
     if not estado["encendida"]:
         return f"⏹ apagada {vol}"
     pista = f" — {estado['pista']}" if estado.get("pista") else ""
-    return f"▶ {estado['estacion']}{pista} {vol}"
+    fuente = " · Spotify" if estado.get("fuente") == "spotify" else ""
+    return f"▶ {estado['estacion']}{fuente}{pista} {vol}"
 
 
 def _llamar(puerto: int, metodo: str, ruta: str, cuerpo: dict | None = None, timeout: float = 10):
