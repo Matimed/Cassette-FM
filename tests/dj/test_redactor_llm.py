@@ -66,6 +66,18 @@ def test_el_prompt_pone_la_personalidad_y_el_idioma():
     assert "Tono:" in es.sistema and "Tono:" not in peticion(["cancion"]).sistema
 
 
+def test_el_prompt_no_lleva_el_feat_del_titulo():
+    p = pedido(siguiente=("Cardi B & 21 Savage", "Bartier Cardi (feat 21 Savage)"))
+    u = peticion(["cancion", "anterior"], p=p).usuario
+    assert "Bartier Cardi de" in u and "feat" not in u
+
+
+def test_una_oracion_que_termina_en_comilla_cierra_la_oracion():
+    en = pedido("en")
+    assert ver("Get ready for Take On Me by a-ha, “a classic.” It’s the perfect sound for this afternoon.", p=en) is None
+    assert ver("Get ready for Take On Me by a-ha, \"a classic.\" Alright, let us go.", p=en) is None
+
+
 def test_el_prompt_pide_unir_los_datos_con_conectores():
     assert "conectores" in peticion(["cancion"]).sistema
     assert "connectors" in peticion(["cancion"], p=pedido("en")).sistema

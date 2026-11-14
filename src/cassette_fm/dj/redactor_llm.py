@@ -11,7 +11,7 @@ from cassette_fm.dj.hechos.paises import nombre_de_pais
 from cassette_fm.dj.lexico import Lexico
 from cassette_fm.dj.pedido import Pedido
 from cassette_fm.dj.plantillas import (artistas_del_tag, cielo_en_palabras, frase_hora, grados_en_palabras,
-                                       momento_en_palabras)
+                                       momento_en_palabras, titulo_hablado)
 from cassette_fm.dj.texto_voz import marcar
 
 _DIAS = {"es": ["lunes", "martes", "miércoles", "jueves", "viernes", "sábado", "domingo"],
@@ -85,8 +85,8 @@ def construir_peticion(pedido: Pedido, ingredientes: Sequence[str], hechos: Hech
     idioma = _idioma(pedido)
     es = idioma == "es"
     artista = (" y " if es else " and ").join(artistas_del_tag(pedido.siguiente.artista))
-    lineas = [f"Tema: {pedido.siguiente.titulo} de {artista}" if es
-              else f"Song: {pedido.siguiente.titulo} by {artista}"]
+    lineas = [f"Tema: {titulo_hablado(pedido.siguiente.titulo)} de {artista}" if es
+              else f"Song: {titulo_hablado(pedido.siguiente.titulo)} by {artista}"]
     cifras: list[str] = []
     if "estacion" in ingredientes:
         lineas.append(f"{'Estación' if es else 'Station'}: {pedido.estacion}")
@@ -100,7 +100,7 @@ def construir_peticion(pedido: Pedido, ingredientes: Sequence[str], hechos: Hech
     if "anterior" in ingredientes and pedido.anterior is not None:
         previo = " y ".join(artistas_del_tag(pedido.anterior.artista)) if es \
             else " and ".join(artistas_del_tag(pedido.anterior.artista))
-        lineas.append(f"{'Tema anterior' if es else 'Previous song'}: {pedido.anterior.titulo} "
+        lineas.append(f"{'Tema anterior' if es else 'Previous song'}: {titulo_hablado(pedido.anterior.titulo)} "
                       f"{'de' if es else 'by'} {previo}")
     if "clima" in ingredientes and hechos.clima is not None:
         lineas.append(f"{'Clima afuera' if es else 'Weather outside'}: {campos_de_voz['grados']}, "
@@ -212,7 +212,7 @@ _ANIOS_EN_PALABRAS = {
 # --- verificación ---
 
 def _oraciones(texto: str) -> list[str]:
-    return [o for o in re.split(r"(?<=[.!?])\s+", texto) if o.strip()]
+    return [o for o in re.split(r"(?<=[.!?])[\"”’»)]*\s+", texto) if o.strip()]
 
 
 def verificar(texto: str, pedido: Pedido, peticion: Peticion, palabras_maximas: int) -> str | None:

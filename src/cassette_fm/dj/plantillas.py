@@ -200,7 +200,7 @@ def redactar(pedido: Pedido, lexico: Lexico, azar: random.Random, palabras_maxim
     dia = _DIAS_ES[momento.weekday()] if es else _DIAS_EN[momento.weekday()]
     campos = {
         "artista": (" y " if es else " and ").join(m(a) for a in _artistas(pedido.siguiente.artista)),
-        "titulo": m(pedido.siguiente.titulo), "estacion": m(pedido.estacion),
+        "titulo": m(titulo_hablado(pedido.siguiente.titulo)), "estacion": m(pedido.estacion),
         "hora": hora, "son": "Es" if hora.startswith("la ") else "Son",
         "son_min": "es" if hora.startswith("la ") else "son",
         "este_momento": _este_momento(momento, es), "este_dia": f"este {dia}" if es else f"this {dia}",
@@ -209,7 +209,7 @@ def redactar(pedido: Pedido, lexico: Lexico, azar: random.Random, palabras_maxim
         campos["album"] = m(pedido.siguiente.album)
     if pedido.anterior is not None:
         campos["artista_ant"] = (" y " if es else " and ").join(m(a) for a in _artistas(pedido.anterior.artista))
-        campos["titulo_ant"] = m(pedido.anterior.titulo)
+        campos["titulo_ant"] = m(titulo_hablado(pedido.anterior.titulo))
     disponibles = ingredientes_disponibles(pedido, hechos)
     if "clima" in disponibles:
         c = hechos.clima
@@ -291,6 +291,15 @@ def cielo_en_palabras(clima, idioma: str) -> str:
 
 def artistas_del_tag(artista: str) -> list[str]:
     return _artistas(artista)
+
+
+_FEAT = re.compile(r"\s*[\(\[]\s*(?:feat|ft|featuring|with)\b[^\)\]]*[\)\]]|\s+[-–—]\s+(?:feat|ft)\b.*$",
+                   re.IGNORECASE)
+
+
+def titulo_hablado(titulo: str) -> str:
+    """El título sin el "(feat. X)": el artista ya lo nombra y repetirlo suena a lista."""
+    return _FEAT.sub("", titulo).strip() or titulo.strip()
 
 
 def momento_en_palabras(momento: datetime, idioma: str) -> str:

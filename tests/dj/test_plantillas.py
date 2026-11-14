@@ -7,7 +7,7 @@ import pytest
 
 from cassette_fm.dj.lexico import Lexico
 from cassette_fm.dj.pedido import Pedido, Tema
-from cassette_fm.dj.plantillas import Redaccion, frase_hora, redactar
+from cassette_fm.dj.plantillas import Redaccion, frase_hora, redactar, titulo_hablado
 from cassette_fm.dj.texto_voz import limpiar
 
 ZONA = timezone(timedelta(hours=-3))
@@ -132,6 +132,30 @@ def test_respeta_palabras_maximas():
     for s in range(100):
         r = redactar(p, Lexico(), random.Random(s), 12)
         assert palabras(r) <= max(12, minimo_global)
+
+
+@pytest.mark.parametrize("titulo, hablado", [
+    ("Remember the Name (feat. Styles of Beyond)", "Remember the Name"),
+    ("Bartier Cardi (feat 21 Savage)", "Bartier Cardi"),
+    ("Hola [ft. Alguien]", "Hola"),
+    ("Dákiti (with Jhay Cortez)", "Dákiti"),
+    ("Song (Featuring Someone Else) (Live)", "Song (Live)"),
+    ("Song - feat. Someone", "Song"),
+    ("(I Can't Get No) Satisfaction", "(I Can't Get No) Satisfaction"),
+    ("Love Tonight (Edit)", "Love Tonight (Edit)"),
+    ("Without Me", "Without Me"),
+])
+def test_titulo_hablado_saca_el_feat(titulo, hablado):
+    assert titulo_hablado(titulo) == hablado
+
+
+def test_las_plantillas_no_repiten_el_feat_del_titulo():
+    p = Pedido(id="x", estacion="Power", idioma="en", voz="v", momento=a(12, 30),
+               anterior=Tema("Fort Minor", "Remember the Name (feat. Styles of Beyond)"),
+               siguiente=Tema("Cardi B & 21 Savage", "Bartier Cardi (feat 21 Savage)"))
+    for s in range(100):
+        r = redactar(p, Lexico(), random.Random(s), 45)
+        assert "feat" not in r.marcado.lower() and "(" not in r.marcado, r.marcado
 
 
 def test_nombres_con_comillas_y_ampersand():
