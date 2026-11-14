@@ -35,6 +35,14 @@ Las voces leían mal nombres en otro idioma ("Daddy Yankee", "Buenos Aires" en i
 Sintetizar ~9 s de audio tarda ~3 s (factor ~0,3). El modelo pesa 326 MB (+28 MB de voces). Hacer el TTS en la PC
 local es viable; el LLM es lo caro.
 
+## Prueba en uso real (parte 1 del DJ)
+
+El 13/11/2026 el usuario escuchó la voz `em_santa` (con "s" argentina) saliendo por el DJ de la radio real, con la
+música bajada: funciona y es entendible, **pero no le encanta la voz**. Kokoro v1.0 solo trae 3 voces en español
+(`ef_dora`, `em_alex`, `em_santa`) y las otras dos ya se habían descartado. Alternativas a evaluar: mezclar voces de
+Kokoro (promediar sus vectores de estilo), `es-MX-JorgeNeural` / `es-US-AlonsoNeural` de edge-tts (les gustaron en las
+pruebas; necesitan internet) u otro modelo. La voz es un dato por estación, así que cambiarla no toca el resto.
+
 ## Pendiente de probar
 
 - Más nombres reales de la biblioteca (artistas, canciones) para ver si el diccionario de idioma por nombre alcanza.
