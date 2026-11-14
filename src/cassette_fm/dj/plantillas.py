@@ -161,7 +161,7 @@ def _variantes_de_dato(hechos: Hechos, idioma: str) -> list[tuple[str, str]]:
 _RECOPILATORIO = re.compile(
     r"\b(?:hits?|greatest|best of|collection|chartshow|compilation|anthology|essentials?|ultimate|"
     r"vol(?:ume)?\b\.?|now that'?s|\blive\b|dj mix|\bmix\b|b2b|sixties|seventies|eighties|nineties|"
-    r"love songs|grandes [eé]xitos|[eé]xitos|lo mejor|colecci[oó]n|antolog[ií]a|en vivo|\d+\s+of the)\b",
+    r"love songs|disc\b|cd\s*\d|grandes [eé]xitos|[eé]xitos|lo mejor|colecci[oó]n|antolog[ií]a|en vivo|\d+\s+of the)\b",
     re.IGNORECASE)
 
 

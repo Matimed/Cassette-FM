@@ -355,6 +355,36 @@ def _ordinal_en(n: int) -> str:
     return f"{nombre} {_ORDINALES_EN[unidad]}" if unidad else nombre[:-1] + "ieth"
 
 
+_SALUDOS = {"en": r"good (?:morning|afternoon|evening)", "es": r"buen(?:os|as)? (?:d[ií]as?|tardes|noches)"}
+_PARTES = {"en": r"this (?:morning|afternoon|evening)|tonight", "es": r"esta (?:mañana|tarde|noche|madrugada)"}
+
+
+def _saludo(momento: datetime, idioma: str) -> str:
+    h = momento.hour
+    if idioma == "es":
+        return "buenos días" if 5 <= h < 12 else "buenas tardes" if 12 <= h < 20 else "buenas noches"
+    return "good morning" if 5 <= h < 12 else "good afternoon" if 12 <= h < 18 else "good evening"
+
+
+def corregir_momento(texto: str, momento: datetime, idioma: str) -> str:
+    """Cambia los saludos y las partes del día que no corresponden a `momento` ("tonight" a las 14 →
+    "this afternoon"): el modelo saluda por costumbre. Lo que está en una marca {idioma:Nombre} no se toca."""
+    idioma = "es" if idioma == "es" else "en"
+    correcto = {"saludo": _saludo(momento, idioma), "parte": momento_en_palabras(momento, idioma)}
+
+    def con_mayuscula(original: str, nuevo: str) -> str:
+        return nuevo[0].upper() + nuevo[1:] if original[0].isupper() else nuevo
+
+    def corregir(trozo: str) -> str:
+        trozo = re.sub(rf"\b(?:{_SALUDOS[idioma]})\b", lambda m: con_mayuscula(m.group(0), correcto["saludo"]),
+                       trozo, flags=re.I)
+        return re.sub(rf"\b(?:{_PARTES[idioma]})\b", lambda m: con_mayuscula(m.group(0), correcto["parte"]),
+                      trozo, flags=re.I)
+
+    return "".join(p if p.startswith("{") and p.endswith("}") else corregir(p)
+                   for p in re.split(r"(\{[^{}]*\})", texto))
+
+
 def numeros_a_palabras(texto: str, idioma: str) -> str:
     """Pasa las cifras a palabras (años 1900–2099, 0–99); ValueError si hay una que no se puede decir.
     Lo que está dentro de una marca {idioma:Nombre} (U2, Blink-182…) no se toca."""

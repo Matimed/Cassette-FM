@@ -490,7 +490,7 @@ def test_varios_artistas_se_unen_con_y(idioma, lang, union):
     ("The Dan Hill Collection", True), ("Frosh Eighties", True), ("All Night Love", False),
     ("Now That's What I Call Music! 45", True), ("Grandes Éxitos", True), ("Lo Mejor de Wisin & Yandel", True),
     ("Seth Troxler b2b Skream at fabric (DJ Mix)", True), ("Hunting High and Low", False), ("Look Sharp!", False),
-    ("La historia de el dúo, vol. 1", True), ("Slip of the Tongue", False),
+    ("La historia de el dúo, vol. 1", True), ("Slip of the Tongue", False), ("Tm Century Gold disc 905", True),
 ])
 def test_un_album_recopilatorio_no_es_ingrediente(album, recopilatorio):
     from cassette_fm.dj.plantillas import es_recopilatorio, ingredientes_disponibles

@@ -11,7 +11,7 @@ from cassette_fm.dj.hechos.wikipedia import Resumen
 from cassette_fm.dj.lexico import Lexico
 from cassette_fm.dj.pedido import Pedido, Tema
 from cassette_fm.dj.redactor_llm import (campos_de_voz, construir_peticion, limpiar_salida, marcar_nombres,
-                                         numeros_a_palabras, salvar, verificar)
+                                         corregir_momento, numeros_a_palabras, salvar, verificar)
 from cassette_fm.dj.texto_voz import preparar
 
 ZONA = timezone(timedelta(hours=-3))
@@ -543,3 +543,18 @@ def test_el_momento_se_dice_como_dia_y_parte_del_dia():
     assert "Momento: sábado de madrugada" in es
     p = Pedido(**{**pedido("en").__dict__, "momento": datetime(2026, 11, 14, 13, 20, tzinfo=ZONA)})
     assert "Moment: Saturday afternoon" in peticion(["cancion", "momento"], p=p).usuario
+
+
+@pytest.mark.parametrize("hora, texto, idioma, esperado", [
+    (14, "Good morning listeners, tonight we play {en-us:Walk Of Life}.", "en",
+     "Good afternoon listeners, this afternoon we play {en-us:Walk Of Life}."),
+    (14, "We play {en-us:Love Tonight} by {en-us:Shouse} tonight.", "en",
+     "We play {en-us:Love Tonight} by {en-us:Shouse} this afternoon."),
+    (22, "Good afternoon, this evening we have a song.", "en", "Good evening, tonight we have a song."),
+    (9, "Tonight we play a song.", "en", "This morning we play a song."),
+    (14, "Buenas noches, esta noche suena {es:Ese Amor}.", "es", "Buenas tardes, esta tarde suena {es:Ese Amor}."),
+    (3, "Buen día, esta mañana suena un tema.", "es", "Buenas noches, esta madrugada suena un tema."),
+    (14, "Buenas tardes, esta tarde suena un tema.", "es", "Buenas tardes, esta tarde suena un tema."),
+])
+def test_corregir_momento_cambia_saludos_y_partes_del_dia_equivocadas(hora, texto, idioma, esperado):
+    assert corregir_momento(texto, datetime(2026, 11, 14, hora, 0, tzinfo=ZONA), idioma) == esperado

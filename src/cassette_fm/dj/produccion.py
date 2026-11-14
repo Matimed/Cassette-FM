@@ -16,7 +16,8 @@ from cassette_fm.dj.lexico import Lexico
 from cassette_fm.dj.pedido import Pedido
 from cassette_fm.dj.plantillas import ingredientes_disponibles, redactar
 from cassette_fm.dj.redactor_llm import (campos_de_voz, construir_peticion, limpiar_salida, marcar_nombres,
-                                         numeros_a_palabras, salvar, verificar)
+                                         corregir_momento, numeros_a_palabras, salvar,
+                                         verificar)
 from cassette_fm.dj.selector import elegir_ingredientes
 from cassette_fm.dj.texto_voz import preparar, texto_para_piper
 
@@ -171,6 +172,7 @@ class Productor:
             if motivo is None:
                 try:       # primero se marcan los nombres: los números que llevan (U2, Blink-182) no se convierten
                     marcado = numeros_a_palabras(marcar_nombres(texto, pedido, hechos, self._lexico), pedido.idioma)
+                    marcado = corregir_momento(marcado, pedido.momento.astimezone(self._zona), pedido.idioma)
                 except ValueError as e:
                     motivo = str(e)
             if motivo is not None:

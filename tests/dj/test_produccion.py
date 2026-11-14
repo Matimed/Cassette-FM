@@ -566,3 +566,10 @@ def test_la_velocidad_de_la_voz_se_aprende_con_cada_clip(montaje, hacer_pedido):
     ultimo = [g for g in guiones.ultimos(10) if g.get("fuente") == "llm"][-1]
     tope = int(ultimo["sistema"].split(" palabras")[0].split()[-1])
     assert tope < 40
+
+
+def test_el_llm_que_saluda_con_el_momento_equivocado_se_corrige(montaje, hacer_pedido):
+    mala = "Buenos días, esta mañana suena Waiting for a Girl Like You de Foreigner para todos ustedes."
+    productor, _, _, _, _ = llm_listo(montaje, mala)
+    r = productor.producir(hacer_pedido("cm1"))             # el pedido es a las 21:47
+    assert r.texto.startswith("Buenas noches") and "esta noche suena" in r.texto
