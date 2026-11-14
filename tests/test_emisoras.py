@@ -251,9 +251,9 @@ class CatalogoSpotifyFalso:
         self.respuestas = respuestas
         self.pedidas = []
 
-    def pistas(self, playlist):
-        self.pedidas.append(playlist)
-        r = self.respuestas[playlist]
+    def pistas(self, playlist, solo_cache=False):
+        self.pedidas.append((playlist, solo_cache) if solo_cache else playlist)
+        r = self.respuestas[(playlist, "cache")] if solo_cache else self.respuestas[playlist]
         if isinstance(r, Exception):
             raise r
         return r
@@ -314,3 +314,20 @@ def test_catalogo_dj_de_la_emisora_spotify_disponible(tmp_path, crear_mp3):
     cat, _ = montar_spotify(tmp_path, crear_mp3, {PLAYLIST: pistas_spotify(1), OTRA: pistas_spotify(1)})
     cat.escanear()
     assert cat.configuracion_dj("Sing").voz == "af_heart"
+
+
+def test_sin_red_las_demas_playlists_salen_de_la_cache_sin_esperar(tmp_path, crear_mp3, caplog):
+    from cassette_fm.spotify.api import ErrorSpotify
+    cat, falso = montar_spotify(tmp_path, crear_mp3, {PLAYLIST: ErrorSpotify("Spotify no responde (timed out)"),
+                                                      (OTRA, "cache"): pistas_spotify(3)}, reproduce=True)
+    with caplog.at_level(logging.WARNING, logger="cassette_fm"):
+        assert [e.nombre for e in cat.escanear()] == ["A", "Ajena"]
+    assert falso.pedidas == [PLAYLIST, (OTRA, True)]
+
+
+def test_un_error_inesperado_de_spotify_no_tumba_a_las_locales(tmp_path, crear_mp3, caplog):
+    cat, _ = montar_spotify(tmp_path, crear_mp3, {PLAYLIST: OSError("disco lleno"), OTRA: pistas_spotify(3)},
+                            reproduce=True)
+    with caplog.at_level(logging.ERROR, logger="cassette_fm"):
+        assert [e.nombre for e in cat.escanear()] == ["A", "Ajena"]
+    assert "Sing" in caplog.text

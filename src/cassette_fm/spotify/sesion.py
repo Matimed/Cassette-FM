@@ -5,7 +5,6 @@ import base64
 import hashlib
 import http.client
 import json
-import os
 import secrets
 import threading
 import time
@@ -14,10 +13,11 @@ import urllib.parse
 import urllib.request
 import webbrowser
 from collections.abc import Callable
-from http.server import BaseHTTPRequestHandler, HTTPServer
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
 from cassette_fm.config import ConfigSpotify
+from cassette_fm.spotify.archivos import bloqueado, escribir_atomico
 
 ESCOPOS = ("user-read-playback-state user-modify-playback-state playlist-read-private "
            "playlist-read-collaborative")
@@ -38,16 +38,12 @@ class Sesion:
     def guardar(self, respuesta: dict) -> None:
         datos = {"access_token": respuesta["access_token"], "refresh_token": respuesta.get("refresh_token"),
                  "expira": self._reloj() + float(respuesta.get("expires_in", 3600))}
-        self._archivo.parent.mkdir(parents=True, exist_ok=True)
-        tmp = self._archivo.with_name(self._archivo.name + ".tmp")
-        fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
-        with os.fdopen(fd, "w", encoding="utf-8") as f:
-            json.dump(datos, f)
-        os.replace(tmp, self._archivo)
+        escribir_atomico(self._archivo, json.dumps(datos), modo=0o600)
 
     def token(self, forzar: bool = False) -> str:
-        """El access token vigente (lo refresca si está por vencer o si `forzar`)."""
-        with self._lock:
+        """El access token vigente (lo refresca si está por vencer o si `forzar`). El servicio y la CLI pueden
+        llamarlo a la vez: el bloqueo entre procesos hace que refresque uno solo y el otro lea lo que quedó."""
+        with self._lock, bloqueado(self._archivo):
             try:
                 datos = json.loads(self._archivo.read_text(encoding="utf-8"))
                 acceso, refresh, expira = datos["access_token"], datos.get("refresh_token"), float(datos["expira"])
@@ -93,6 +89,8 @@ def login(sesion: Sesion, config: ConfigSpotify, abrir: Callable[[str], object] 
     listo = threading.Event()
 
     class Callback(BaseHTTPRequestHandler):
+        timeout = 5       # el navegador abre conexiones de reserva que no mandan nada: no esperarlas para siempre
+
         def log_message(self, *a):
             pass
 
@@ -116,7 +114,8 @@ def login(sesion: Sesion, config: ConfigSpotify, abrir: Callable[[str], object] 
                 listo.set()
 
     try:
-        servidor = HTTPServer(("127.0.0.1", config.puerto_login), Callback)
+        servidor = ThreadingHTTPServer(("127.0.0.1", config.puerto_login), Callback)
+        servidor.daemon_threads = True
     except OSError:
         raise ErrorSesion(f"el puerto {config.puerto_login} está ocupado: cerrá lo que lo use (¿otro login "
                           f"abierto?) y probá de nuevo") from None

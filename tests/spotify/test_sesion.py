@@ -1,6 +1,7 @@
 import json
 import socket
 import threading
+import time
 import urllib.request
 from urllib.parse import parse_qs, urlparse
 
@@ -144,3 +145,70 @@ def test_spotify_caido_es_error_de_sesion_sin_tokens(tmp_path):
     with pytest.raises(ErrorSesion, match="no responde") as e:
         Sesion(archivo, cfg, reloj=lambda: 10.0).token()
     assert "R1" not in str(e.value)
+
+
+def test_una_conexion_muda_del_navegador_no_traba_el_login(tmp_path, servidor_http):
+    """Chrome abre conexiones de reserva al puerto y no manda nada: el callback real tiene que atenderse igual."""
+    servidor_http.responder("/api/token", {"access_token": "A1", "refresh_token": "R1", "expires_in": 3600})
+    cfg = configurar(servidor_http)
+    mudas = []
+
+    def abrir(url):
+        muda = socket.create_connection(("127.0.0.1", cfg.puerto_login))
+        mudas.append(muda)
+        navegador()(url)
+
+    t0 = time.monotonic()
+    login(Sesion(tmp_path / "t.json", cfg), cfg, abrir=abrir, timeout=5)
+    assert time.monotonic() - t0 < 4
+    mudas[0].close()
+
+
+def test_con_una_conexion_muda_y_sin_respuesta_vence_a_tiempo(tmp_path, servidor_http):
+    cfg = configurar(servidor_http)
+    mudas = []
+    t0 = time.monotonic()
+    with pytest.raises(ErrorSesion, match="no llegó"):
+        login(Sesion(tmp_path / "t.json", cfg), cfg,
+              abrir=lambda url: mudas.append(socket.create_connection(("127.0.0.1", cfg.puerto_login))), timeout=1)
+    assert time.monotonic() - t0 < 4
+    mudas[0].close()
+
+
+def correr_a_la_vez(*funciones):
+    errores = []
+
+    def envolver(f):
+        try:
+            f()
+        except Exception as e:      # noqa: BLE001
+            errores.append(e)
+    hilos = [threading.Thread(target=envolver, args=(f,)) for f in funciones]
+    for h in hilos:
+        h.start()
+    for h in hilos:
+        h.join(20)
+    return errores
+
+
+def test_escrituras_simultaneas_del_token_no_chocan(tmp_path, servidor_http):
+    archivo = tmp_path / "t.json"
+    cfg = configurar(servidor_http)
+    a, b = Sesion(archivo, cfg), Sesion(archivo, cfg)       # como el servicio y la CLI
+
+    def muchas(s, n):
+        return lambda: [s.guardar({"access_token": f"A{n}", "refresh_token": "R", "expires_in": 3600}) for _ in range(300)]
+    assert correr_a_la_vez(muchas(a, 1), muchas(b, 2)) == []
+    assert json.loads(archivo.read_text())["access_token"] in ("A1", "A2")
+    assert [p.name for p in tmp_path.iterdir()] == ["t.json"]
+
+
+def test_dos_refrescos_a_la_vez_piden_un_solo_token(tmp_path, servidor_http):
+    archivo = tmp_path / "t.json"
+    escribir_token(archivo, expira=0)
+    servidor_http.responder("/api/token", {"access_token": "A2", "refresh_token": "R2", "expires_in": 3600}, demora=0.5)
+    cfg = configurar(servidor_http)
+    a, b = Sesion(archivo, cfg), Sesion(archivo, cfg)
+    vistos = []
+    assert correr_a_la_vez(lambda: vistos.append(a.token()), lambda: vistos.append(b.token())) == []
+    assert vistos == ["A2", "A2"] and len(servidor_http.cuerpos) == 1

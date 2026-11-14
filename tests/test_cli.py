@@ -372,3 +372,13 @@ def test_spotify_estado_sin_sesion_sale_con_1(tmp_path, monkeypatch, capsys):
     _rutas_tmp(monkeypatch, tmp_path)
     assert main(["spotify", "estado"]) == 1
     assert "cassette spotify login" in capsys.readouterr().err
+
+
+def test_rescan_espera_mas_que_los_demas_comandos(monkeypatch):
+    from cassette_fm import cli
+    vistos = []
+    monkeypatch.setattr(cli, "_llamar", lambda puerto, metodo, ruta, cuerpo=None, timeout=10: vistos.append(
+        (ruta, timeout)) or {"encendida": False, "estacion": None, "volumen": 0, "estaciones": []})
+    main(["rescan"])
+    main(["next"])
+    assert vistos[0] == ("/rescan", 120) and vistos[1][1] == 10

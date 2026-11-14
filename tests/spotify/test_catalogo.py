@@ -109,3 +109,49 @@ def test_playlist_ajena_dice_que_hacer(servidor_http, tmp_path):
 def test_cache_corrupta_se_ignora(servidor_http, tmp_path):
     (tmp_path / "spotify.json").write_text("{basura")
     assert len(montar(servidor_http, tmp_path, [[item(1)]]).pistas("P")) == 1
+
+
+def test_los_temas_se_piden_con_market_para_que_spotify_marque_los_no_disponibles(servidor_http, tmp_path):
+    montar(servidor_http, tmp_path, [[item(1)]]).pistas("P")
+    assert "market=from_token" in pedidos_de_items(servidor_http)[0]
+
+
+def test_solo_cache_no_toca_spotify(servidor_http, tmp_path):
+    cat = montar(servidor_http, tmp_path, [[item(1)]])
+    cat.pistas("P")
+    servidor_http.pedidos.clear()
+    assert [p.cancion for p in cat.pistas("P", solo_cache=True)] == ["Tema 1"] and servidor_http.pedidos == []
+    with pytest.raises(ErrorSpotify, match="sin conexión"):
+        cat.pistas("OTRA", solo_cache=True)
+
+
+def test_sin_red_queda_marcado_aunque_se_use_la_cache(tmp_path):
+    from cassette_fm.spotify.api import ClienteSpotify as C
+    import socket as _s
+    with _s.socket() as x:
+        x.bind(("127.0.0.1", 0))
+        puerto = x.getsockname()[1]
+    cache = tmp_path / "spotify.json"
+    cache.write_text(json.dumps({"P": {"snapshot_id": "S1", "nombre": "Sing", "pistas": [
+        {"uri": "spotify:track:1", "duracion": 1.0, "titulo": "A - T", "artista": "A", "cancion": "T",
+         "album": None, "isrc": None}]}}))
+    cat = CatalogoSpotify(C(SesionFalsa(), ConfigSpotify(api_url=f"http://127.0.0.1:{puerto}/v1", timeout_segundos=1.0),
+                            dormir=lambda s: None), cache)
+    assert len(cat.pistas("P")) == 1 and cat.sin_red is True
+
+
+def test_escrituras_simultaneas_de_la_cache_no_chocan(tmp_path):
+    import threading
+    a, b = CatalogoSpotify(None, tmp_path / "spotify.json"), CatalogoSpotify(None, tmp_path / "spotify.json")
+    errores = []
+
+    def muchas(c):
+        try:
+            for i in range(300):
+                c._guardar_cache({"P": {"snapshot_id": str(i), "nombre": "x", "pistas": []}})
+        except Exception as e:      # noqa: BLE001
+            errores.append(e)
+    hilos = [threading.Thread(target=muchas, args=(c,)) for c in (a, b)]
+    [h.start() for h in hilos]
+    [h.join(20) for h in hilos]
+    assert errores == [] and [p.name for p in tmp_path.iterdir()] == ["spotify.json"]

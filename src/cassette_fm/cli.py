@@ -29,13 +29,13 @@ def _linea_estado(estado: dict) -> str:
     return f"▶ {estado['estacion']}{pista} {vol}"
 
 
-def _llamar(puerto: int, metodo: str, ruta: str, cuerpo: dict | None = None):
+def _llamar(puerto: int, metodo: str, ruta: str, cuerpo: dict | None = None, timeout: float = 10):
     datos = json.dumps(cuerpo).encode("utf-8") if cuerpo is not None else (
         b"" if metodo == "POST" else None)
     req = urllib.request.Request(f"http://127.0.0.1:{puerto}{ruta}", data=datos, method=metodo,
                                  headers={"Content-Type": "application/json"})
     try:
-        with urllib.request.urlopen(req, timeout=10) as r:
+        with urllib.request.urlopen(req, timeout=timeout) as r:
             return json.loads(r.read())
     except urllib.error.HTTPError as e:
         try:
@@ -161,7 +161,9 @@ def _ejecutar(args, puerto: int) -> None:
             raise _ErrorCli(f"volumen inválido: {v!r} (usá N, +N o -N)")
         print(_linea_estado(_llamar(puerto, "POST", "/volumen", cuerpo)))
     else:
-        print(_linea_estado(_llamar(puerto, "POST", f"/{ACCIONES[args.comando]}")))
+        # el rescan relee carpetas y playlists de Spotify (cada una con su timeout): espera bastante más
+        espera = 120 if args.comando == "rescan" else 10
+        print(_linea_estado(_llamar(puerto, "POST", f"/{ACCIONES[args.comando]}", timeout=espera)))
 
 
 def _instalar_atajos() -> int:

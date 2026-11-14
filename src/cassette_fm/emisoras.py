@@ -167,6 +167,7 @@ class Catalogo:
         locales = {e.nombre: e for e in biblioteca.escanear_carpetas(
             [(e.nombre, Path(e.fuente.valor)) for e in emisoras if e.fuente.tipo == "carpeta"], self._rutas.cache)}
         estaciones = []
+        self._sin_red = False      # tras el primer timeout, las demás playlists salen de la caché sin esperar
         for e in emisoras:
             if e.fuente.tipo == "carpeta":
                 if e.nombre in locales:
@@ -190,9 +191,15 @@ class Catalogo:
             _log.warning("la emisora %r es de Spotify y no hay catálogo de Spotify: se omite", e.nombre)
             return None
         try:
-            pistas = self._spotify.pistas(e.fuente.valor)
+            pistas = (self._spotify.pistas(e.fuente.valor, solo_cache=True) if self._sin_red
+                      else self._spotify.pistas(e.fuente.valor))
+            self._sin_red = self._sin_red or getattr(self._spotify, "sin_red", False)
         except ErrorSpotify as error:
+            self._sin_red = self._sin_red or error.codigo is None
             _log.warning("la emisora %r: %s", e.nombre, error)
+            return None
+        except Exception:          # nada de Spotify puede tumbar el escaneo de las demás emisoras
+            _log.exception("la emisora %r: error inesperado con Spotify", e.nombre)
             return None
         if not pistas:
             _log.warning("la playlist de %r no tiene temas que se puedan escuchar", e.nombre)

@@ -1,12 +1,12 @@
 """Playlist de Spotify → pistas de una emisora, con caché por `snapshot_id` (si no cambió, no se baja de nuevo)."""
 import json
 import logging
-import os
 import threading
 from pathlib import Path
 
 from cassette_fm.biblioteca import Pista
 from cassette_fm.spotify.api import ClienteSpotify, ErrorSpotify
+from cassette_fm.spotify.archivos import escribir_atomico
 
 _log = logging.getLogger("cassette_fm")
 
@@ -49,12 +49,19 @@ class CatalogoSpotify:
         self._cliente = cliente
         self._archivo = Path(archivo_cache)
         self._lock = threading.Lock()
+        self.sin_red = False      # la última consulta no llegó a Spotify (red caída o timeout)
 
-    def pistas(self, playlist: str) -> tuple[Pista, ...]:
-        """Los temas de la playlist en su orden. Si Spotify falla y hay caché, se usa la caché (con aviso)."""
+    def pistas(self, playlist: str, solo_cache: bool = False) -> tuple[Pista, ...]:
+        """Los temas de la playlist en su orden. Si Spotify falla y hay caché, se usa la caché (con aviso).
+        `solo_cache`: no consultar a Spotify (ya se sabe que no hay red)."""
         with self._lock:
+            self.sin_red = False
             cache = self._leer_cache()
             guardada = cache.get(playlist)
+            if solo_cache:
+                if not guardada:
+                    raise ErrorSpotify("sin conexión con Spotify y sin temas guardados de esta playlist")
+                return tuple(_de_dict(d) for d in guardada["pistas"])
             try:
                 meta = self._cliente.get(f"/playlists/{playlist}", {"fields": "snapshot_id,name"})
                 if guardada and guardada.get("snapshot_id") == meta.get("snapshot_id"):
@@ -62,6 +69,7 @@ class CatalogoSpotify:
                 nombre = meta.get("name") if isinstance(meta.get("name"), str) else playlist
                 pistas = self._bajar(playlist, nombre)
             except ErrorSpotify as e:
+                self.sin_red = e.codigo is None
                 if guardada:
                     _log.warning("Spotify no respondió (%s): la emisora usa los temas guardados de la playlist %s",
                                  e, guardada.get("nombre", playlist))
@@ -80,7 +88,7 @@ class CatalogoSpotify:
     def _bajar(self, playlist: str, nombre: str) -> tuple[Pista, ...]:
         pistas = []
         try:
-            for pagina in self._cliente.paginas(f"/playlists/{playlist}/items", {"limit": 50}):
+            for pagina in self._cliente.paginas(f"/playlists/{playlist}/items", {"limit": 50, "market": "from_token"}):
                 for entrada in pagina.get("items") or []:
                     p = pista_de(entrada)
                     if p is not None:
@@ -109,7 +117,4 @@ class CatalogoSpotify:
         return validas
 
     def _guardar_cache(self, cache: dict) -> None:
-        self._archivo.parent.mkdir(parents=True, exist_ok=True)
-        tmp = self._archivo.with_name(self._archivo.name + ".tmp")
-        tmp.write_text(json.dumps(cache, ensure_ascii=False), encoding="utf-8")
-        os.replace(tmp, self._archivo)
+        escribir_atomico(self._archivo, json.dumps(cache, ensure_ascii=False))
