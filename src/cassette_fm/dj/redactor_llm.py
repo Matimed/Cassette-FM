@@ -1,4 +1,5 @@
 """Prompt, limpieza, verificación y marcado de la frase que escribe el LLM (reglas del diseño de la Etapa 3)."""
+import difflib
 import re
 import unicodedata
 from collections.abc import Mapping, Sequence
@@ -11,7 +12,7 @@ from cassette_fm.dj.hechos.paises import nombre_de_pais
 from cassette_fm.dj.lexico import Lexico
 from cassette_fm.dj.pedido import Pedido
 from cassette_fm.dj.plantillas import (artistas_del_tag, cielo_en_palabras, frase_hora, grados_en_palabras,
-                                       momento_en_palabras, titulo_hablado)
+                                       momento_en_palabras)
 from cassette_fm.dj.texto_voz import marcar
 
 _DIAS = {"es": ["lunes", "martes", "miércoles", "jueves", "viernes", "sábado", "domingo"],
@@ -85,8 +86,8 @@ def construir_peticion(pedido: Pedido, ingredientes: Sequence[str], hechos: Hech
     idioma = _idioma(pedido)
     es = idioma == "es"
     artista = (" y " if es else " and ").join(artistas_del_tag(pedido.siguiente.artista))
-    lineas = [f"Tema: {titulo_hablado(pedido.siguiente.titulo)} de {artista}" if es
-              else f"Song: {titulo_hablado(pedido.siguiente.titulo)} by {artista}"]
+    lineas = [f"Tema: {_titulo_limpio(pedido.siguiente.titulo)} de {artista}" if es
+              else f"Song: {_titulo_limpio(pedido.siguiente.titulo)} by {artista}"]
     cifras: list[str] = []
     if "estacion" in ingredientes:
         lineas.append(f"{'Estación' if es else 'Station'}: {pedido.estacion}")
@@ -100,7 +101,7 @@ def construir_peticion(pedido: Pedido, ingredientes: Sequence[str], hechos: Hech
     if "anterior" in ingredientes and pedido.anterior is not None:
         previo = " y ".join(artistas_del_tag(pedido.anterior.artista)) if es \
             else " and ".join(artistas_del_tag(pedido.anterior.artista))
-        lineas.append(f"{'Tema anterior' if es else 'Previous song'}: {titulo_hablado(pedido.anterior.titulo)} "
+        lineas.append(f"{'Tema anterior' if es else 'Previous song'}: {_titulo_limpio(pedido.anterior.titulo)} "
                       f"{'de' if es else 'by'} {previo}")
     if "clima" in ingredientes and hechos.clima is not None:
         lineas.append(f"{'Clima afuera' if es else 'Weather outside'}: {campos_de_voz['grados']}, "
@@ -158,9 +159,16 @@ _INTERJECCION = re.compile(r"^[¡¿]?(?:claro|por supuesto|dale|listo|sure|of co
                            r"[!.,¡]*\s*", re.I)
 
 
+def _es_preambulo(parrafo: str) -> bool:
+    """Una línea corta de cortesía antes del texto ("Here's the announcement:", "Okay, here we go!")."""
+    return len(parrafo.split()) <= 10 and (parrafo.endswith(":") or bool(_INTERJECCION.match(parrafo)))
+
+
 def limpiar_salida(crudo: str) -> str:
     texto = re.sub(r"```[^\n]*", "", crudo or "")
     parrafos = [p.strip() for p in re.split(r"\n\s*\n", texto) if p.strip()]
+    while len(parrafos) > 1 and _es_preambulo(parrafos[0]):
+        parrafos = parrafos[1:]                  # "Okay, here's the announcement:" va en un párrafo aparte
     if not parrafos:
         return ""
     lineas = [ln.strip() for ln in parrafos[0].splitlines() if ln.strip()]
@@ -228,8 +236,8 @@ def verificar(texto: str, pedido: Pedido, peticion: Peticion, palabras_maximas: 
     if re.search(r"https?://|www\.|[@#]|\b[\w-]+\.(?:org|com|net|ar|io|fm|es|co|uk|tv|me|info)\b", texto, re.I):
         return "tiene enlaces o etiquetas"
     plano = _norm(texto)
-    primer_artista = artistas_del_tag(pedido.siguiente.artista)[0]
-    if _norm(_titulo_limpio(pedido.siguiente.titulo)) not in plano or _norm(primer_artista) not in plano:
+    artistas = artistas_del_tag(pedido.siguiente.artista)
+    if _norm(_titulo_limpio(pedido.siguiente.titulo)) not in plano or not any(_norm(a) in plano for a in artistas):
         return "no nombra el tema o el artista"
     idioma = _idioma(pedido)
     resto = _sin_nombres(texto, pedido)                    # lo que dijo el LLM fuera de los nombres del pedido
@@ -265,7 +273,8 @@ def verificar(texto: str, pedido: Pedido, peticion: Peticion, palabras_maximas: 
             if i == 0 or not palabra[0].isupper() or len(palabra) == 1:
                 continue    # la mayúscula del arranque de una oración no indica un nombre
             partes = [p for p in re.split(r"['’-]", _sin_acentos(palabra)) if p]
-            if not all(p in vocabulario or len(p) == 1 for p in partes):
+            if not all(p in vocabulario or len(p) == 1 or difflib.get_close_matches(p, vocabulario, 1, 0.85)
+                       for p in partes):
                 return f"nombre propio que no está en los hechos: {palabra}"
     if len(_oraciones(texto)) > 4:
         return "demasiadas oraciones"

@@ -66,6 +66,22 @@ def test_el_prompt_pone_la_personalidad_y_el_idioma():
     assert "Tono:" in es.sistema and "Tono:" not in peticion(["cancion"]).sistema
 
 
+def test_alcanza_con_nombrar_a_uno_de_los_artistas():
+    en = pedido("en", siguiente=("Hilight Tribe, Vini Vici", "Free Tibet - Vini Vici Remix"))
+    texto = "Now playing Free Tibet by Highlight Tribe and Vini Vici, an incredible journey."
+    pet = construir_peticion(en, ["cancion"], HECHOS, campos_de_voz(en, HECHOS), 45)
+    assert verificar(texto, en, pet, 45) is None
+    assert "tema o el artista" in verificar("Now playing Free Tibet by somebody else entirely.", en, pet, 45)
+
+
+def test_el_prompt_da_el_titulo_sin_sufijos_de_version():
+    p = pedido("en", siguiente=("Ellie Goulding", "Lights - Single Version"), anterior=True)
+    p = Pedido(**{**p.__dict__, "anterior": Tema("Robin Schulz", "Prayer in C - Robin Schulz Radio Edit")})
+    u = peticion(["cancion", "anterior"], p=p).usuario
+    assert "Song: Lights by Ellie Goulding" in u and "Previous song: Prayer in C by Robin Schulz" in u
+    assert "Version" not in u and "Radio Edit" not in u
+
+
 def test_el_prompt_no_lleva_el_feat_del_titulo():
     p = pedido(siguiente=("Cardi B & 21 Savage", "Bartier Cardi (feat 21 Savage)"))
     u = peticion(["cancion", "anterior"], p=p).usuario
@@ -121,6 +137,13 @@ def test_permitido_incluye_nombres_hechos_y_las_cifras():
     ('"Ahora suena Take On Me."', "Ahora suena Take On Me."),
     ("**Ahora** suena _Take On Me_ de a-ha.", "Ahora suena Take On Me de a-ha."),
     ("# Intervención\nAhora suena Take On Me.", "Ahora suena Take On Me."),
+    ("Okay, here’s the announcement:\n\n“We’re kicking things off. It’s Take On Me by a-ha.”",
+     "We’re kicking things off. It’s Take On Me by a-ha."),
+    ("Okay, here we go!\n\n“That was Prayer in C. Now, Take On Me.”", "That was Prayer in C. Now, Take On Me."),
+    ("Here’s the announcement for Power F.M.:\n\n“Get ready to move.”\n\nLet me know if you want changes.",
+     "Get ready to move."),
+    ("Aquí tenés la intervención:\n\nAhora suena Take On Me de a-ha.", "Ahora suena Take On Me de a-ha."),
+    ("Claro, acá va:\n\nAhora suena Take On Me de a-ha.\n\nSi querés otra, decime.", "Ahora suena Take On Me de a-ha."),
     ("Ahora suena Take On Me 🎶 de a-ha 🔥.", "Ahora suena Take On Me de a-ha."),
     ("Ahora suena Take On Me.\n\nY seguimos con más música.", "Ahora suena Take On Me."),
     ("Here is the announcement:\nNow playing Take On Me.", "Now playing Take On Me."),
