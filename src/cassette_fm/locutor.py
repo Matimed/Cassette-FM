@@ -93,7 +93,7 @@ class Locutor:
             cfg = self._configuracion(estacion)
             ahora = self._reloj()
             for i in self._registro.candidatas(estacion):
-                if (i.pista_destino == str(pista.ruta) and i.id not in self._reproducidas
+                if (i.pista_destino == pista.clave and i.id not in self._reproducidas
                         and abs(ahora - (i.inicio - cfg.retraso_voz_segundos)) <= cfg.tolerancia_desfase_segundos):
                     self._reproducidas.add(i.id)     # evita dispararla otra vez en esta sintonía
                     sesion = self._sesion

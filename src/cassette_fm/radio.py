@@ -286,11 +286,11 @@ class Radio:
                         continue
                     try:
                         self._dj.registrar(Intervencion(uuid.uuid4().hex, estacion.nombre, inicio, duracion,
-                                                        clip, "(clip de prueba)", str(pista.ruta)))
+                                                        clip, "(clip de prueba)", pista.clave))
                     except ValueError:
                         continue     # ese hueco ya está ocupado
                     return {"estacion": estacion.nombre, "inicio": inicio, "duracion": duracion,
-                            "pista_destino": str(pista.ruta), "en_segundos": round(inicio - ahora, 1)}
+                            "pista_destino": pista.clave, "en_segundos": round(inicio - ahora, 1)}
                 raise ValueError("no hay un hueco libre en las próximas transiciones")
             except BaseException:
                 clip.unlink(missing_ok=True)

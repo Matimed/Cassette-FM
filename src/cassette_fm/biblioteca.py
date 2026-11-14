@@ -23,6 +23,11 @@ class Pista:
     album: str | None = None
     isrc: str | None = None
 
+    @property
+    def clave(self) -> str:
+        """Identidad de la pista en la agenda, el planificador y el locutor (para las locales, su ruta)."""
+        return str(self.ruta)
+
 
 @dataclass(frozen=True)
 class Estacion:
@@ -143,7 +148,7 @@ def escanear(raiz: Path, cache: Path | None = None) -> list[Estacion]:
         pistas = [p for r in _archivos_de_audio(carpeta)
                   if (p := _pista_con_cache(r, previa, nueva)) is not None]
         if pistas:
-            pistas.sort(key=lambda p: str(p.ruta))
+            pistas.sort(key=lambda p: p.clave)
             estaciones.append(Estacion(carpeta.name, tuple(pistas)))
     estaciones.sort(key=lambda e: clave_orden(e.nombre))
     _guardar_cache(cache, nueva)

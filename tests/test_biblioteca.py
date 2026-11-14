@@ -184,3 +184,8 @@ def test_una_entrada_de_cache_en_formato_viejo_se_vuelve_a_leer(tmp_path, crear_
     pista = escanear(raiz, cache)[0].pistas[0]
     assert (pista.artista, pista.cancion) == ("Artista", "Tema")
     assert "artista" in json.loads(cache.read_text())[str(a)]
+
+
+def test_la_clave_de_una_pista_local_es_su_ruta(tmp_path, crear_mp3):
+    p = leer_pista(crear_mp3(tmp_path / "x.mp3", 2, titulo="T", artista="A"))
+    assert p.clave == str(tmp_path / "x.mp3")

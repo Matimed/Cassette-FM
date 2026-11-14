@@ -18,7 +18,7 @@ class Intervencion:
     duracion: float
     audio: Path
     texto: str
-    pista_destino: str     # str(ruta) del tema que arranca justo antes de la voz
+    pista_destino: str     # clave (Pista.clave) del tema que arranca justo antes de la voz
 
     @property
     def fin(self) -> float:

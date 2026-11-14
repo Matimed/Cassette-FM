@@ -38,7 +38,7 @@ class _Trabajo:
 
 def _firma(estacion: Estacion) -> str:
     """Resume la agenda de la estación: si cambia, las intervenciones reservadas ya no caen donde deben."""
-    texto = json.dumps([(str(p.ruta), p.duracion) for p in estacion.pistas], ensure_ascii=False)
+    texto = json.dumps([(p.clave, p.duracion) for p in estacion.pistas], ensure_ascii=False)
     return hashlib.sha1(texto.encode("utf-8")).hexdigest()
 
 
@@ -137,7 +137,7 @@ class Planificador:
                 raise ValueError(str(e)) from None
             with self._lock:
                 self._trabajo = _Trabajo(id_, estacion.nombre, hueco.inicio_tema, hueco.inicio_voz,
-                                         str(hueco.pista.ruta), ahora, cfg.duracion_maxima_segundos)
+                                         hueco.pista.clave, ahora, cfg.duracion_maxima_segundos)
                 self._guardar()
                 self._no_antes_de = 0.0       # un pedido manual no hereda esperas de caídas anteriores
                 self._espera_trabajo = 0.0
@@ -343,7 +343,7 @@ class Planificador:
                 self._a_cancelar.append(id_)
                 return
             self._trabajo = _Trabajo(id_, estacion.nombre, hueco.inicio_tema, hueco.inicio_voz,
-                                     str(hueco.pista.ruta), ahora, cfg.duracion_maxima_segundos)
+                                     hueco.pista.clave, ahora, cfg.duracion_maxima_segundos)
             self._guardar()
 
     # --- fallos y esperas ---

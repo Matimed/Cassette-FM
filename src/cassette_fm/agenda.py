@@ -17,7 +17,7 @@ def _mezcla(base: list[Pista], nombre: str, k: int) -> list[Pista]:
 
 
 def orden_ciclo(estacion: Estacion, k: int) -> list[Pista]:
-    base = sorted(estacion.pistas, key=lambda p: str(p.ruta))
+    base = sorted(estacion.pistas, key=lambda p: p.clave)
     if len(base) <= 2:
         return base
     orden = _mezcla(base, estacion.nombre, k)
