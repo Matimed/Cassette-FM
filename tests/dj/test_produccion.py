@@ -311,8 +311,18 @@ def test_en_llm_usa_la_frase_del_llm_y_la_anota(montaje, hacer_pedido):
     assert "{es:Waiting for a Girl Like You}" in g["marcado"] and "{es:Foreigner}" in g["marcado"]
 
 
+def test_en_llm_el_dato_va_siempre_que_haya_uno_y_se_respeta_el_maximo(montaje, hacer_pedido):
+    productor, _, _, _, _ = llm_listo(montaje, *([BUENA] * 40))
+    for i in range(40):
+        r = productor.producir(hacer_pedido(f"d{i}"))
+        assert "dato" in r.ingredientes and "cancion" in r.ingredientes
+        assert len(r.ingredientes) <= 3
+
+
 def test_el_tope_de_palabras_del_llm_sale_de_la_duracion_maxima_del_pedido(montaje, hacer_pedido):
-    productor, _, _, _, guiones = llm_listo(montaje)
+    muchos = ConfigServicioDJ(pesos_ingredientes={"estacion": 1.0, "hora": 1.0, "momento": 1.0, "album": 1.0,
+                                                  "anterior": 1.0, "clima": 1.0, "dato": 1.0}, ingredientes_max=8)
+    productor, _, _, _, guiones = llm_listo(montaje, config=muchos)
     productor.producir(hacer_pedido("m3", duracion_maxima_segundos=25))
     productor.producir(hacer_pedido("m4", duracion_maxima_segundos=15))
     largo, corto = guiones.ultimos(5)[-2:]
@@ -438,13 +448,13 @@ def test_el_modo_se_lee_una_sola_vez_por_pedido(montaje, hacer_pedido):
 
 def test_los_ingredientes_reales_se_devuelven(montaje, hacer_pedido):
     productor, _, llm, _, _ = llm_listo(montaje)
-    productor._config = ConfigServicioDJ(pesos_ingredientes={"estacion": 1.0, "hora": 1.0, "momento": 0.0,
+    productor._config = ConfigServicioDJ(pesos_ingredientes={"estacion": 1.0, "hora": 0.0, "momento": 0.0,
                                                               "album": 0.0, "anterior": 0.0, "clima": 0.0, "dato": 0.0},
                                          ingredientes_max=3)
     r = productor.producir(hacer_pedido("m15"))
     sistema, usuario = llm.llamadas[0]
-    assert set(r.ingredientes) == {"cancion", "estacion", "hora"}
-    assert "Estación" in usuario and "Hora" in usuario and "Álbum" not in usuario
+    assert set(r.ingredientes) == {"cancion", "estacion", "dato"}            # el dato va siempre que haya uno
+    assert "Estación" in usuario and "Dato" in usuario and "Hora" not in usuario and "Álbum" not in usuario
 
 
 def test_los_guiones_descartados_no_entran_en_voz_prueba(montaje, hacer_pedido):

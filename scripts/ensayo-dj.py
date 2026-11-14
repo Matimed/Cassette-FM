@@ -2,7 +2,7 @@
 """Ensayo del DJ: manda pedidos reales al servicio DJ para unas cuantas transiciones de cada radio, muestra los
 guiones en vivo (con colores) y al final resume qué escribió y qué descartó.
 
-    .venv/bin/python scripts/ensayo-dj.py                       # 10 temas por radio, todas las radios
+    .venv/bin/python scripts/ensayo-dj.py                       # 5 temas por radio, todas las radios
     .venv/bin/python scripts/ensayo-dj.py --canciones 3 --estacion "Power F.M."
     .venv/bin/python scripts/ensayo-dj.py --modo llm            # además cambia el modo del DJ (hasta reiniciarlo)
 
@@ -118,7 +118,7 @@ class Seguidor:
 
 def _argumentos() -> argparse.Namespace:
     p = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
-    p.add_argument("--canciones", type=int, default=10, help="transiciones por radio (default 10)")
+    p.add_argument("--canciones", type=int, default=5, help="transiciones por radio (default 5)")
     p.add_argument("--estacion", action="append", help="solo esta radio (se puede repetir)")
     p.add_argument("--margen", type=float, default=300.0,
                    help="segundos entre el pedido y el momento en que 'hablaría' el DJ (default 300; es lo que "

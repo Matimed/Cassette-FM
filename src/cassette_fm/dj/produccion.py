@@ -103,8 +103,13 @@ class Productor:
         disponibles = ingredientes_disponibles(pedido, hechos)
         if hechos.wikipedia is not None:
             disponibles = disponibles | {"dato"}
-        elegidos = elegir_ingredientes(disponibles, c.pesos_ingredientes, pedido.recientes, self._azar,
-                                       c.ingredientes_max, c.penalizacion_reciente)
+        # el dato (Wikipedia o MusicBrainz) va siempre que haya uno: sin hechos el LLM rellena inventando
+        con_dato = "dato" in disponibles
+        elegidos = elegir_ingredientes(disponibles - {"dato"}, c.pesos_ingredientes, pedido.recientes, self._azar,
+                                       max(1, c.ingredientes_max - 1) if con_dato else c.ingredientes_max,
+                                       c.penalizacion_reciente)
+        if con_dato:
+            elegidos = (*elegidos, "dato")
         campos = campos_de_voz(pedido, hechos, self._zona)
         ultimo = "el LLM no dio una frase"
         limite = pedido.momento.timestamp() - c.llm_margen_segundos      # la voz arranca en `momento`

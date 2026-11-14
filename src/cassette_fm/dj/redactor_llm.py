@@ -115,13 +115,16 @@ def construir_peticion(pedido: Pedido, ingredientes: Sequence[str], hechos: Hech
             lineas.append(f"{'Dato' if es else 'Fact'}: {frase}")
         if hechos.tema is not None:
             cifras += [str(x) for x in (hechos.tema.anio, hechos.tema.anio_inicio_artista) if x is not None]
-    minimo = max(8, palabras_maximas // 2)
+    # con pocos hechos no hay de qué hablar: un rango largo lo empuja a rellenar inventando años y datos
+    tope = min(palabras_maximas, 20 + 15 * (len(lineas) - 1))
+    minimo = max(8, tope // 2)
     tono = (f"\nTono: {pedido.personalidad}" if pedido.personalidad else "")
     if es:
         sistema = (f"Sos el locutor de la radio {pedido.estacion}. Escribí UNA sola intervención hablada, de entre "
-                   f"{minimo} y {palabras_maximas} palabras, en español.\n"
+                   f"{minimo} y {tope} palabras, en español.\n"
                    "Reglas:\n"
                    "- Usá SOLO los hechos del mensaje. No inventes nada: ni años, ni cifras, ni nombres, ni datos.\n"
+                   "- Si tenés pocos datos, decí poco: una frase corta es mejor que inventar para llenar.\n"
                    "- Nombrá el tema y el artista exactamente como están escritos.\n"
                    "- Hablá natural, con frases cortas. Sin exclamaciones, emojis, comillas, listas, títulos ni "
                    "explicaciones.\n"
@@ -136,9 +139,10 @@ def construir_peticion(pedido: Pedido, ingredientes: Sequence[str], hechos: Hech
                    + tono)
     else:
         sistema = (f"You are the radio host of {pedido.estacion}. Write ONE single spoken announcement of between "
-                   f"{minimo} and {palabras_maximas} words, in English.\n"
+                   f"{minimo} and {tope} words, in English.\n"
                    "Rules:\n"
                    "- Use ONLY the facts in the message. Invent nothing: no years, figures, names or facts.\n"
+                   "- If you have few facts, say little: a short announcement is better than inventing to fill space.\n"
                    "- Say the song and the artist exactly as written.\n"
                    "- Sound natural, with short sentences. No exclamation marks, emojis, quotes, lists, headings or "
                    "explanations.\n"

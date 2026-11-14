@@ -118,9 +118,18 @@ def test_el_prompt_pide_unir_los_datos_con_conectores():
 
 
 def test_el_prompt_pide_un_rango_de_palabras_y_prohibe_inventar():
-    pet = peticion(["cancion"], maximo=40)
-    assert "20" in pet.sistema and "40" in pet.sistema
+    pet = peticion(["cancion", "estacion", "hora", "momento"], maximo=40)
+    assert "entre 20 y 40" in pet.sistema
     assert re.search(r"no inventes", pet.sistema, re.I)
+
+
+def test_con_pocos_hechos_el_prompt_pide_una_frase_corta_para_que_no_rellene_inventando():
+    solo_tema = peticion(["cancion"], maximo=75).sistema
+    assert "entre 10 y 20 palabras" in solo_tema
+    assert "pocos datos" in solo_tema and "few facts" in peticion(["cancion"], p=pedido("en")).sistema
+    con_dos = peticion(["cancion", "estacion", "hora"], maximo=75).sistema
+    assert "entre 25 y 50 palabras" in con_dos
+    assert "entre 37 y 75 palabras" in peticion(["cancion", "estacion", "hora", "momento", "album"], maximo=75).sistema
 
 
 def test_el_resumen_de_wikipedia_solo_si_el_ingrediente_dato():
