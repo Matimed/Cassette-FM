@@ -176,7 +176,7 @@ def _frecuencia(archivo: Path, base: Frecuencia, tabla, donde: str) -> Frecuenci
     return f
 
 
-def _campos_dj(archivo: Path, tabla: dict, donde: str, base: ConfigDJ) -> dict:
+def campos_dj(archivo: Path, tabla: dict, donde: str, base: ConfigDJ) -> dict:
     campos = {}
     for clave, valor in tabla.items():
         nombre = f"{donde}{clave}"
@@ -243,12 +243,12 @@ def _leer_dj(archivo: Path, tabla) -> tuple[ConfigDJ, dict[str, ConfigDJ]]:
     estaciones = tabla.get("estaciones", {})
     if not isinstance(estaciones, dict):
         raise ErrorConfig(f"{archivo}: 'dj.estaciones' tiene que ser una tabla con una tabla por estación")
-    general = replace(ConfigDJ(), **_campos_dj(archivo, tabla, "dj.", ConfigDJ()))
+    general = replace(ConfigDJ(), **campos_dj(archivo, tabla, "dj.", ConfigDJ()))
     por_estacion = {}
     for nombre, t in estaciones.items():
         if not isinstance(t, dict):
             raise ErrorConfig(f"{archivo}: 'dj.estaciones.{nombre}' tiene que ser una tabla")
-        por_estacion[nombre] = replace(general, **_campos_dj(archivo, t, f"dj.estaciones.{nombre}.", general))
+        por_estacion[nombre] = replace(general, **campos_dj(archivo, t, f"dj.estaciones.{nombre}.", general))
     return general, por_estacion
 
 
