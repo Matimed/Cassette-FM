@@ -46,3 +46,17 @@ class ClienteLLM:
                 return r.status == 200
         except Exception:
             return False
+
+    def modelos(self) -> list[str]:
+        """Los modelos que el servidor tiene descargados (`GET {llm_url}/models`); ErrorLLM si no responde."""
+        try:
+            with urllib.request.urlopen(f"{self._base}/models", timeout=5.0) as r:
+                datos = json.loads(r.read().decode("utf-8"))
+        except urllib.error.HTTPError as e:
+            raise ErrorLLM(f"el LLM en {self._base} contestó {e.code}") from None
+        except Exception as e:
+            raise ErrorLLM(f"el LLM no responde en {self._base} ({type(e).__name__}: {e})") from None
+        lista = datos.get("data") if isinstance(datos, dict) else None
+        if not isinstance(lista, list):
+            raise ErrorLLM(f"la respuesta del LLM en {self._base} no tiene el formato esperado")
+        return [m["id"] for m in lista if isinstance(m, dict) and isinstance(m.get("id"), str)]

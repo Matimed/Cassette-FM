@@ -1,10 +1,11 @@
 ---
 # CASSETTE-FM-pnk2
 title: 'Etapa 3, parte 4: redactor con LLM (Ollama en Docker), Wikipedia y modo plantillas/llm'
-status: todo
+status: completed
 type: feature
+priority: normal
 created_at: 2026-11-14T06:53:43Z
-updated_at: 2026-11-14T06:53:43Z
+updated_at: 2026-11-14T07:28:14Z
 parent: CASSETTE-FM-p6zn
 blocked_by:
     - CASSETTE-FM-ebyx

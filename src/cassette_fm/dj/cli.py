@@ -29,6 +29,10 @@ def _armar_parser() -> argparse.ArgumentParser:
     v.add_argument("--idioma", choices=["es", "en"])
     mo = sub.add_parser("modo", help="muestra o cambia cómo redacta el DJ (plantillas o llm); no se guarda al reiniciar")
     mo.add_argument("nuevo", nargs="?", choices=["plantillas", "llm"])
+    ll = sub.add_parser("llm", help="el servidor de LLM (Ollama): estado y modelo configurado")
+    ll_sub = ll.add_subparsers(dest="accion_llm", required=True)
+    ll_sub.add_parser("estado", help="si el servidor responde y si el modelo está descargado")
+    ll_sub.add_parser("modelo", help="imprime solo el nombre del modelo configurado")
     h = sub.add_parser("hechos", help="muestra el clima de ahora y, con --artista y --titulo, los datos del tema")
     h.add_argument("--artista")
     h.add_argument("--titulo")
@@ -107,6 +111,26 @@ def _hechos(config, rutas, args, clientes) -> int:
             print(f"MusicBrainz: «{args.titulo}» de {args.artista}: {' · '.join(p for p in partes if p)}")
             print(f"  fuente: {tema.fuente}")
     return 0
+
+
+def _llm(config, args) -> int:
+    from cassette_fm.dj.llm import ClienteLLM, ErrorLLM
+    if args.accion_llm == "modelo":
+        print(config.llm_modelo)
+        return 0
+    print(f"LLM: {config.llm_url}")
+    print(f"modelo configurado: {config.llm_modelo}")
+    try:
+        descargados = ClienteLLM(config).modelos()
+    except ErrorLLM as e:
+        print(f"servidor: no responde ({e}); ¿está corriendo el contenedor? scripts/instalar-llm.sh")
+        return 1
+    print("servidor: responde")
+    if config.llm_modelo in descargados:
+        print("modelo descargado: sí")
+        return 0
+    print(f"modelo descargado: no (bajalo con: docker exec cassette-ollama ollama pull {config.llm_modelo})")
+    return 1
 
 
 def _modo(config, args) -> int:
@@ -190,4 +214,6 @@ def main(argv: list[str] | None = None, *, sintetizador=None, fonemizar=None, cl
         return _hechos(config, rutas, args, clientes)
     if args.comando == "modo":
         return _modo(config, args)
+    if args.comando == "llm":
+        return _llm(config, args)
     return _voz_prueba(config, rutas, args, sintetizador, fonemizar)

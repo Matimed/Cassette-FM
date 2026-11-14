@@ -70,3 +70,19 @@ def test_disponible(llm_falso):
     t0 = time.monotonic()
     assert ClienteLLM(ConfigServicioDJ(llm_url=f"http://127.0.0.1:{puerto}/v1")).disponible() is False
     assert time.monotonic() - t0 < 3
+
+
+def test_modelos_lista_los_ids(llm_falso):
+    llm_falso.modelos = [{"id": "gemma3:4b"}, {"id": "qwen3:4b"}, {"sin_id": 1}, "raro"]
+    assert cliente(llm_falso).modelos() == ["gemma3:4b", "qwen3:4b"]
+
+
+def test_modelos_con_el_servidor_caido_o_basura_da_ErrorLLM(llm_falso):
+    llm_falso.codigo_modelos = 500
+    with pytest.raises(ErrorLLM):
+        cliente(llm_falso).modelos()
+    with socket.socket() as s:
+        s.bind(("127.0.0.1", 0))
+        puerto = s.getsockname()[1]
+    with pytest.raises(ErrorLLM, match="no responde"):
+        ClienteLLM(ConfigServicioDJ(llm_url=f"http://127.0.0.1:{puerto}/v1")).modelos()

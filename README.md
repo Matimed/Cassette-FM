@@ -96,6 +96,30 @@ Si el LLM no responde, tarda de más o su frase no pasa la verificación (año o
 los hechos, enlaces…), esa frase sale por plantillas. `cassette-dj modo [llm|plantillas]` hace lo mismo hablando
 directo con el servicio.
 
+#### Instalar el LLM (Ollama en Docker)
+
+```bash
+scripts/instalar-llm.sh        # arranca el contenedor cassette-ollama (solo en 127.0.0.1:11434) y baja el modelo
+cassette-dj llm estado         # URL, modelo configurado, si el servidor responde y si el modelo está descargado
+```
+
+Los modelos quedan en `~/.local/share/cassette-dj/ollama`. Para borrar todo: `docker rm -f cassette-ollama` y esa carpeta.
+Configuración en `~/.config/cassette-dj/config.toml` (todo opcional, con su valor por defecto): `llm_url`
+(`http://127.0.0.1:11434/v1`), `llm_modelo` (`gemma3:4b`), `llm_timeout_segundos` (240), `llm_intentos` (2: cuántas veces
+se le pide una frase antes de usar la plantilla), `llm_temperatura` (0.8), `wikipedia_dias` (90),
+`wikipedia_palabras_maximas` (120), `wikipedia_url` y `wikidata_url`.
+
+**Qué queda registrado:** cada frase que escribe el LLM, aceptada o descartada, queda en
+`~/.local/state/cassette-dj/guiones.jsonl` con `fuente: "llm"`, el prompt (`sistema` y `usuario`), el texto `crudo`, el
+`modelo`, el `intento` y, si se descartó, `descartado` y el `motivo`; la de plantilla por fallo lleva `fuente: "plantilla"`
+y `motivo`. Los hechos usados y la URL de Wikipedia (texto CC BY-SA) van en `hechos`. Los descartados no entran en
+`cassette-dj voz-prueba`.
+
+**Verificación con el LLM real (la hacemos juntos):** (1) `scripts/instalar-llm.sh` (baja ~3 GB); (2) `cassette-dj llm
+estado`; (3) `cassette dj modo llm` y `cassette dj pedir --en 30` en varias estaciones; escuchar; (4) mirar `cassette-dj
+guiones` y el `guiones.jsonl` (prompts, crudos, descartados y motivos); (5) medir cuánto tarda cada frase; (6)
+`cassette dj modo plantillas` para volver. Si `gemma3:4b` se queda corto, probar otro modelo con `llm_modelo`.
+
 ### Planificador (frases reales)
 
 Para que la radio le pida intervenciones al servicio DJ hay que poner **las dos cosas** (sin `url` no intenta

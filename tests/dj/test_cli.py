@@ -295,3 +295,71 @@ def test_cassette_dj_modo_sin_servicio_da_error_claro(entorno, capsys):
 def test_cassette_dj_modo_argumento_invalido(entorno):
     with pytest.raises(SystemExit):
         cli.main(["modo", "otro"])
+
+
+def _config_llm(entorno, llm_falso, extra=""):
+    entorno.config.parent.mkdir(parents=True, exist_ok=True)
+    entorno.config.write_text(f'llm_url = "{llm_falso.url}"\n{extra}')
+
+
+def test_llm_estado_con_el_modelo_descargado(entorno, llm_falso, capsys):
+    _config_llm(entorno, llm_falso)
+    assert cli.main(["llm", "estado"]) == 0
+    salida = capsys.readouterr().out
+    assert llm_falso.url in salida and "gemma3:4b" in salida
+    assert "servidor: responde" in salida and "modelo descargado: sí" in salida
+
+
+def test_llm_estado_con_el_llm_caido(entorno, llm_falso, capsys):
+    import socket as _s
+    with _s.socket() as sk:
+        sk.bind(("127.0.0.1", 0))
+        puerto = sk.getsockname()[1]
+    entorno.config.parent.mkdir(parents=True, exist_ok=True)
+    entorno.config.write_text(f'llm_url = "http://127.0.0.1:{puerto}/v1"\n')
+    assert cli.main(["llm", "estado"]) == 1
+    salida = capsys.readouterr().out
+    assert "servidor: no responde" in salida and "instalar-llm.sh" in salida
+
+
+def test_llm_estado_sin_el_modelo(entorno, llm_falso, capsys):
+    llm_falso.modelos = [{"id": "otro:7b"}]
+    _config_llm(entorno, llm_falso)
+    assert cli.main(["llm", "estado"]) == 1
+    salida = capsys.readouterr().out
+    assert "servidor: responde" in salida and "modelo descargado: no" in salida
+    assert "ollama pull gemma3:4b" in salida
+
+
+def test_llm_modelo_imprime_solo_el_nombre(entorno, llm_falso, capsys):
+    _config_llm(entorno, llm_falso, 'llm_modelo = "qwen3:4b"\n')
+    assert cli.main(["llm", "modelo"]) == 0
+    assert capsys.readouterr().out == "qwen3:4b\n"
+
+
+def test_llm_sin_subcomando_es_un_error_de_uso():
+    with pytest.raises(SystemExit):
+        cli.main(["llm"])
+
+
+def _script():
+    return Path(__file__).resolve().parents[2] / "scripts" / "instalar-llm.sh"
+
+
+def test_el_script_de_instalacion_es_bash_valido():
+    import subprocess
+    assert _script().is_file() and _script().stat().st_mode & 0o111
+    assert subprocess.run(["bash", "-n", str(_script())], capture_output=True).returncode == 0
+    assert "set -euo pipefail" in _script().read_text()
+
+
+def test_el_script_cita_las_variables_y_no_publica_el_puerto_afuera():
+    import re
+    texto = _script().read_text()
+    for linea in texto.splitlines():
+        if linea.lstrip().startswith(("#", "echo")):
+            continue
+        if re.search(r"\b(docker|mkdir|cassette-dj)\b", linea):
+            assert not re.search(r'(?<!")\$\{?[A-Za-z_]+\}?(?!")', re.sub(r'"[^"]*"', "", linea)), linea
+    assert "127.0.0.1:11434:11434" in texto and "0.0.0.0" not in texto
+    assert "--restart unless-stopped" in texto and "ollama pull" in texto and "docker rm -f cassette-ollama" in texto
