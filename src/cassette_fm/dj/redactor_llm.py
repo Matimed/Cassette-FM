@@ -69,12 +69,13 @@ def _hechos_del_tema(hechos: Hechos, idioma: str) -> list[str]:
         return []
     frases = []
     if t.anio is not None and 1900 <= t.anio <= 2099:
-        frases.append(("El tema salió en %s." if idioma == "es" else "The song came out in %s.") % t.anio)
+        frases.append(("Año de la canción (no del álbum): %s" if idioma == "es"
+                       else "Song year (the song, not the album): %s") % t.anio)
     pais = nombre_de_pais(t.pais, idioma) if t.pais else None
     if pais:
         frases.append(("El artista viene de %s." if idioma == "es" else "The artist comes from %s.") % pais)
     if t.es_grupo and t.anio_inicio_artista is not None and 1900 <= t.anio_inicio_artista <= 2099:
-        frases.append(("La banda empezó en %s." if idioma == "es" else "The band started in %s.")
+        frases.append(("Año en que empezó la banda: %s" if idioma == "es" else "Year the band started: %s")
                       % t.anio_inicio_artista)
     return frases
 
@@ -123,6 +124,8 @@ def construir_peticion(pedido: Pedido, ingredientes: Sequence[str], hechos: Hech
                    "- Nombrá el tema y el artista exactamente como están escritos.\n"
                    "- Hablá natural, con frases cortas. Sin exclamaciones, emojis, comillas, listas, títulos ni "
                    "explicaciones.\n"
+                   "- Unilo todo en un solo discurso fluido: enlazá las ideas con conectores (\"y\", \"además\", "
+                   "\"por cierto\", \"mientras tanto\") en vez de frases sueltas.\n"
                    "- No empieces con \"aquí tienes\" ni digas que sos una IA.\n"
                    "- Escribí los años con cifras (por ejemplo 1984).\n"
                    "- Si hay un dato de Wikipedia, usá a lo sumo uno y decilo con tus palabras en una frase corta."
@@ -135,6 +138,8 @@ def construir_peticion(pedido: Pedido, ingredientes: Sequence[str], hechos: Hech
                    "- Say the song and the artist exactly as written.\n"
                    "- Sound natural, with short sentences. No exclamation marks, emojis, quotes, lists, headings or "
                    "explanations.\n"
+                   "- Make it one flowing speech: join the ideas with connectors (\"and\", \"also\", \"by the way\", "
+                   "\"meanwhile\") instead of separate stand-alone sentences.\n"
                    "- Do not start with \"here is\" and never say you are an AI.\n"
                    "- Write years as digits (for example 1984).\n"
                    "- If there is a Wikipedia fact, use at most one, in your own words, in one short sentence."

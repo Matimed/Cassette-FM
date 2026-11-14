@@ -66,6 +66,11 @@ def test_el_prompt_pone_la_personalidad_y_el_idioma():
     assert "Tono:" in es.sistema and "Tono:" not in peticion(["cancion"]).sistema
 
 
+def test_el_prompt_pide_unir_los_datos_con_conectores():
+    assert "conectores" in peticion(["cancion"]).sistema
+    assert "connectors" in peticion(["cancion"], p=pedido("en")).sistema
+
+
 def test_el_prompt_pide_un_rango_de_palabras_y_prohibe_inventar():
     pet = peticion(["cancion"], maximo=40)
     assert "20" in pet.sistema and "40" in pet.sistema
@@ -82,7 +87,10 @@ def test_el_resumen_de_wikipedia_solo_si_el_ingrediente_dato():
 def test_los_anios_de_musicbrainz_van_con_cifras_y_el_pais_con_nombre():
     sin_wiki = Hechos(None, HECHOS.tema, None)
     u = peticion(["cancion", "dato"], hechos=sin_wiki).usuario
-    assert "salió en 1984" in u and "empezó en 1983" in u and "Noruega" in u
+    assert "Año de la canción (no del álbum): 1984" in u and "Año en que empezó la banda: 1983" in u
+    assert "Noruega" in u
+    en = peticion(["cancion", "dato"], hechos=sin_wiki, p=pedido("en")).usuario
+    assert "Song year (the song, not the album): 1984" in en and "Year the band started: 1983" in en
     assert "mil novecientos" not in u
     assert "convertir" not in u and "1984" in peticion(["cancion", "dato"], hechos=sin_wiki).permitido
 
