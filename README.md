@@ -26,7 +26,7 @@ Si solo querés el servicio y la CLI, sin el escritorio: `scripts/instalar.sh`.
 | Comando | Qué hace |
 |---|---|
 | `cassette on` / `off` / `toggle` | enciende, apaga o alterna (al encender suena lo que corresponde *ahora*) |
-| `cassette next` / `prev` | estación siguiente o anterior (alfabético, con vuelta) |
+| `cassette next` / `prev` | estación siguiente o anterior (en el orden de `estaciones.json`, con vuelta) |
 | `cassette tune <nombre>` | sintoniza por nombre o por el comienzo (`cassette tune reg`) |
 | `cassette status` | qué suena |
 | `cassette list` | estaciones y cantidad de temas |
@@ -154,10 +154,12 @@ max = 5
 Lo de cada emisora va en su `"dj"` de `estaciones.json` (solo pisa lo que dice):
 
 ```json
-{"nombre": "Lentos", "fuente": {"carpeta": "~/Música/Lentos"},
- "dj": {"voz": "em_santa", "idioma": "es", "personalidad": "cálido, de madrugada", "frecuencia": {"min": 4}}},
-{"nombre": "Rock", "fuente": {"carpeta": "~/Música/Rock"},
- "dj": {"frecuencia": {"modo": "minutos", "min": 8, "max": 15}}}
+[
+  {"nombre": "Lentos", "fuente": {"carpeta": "~/Música/Lentos"},
+   "dj": {"voz": "em_santa", "idioma": "es", "personalidad": "cálido, de madrugada", "frecuencia": {"min": 4}}},
+  {"nombre": "Rock", "fuente": {"carpeta": "~/Música/Rock"},
+   "dj": {"frecuencia": {"modo": "minutos", "min": 8, "max": 15}}}
+]
 ```
 
 La intervención cae entre `min` y `max` temas (o minutos) después de la última de esa estación; nunca antes del
@@ -334,7 +336,8 @@ Las emisoras están en `~/.config/cassette-fm/estaciones.json`, una lista en el 
 - **La primera vez** el archivo se crea solo con las subcarpetas de `raiz_musica` y los `[dj.estaciones."X"]` que
   hubiera en el `config.toml`. Desde entonces `[dj.estaciones]` del `config.toml` se ignora (avisa una vez en el log).
 - `cassette rescan` lo relee. Si quedó mal escrito, la radio sigue con las emisoras que tenía y el comando muestra el
-  error con la línea.
+  error con la línea. Si está mal escrito **al arrancar**, el servicio no levanta: el motivo (con la línea) se ve con
+  `journalctl --user -u cassette-fm -n 20`.
 
 ## Desarrollo
 

@@ -20,10 +20,11 @@ from datetime import datetime
 from pathlib import Path
 
 try:
-    from cassette_fm import biblioteca, config as cfg_mod
+    from cassette_fm import config as cfg_mod
     from cassette_fm.agenda import secuencia
     from cassette_fm.cliente_dj import ClienteDJ, ErrorDJ
     from cassette_fm.dj.config import rutas_dj
+    from cassette_fm.emisoras import Catalogo
     from cassette_fm.planificacion import Hueco, armar_pedido
 except ImportError:      # corrido con otro Python: se reintenta con el del proyecto
     _venv = Path(__file__).resolve().parent.parent / ".venv" / "bin" / "python3"
@@ -66,6 +67,12 @@ def linea_guion(r: dict, color: bool) -> str:
     cuerpo = pintar({"ok": "ok", "descartado": "descartado", "plantilla": "plantilla"}[clase], texto, color)
     return (f"{pintar('hora', hora, color)} · {pintar('estacion', str(r.get('estacion', '?')), color)} · "
             f"{pintar('voz', str(r.get('voz', '?')), color)}\n    {cuerpo}\n    {marca}")
+
+
+def cargar_emisoras(config, rutas):
+    """Las emisoras y los ajustes del DJ de cada una, como los ve la radio (estaciones.json)."""
+    catalogo = Catalogo(config, rutas)
+    return [e for e in catalogo.escanear() if e.pistas], catalogo.configuracion_dj
 
 
 def armar_pares(estacion, cantidad: int, ahora: float) -> list[tuple]:
@@ -149,7 +156,11 @@ def main() -> int:
         return 1
     print(f"Servicio DJ: modo {salud.get('modo', '?')}")
 
-    estaciones = [e for e in biblioteca.escanear(config.raiz_musica, rutas.cache) if e.pistas]
+    try:
+        estaciones, configuracion = cargar_emisoras(config, rutas)
+    except cfg_mod.ErrorConfig as e:
+        print(e, file=sys.stderr)
+        return 1
     if args.estacion:
         faltan = set(args.estacion) - {e.nombre for e in estaciones}
         if faltan:
@@ -165,7 +176,7 @@ def main() -> int:
     pendiente = None
     try:
         for estacion in estaciones:
-            cfg = cfg_mod.configuracion_dj(config, estacion.nombre)
+            cfg = configuracion(estacion.nombre)
             pares = armar_pares(estacion, args.canciones, ahora)
             print(f"\n{pintar('estacion', '== ' + estacion.nombre + ' ==', color)} "
                   f"({len(pares)} transiciones · voz {cfg.voz} · {cfg.idioma})")

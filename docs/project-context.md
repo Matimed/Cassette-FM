@@ -8,7 +8,8 @@
 **cassette-fm** es una app para Linux Mint que convierte la biblioteca de música local en un conjunto
 de **radios continuas**:
 
-- Cada **subcarpeta** de `~/Música` es una **estación**.
+- Cada **emisora** está definida en `~/.config/cassette-fm/estaciones.json`: una carpeta de música (en cualquier
+  ruta) o, desde la etapa 4, una playlist de Spotify. (Al principio era cada subcarpeta de `~/Música`.)
 - Cada estación está "sonando" todo el tiempo, en orden aleatorio; al sintonizarla **se entra con el tema ya empezado**.
 - Se cambia de estación como en una radio (o como en las radios de GTA, que inspiraron la idea).
 - Etapa posterior: un **DJ con IA local** que habla entre temas (presentaciones, hora y clima de Buenos Aires).

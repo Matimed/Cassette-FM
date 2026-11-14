@@ -54,7 +54,10 @@ def _fuente(archivo: Path, nombre: str, valor) -> Fuente:
     if tipo == "carpeta":
         if not isinstance(dato, str) or not dato.strip():
             raise ErrorConfig(f'{donde}: "carpeta" tiene que ser la ruta de una carpeta')
-        ruta = Path(dato).expanduser()
+        try:
+            ruta = Path(dato).expanduser()
+        except RuntimeError:                     # "~Música/x": Python lo toma como el home de un usuario "Música"
+            raise ErrorConfig(f'{donde}: no se puede expandir "{dato}" (¿faltó la barra después de ~?)') from None
         if not ruta.is_absolute():
             raise ErrorConfig(f'{donde}: "carpeta" tiene que ser una ruta absoluta (o empezar con ~): {dato}')
         return Fuente("carpeta", str(ruta))

@@ -236,3 +236,9 @@ def test_catalogo_avisa_que_dj_estaciones_del_toml_se_ignora(tmp_path, crear_mp3
         cat.escanear()
     assert caplog.text.count("[dj.estaciones]") == 1
     assert cat.configuracion_dj("A").voz != "am_onyx"
+
+
+def test_tilde_sin_barra_es_error_de_config(tmp_path):
+    a = escribir(tmp_path, [{"nombre": "A", "fuente": {"carpeta": "~Música/Lentos"}}])
+    with pytest.raises(ErrorConfig, match="barra"):
+        leer_emisoras(a, ConfigDJ())

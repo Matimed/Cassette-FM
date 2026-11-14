@@ -68,3 +68,16 @@ def test_los_pares_son_consecutivos_y_saltean_temas_sin_nombre():
 def test_una_frase_recortada_se_marca():
     r = {"ts": "2026-11-14T12:50:07-03:00", "fuente": "llm", "texto": "Bien.", "recortado": "número que no está"}
     assert "[llm, recortada: número que no está]" in ensayo.linea_guion(r, color=False)
+
+
+def test_las_emisoras_y_sus_voces_salen_de_estaciones_json(tmp_path, crear_mp3):
+    from cassette_fm.config import Config, Rutas
+    crear_mp3(tmp_path / "afuera" / "a.mp3", artista="X", titulo="Y")
+    rutas = Rutas(config=tmp_path / "cfg" / "config.toml", estado=tmp_path / "e.json",
+                  cache=tmp_path / "d.json", runtime=tmp_path)
+    rutas.emisoras.parent.mkdir(parents=True)
+    rutas.emisoras.write_text(json.dumps([{"nombre": "Afuera", "fuente": {"carpeta": str(tmp_path / "afuera")},
+                                           "dj": {"voz": "am_onyx"}}]))
+    estaciones, configuracion = ensayo.cargar_emisoras(Config(raiz_musica=tmp_path / "nada"), rutas)
+    assert [e.nombre for e in estaciones] == ["Afuera"]
+    assert configuracion("Afuera").voz == "am_onyx"
