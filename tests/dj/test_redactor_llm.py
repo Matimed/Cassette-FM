@@ -42,6 +42,15 @@ def test_el_prompt_lleva_solo_los_ingredientes_elegidos():
         assert ausente not in pet.usuario, ausente
 
 
+def test_la_hora_lleva_el_momento_del_dia_para_que_no_confunda_mediodia_con_noche():
+    es = peticion(["cancion", "hora"])
+    assert "Hora: las dos y diez (esta madrugada)" in es.usuario
+    p = pedido("en")
+    p = Pedido(**{**p.__dict__, "momento": datetime(2026, 11, 14, 12, 20, tzinfo=ZONA)})
+    en = peticion(["cancion", "hora"], p=p)
+    assert "Time: twenty past twelve (this afternoon)" in en.usuario
+
+
 def test_todos_los_ingredientes_aparecen_cuando_se_eligen():
     pet = peticion(["cancion", "estacion", "hora", "momento", "album", "anterior", "clima", "dato"])
     for esperado in ("Whisper F.M.", "las dos y diez", "esta madrugada", "Hunting High and Low", "Don Omar",
@@ -254,17 +263,16 @@ def test_un_nombre_dentro_de_otro_no_se_marca_adentro():
 
 # --- revisión final ---
 
-@pytest.mark.parametrize("texto", ["Madonna grabó Take On Me de a-ha. Ahora suena en la radio.",
-                                   "Suena Take On Me de a-ha. Prince la adoraba, eso dicen.",
-                                   "Ahora suena Take On Me de a-ha. Elton compuso el estribillo famoso."])
-def test_un_nombre_inventado_al_inicio_de_una_oracion_no_pasa(texto):
-    assert "nombre propio" in ver(texto)
-
-
-def test_arranques_comunes_y_palabras_del_prompt_pasan_al_inicio_de_una_oracion():
-    assert ver("Ahora suena Take On Me de a-ha. Seguimos con la música. Gracias por estar.") is None
+def test_la_primera_palabra_de_una_oracion_no_se_toma_por_un_nombre():
     en = pedido("en")
-    assert ver("Now playing Take On Me by a-ha. This is Whisper F.M. Thanks for listening.", p=en) is None
+    assert ver("Alright listeners, get ready. We have Take On Me by a-ha blasting through. Let's hear it.", p=en) is None
+    assert ver("Madonna grabó Take On Me de a-ha. Ahora suena en la radio.") is None
+
+
+@pytest.mark.parametrize("texto", ["Elton John compuso Take On Me de a-ha. Ahora suena en la radio.",
+                                   "Suena Take On Me de a-ha. Hoy Prince la adoraba, eso dicen."])
+def test_un_nombre_inventado_que_no_abre_la_oracion_o_tiene_dos_palabras_no_pasa(texto):
+    assert "nombre propio" in ver(texto)
 
 
 def test_los_anios_en_palabras_inventados_no_pasan():
