@@ -11,9 +11,11 @@ dependencies = ["mutagen"]
 
 [project.optional-dependencies]
 dev = ["pytest"]
+dj = ["kokoro-onnx", "soundfile"]
 
 [project.scripts]
 cassette = "cassette_fm.cli:main"
+cassette-dj = "cassette_fm.dj.cli:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]
