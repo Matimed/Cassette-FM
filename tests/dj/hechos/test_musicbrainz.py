@@ -38,13 +38,22 @@ def artista_json(tipo="Group", pais="NO", inicio="1983"):
     return {"id": AHA, "name": "a‐ha", "type": tipo, "country": pais, "life-span": {"begin": inicio, "ended": False}}
 
 
-def montar(servidor, tmp_path=None, grabaciones=None, artista=None, **cfg):
+def grupo(titulo="Take On Me", artista="a-ha", id_=AHA, fecha=None, tipo="Single"):
+    g = {"id": "g-" + str(abs(hash((titulo, fecha, id_, tipo))) % 10 ** 6), "title": titulo, "primary-type": tipo,
+         "artist-credit": [{"name": artista, "artist": {"id": id_, "name": artista}}]}
+    if fecha is not None:
+        g["first-release-date"] = fecha
+    return g
+
+
+def montar(servidor, tmp_path=None, grabaciones=None, artista=None, grupos=None, **cfg):
     cfg.setdefault("contacto", "dj@example.com")
     config = ConfigServicioDJ(musicbrainz_url=servidor.url + "/ws/2", timeout_hechos_segundos=1.0, **cfg)
     reloj = Reloj()
     cache = CacheHechos(None, reloj)
     if grabaciones is not None:
         servidor.responder("/ws/2/recording", {"count": len(grabaciones), "recordings": grabaciones})
+    servidor.responder("/ws/2/release-group", {"count": len(grupos or []), "release-groups": grupos or []})
     servidor.responder(f"/ws/2/artist/{AHA}", artista if artista is not None else artista_json())
     return ClienteMusicBrainz(config, cache, reloj, reloj.dormir, version="9.9"), reloj
 
@@ -141,7 +150,7 @@ def test_isrc_mal_formado_se_ignora(servidor_http):
 def test_cache_evita_repetir(servidor_http):
     c, _ = montar(servidor_http, grabaciones=[grabacion(fecha="1984")])
     a, b = c.datos_del_tema("a-ha", "Take On Me"), c.datos_del_tema("A‐HA", "take on me")
-    assert a == b and len(servidor_http.pedidos) == 2        # una búsqueda y un artista, en total
+    assert a == b and len(servidor_http.pedidos) == 3        # grabaciones, release groups y artista, en total
 
 
 def test_sin_resultados_se_cachea_como_sin_dato(servidor_http):
@@ -155,12 +164,12 @@ def test_sin_resultados_se_cachea_como_sin_dato(servidor_http):
 
 def test_el_ritmo_es_de_un_pedido_por_segundo(servidor_http):
     c, r = montar(servidor_http, grabaciones=[grabacion(fecha="1984"), grabacion("Otro tema", fecha="1990")])
-    c.datos_del_tema("a-ha", "Take On Me")                     # 2 pedidos: búsqueda + artista
+    c.datos_del_tema("a-ha", "Take On Me")                     # 3 pedidos: grabaciones, grupos y artista
     assert len(r.esperas) >= 1 and all(abs(e - 1.0) < 1e-6 for e in r.esperas)
     n = len(r.esperas)
     r.t += 5
     c.datos_del_tema("a-ha", "Otro tema")                      # pasaron 5 s: el primer pedido no espera
-    assert r.esperas[n:] == [pytest.approx(1.0)]               # la búsqueda no espera; el pedido del artista sí
+    assert r.esperas[n:] == [pytest.approx(1.0)] * 2           # la búsqueda no espera; los otros dos sí
 
 
 @pytest.mark.parametrize("codigo", [429, 503, 500])
@@ -300,7 +309,7 @@ def test_un_artista_vacio_es_un_fallo_y_se_cachea_poco(servidor_http):
     assert c.datos_del_tema("a-ha", "Take On Me") is None
     r.t += 10 * 60 + 1
     c.datos_del_tema("a-ha", "Take On Me")
-    assert len(servidor_http.pedidos) == 4          # 2 + 2: se reintentó
+    assert len(servidor_http.pedidos) == 6          # 3 + 3: se reintentó
 
 
 def test_la_consulta_escapa_la_barra_y_las_comillas(servidor_http):
@@ -334,6 +343,40 @@ def test_sin_relacion_wikidata_valida_es_None(servidor_http, rels):
 
 def test_las_entradas_viejas_de_cache_no_se_usan(servidor_http):
     c, _ = montar(servidor_http, grabaciones=[grabacion(fecha="1984")])
+    c._cache.guardar("mb2:a ha|take on me|", {"anio": 2, "pais": "XX", "anio_inicio_artista": None,
+                                               "es_grupo": False, "fuente": "viejo"}, 10_000)
     c._cache.guardar("mb:a ha|take on me|", {"anio": 1, "pais": "XX", "anio_inicio_artista": None, "es_grupo": False,
                                               "fuente": "viejo"}, 10_000)
     assert c.datos_del_tema("a-ha", "Take On Me").anio == 1984
+
+
+def test_el_album_de_la_etiqueta_no_restringe_el_anio_de_un_titulo_normal(servidor_http):
+    # Roxette - The Look con la etiqueta de un disco en vivo: el año es el del tema, no el de ese disco
+    vivo = grabacion(fecha="1992", extra={"releases": [{"title": "Live in Zürich"}]})
+    original = grabacion(fecha="1989", extra={"releases": [{"title": "Look Sharp!"}]})
+    c, _ = montar(servidor_http, grabaciones=[vivo, original])
+    assert c.datos_del_tema("a-ha", "Take On Me", album="Live in Zürich, Vol. 2").anio == 1989
+
+
+def test_el_anio_sale_del_primer_release_group_del_tema(servidor_http):
+    # como Soft Cell - Tainted Love: las 25 grabaciones de la búsqueda son reediciones; el single es más viejo
+    c, _ = montar(servidor_http, grabaciones=[grabacion(fecha="2000"), grabacion(fecha="2004")], grupos=[
+        grupo(fecha="2021-06-18", tipo="Album"), grupo(fecha="1985-07"), grupo(fecha="2023-12-14"),
+        grupo(fecha="1984", id_=OTRO, artista="a-ha"),               # otro artista con el mismo nombre
+        grupo("Take On Me Remixes", fecha="1984")])                   # otro título
+    assert c.datos_del_tema("a-ha", "Take On Me").anio == 1985
+    consulta = [r for r, _ in servidor_http.pedidos if r.startswith("/ws/2/release-group")]
+    assert consulta and "releasegroup" in urllib.parse.unquote_plus(consulta[0])
+
+
+def test_un_titulo_generico_no_usa_release_groups(servidor_http):
+    g = grabacion("Intro", "a-ha", fecha="2022", extra={"releases": [{"title": "Disco Nuevo"}]})
+    c, _ = montar(servidor_http, grabaciones=[g], grupos=[grupo("Intro", fecha="1990")])
+    assert c.datos_del_tema("a-ha", "Intro", album="Disco Nuevo").anio == 2022
+    assert not any(r.startswith("/ws/2/release-group") for r, _ in servidor_http.pedidos)
+
+
+def test_un_fallo_en_los_release_groups_es_un_fallo_y_se_cachea_poco(servidor_http):
+    c, r = montar(servidor_http, grabaciones=[grabacion(fecha="1984")])
+    servidor_http.reglas.insert(0, ("/ws/2/release-group", {"error": "busy"}, 503, "application/json", 0.0))
+    assert c.datos_del_tema("a-ha", "Take On Me") is None

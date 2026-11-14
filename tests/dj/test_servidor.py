@@ -330,6 +330,7 @@ def test_servicio_con_hechos_falsos_de_punta_a_punta(servicio, servidor_http):
 
     aha = "7364dea6-0000-4000-8000-000000000001"
     servidor_http.responder("/v1/forecast", {"current": {"temperature_2m": 22.0, "weather_code": 3, "is_day": 1}})
+    servidor_http.responder("/ws/2/release-group", {"release-groups": []})
     servidor_http.responder("/ws/2/recording", {"recordings": [{
         "id": "r1", "title": "Waiting for a Girl Like You", "first-release-date": "1981-09-02",
         "artist-credit": [{"name": "Foreigner", "artist": {"id": aha, "name": "Foreigner"}}]}]})
@@ -413,6 +414,7 @@ def test_de_punta_a_punta_en_modo_llm_con_servidores_falsos(servicio, servidor_h
     from cassette_fm.dj.modo import ModoDJ
 
     aha = "7364dea6-0000-4000-8000-000000000001"
+    servidor_http.responder("/ws/2/release-group", {"release-groups": []})
     servidor_http.responder("/ws/2/recording", {"recordings": [{
         "id": "r1", "title": "Waiting for a Girl Like You", "first-release-date": "1981-09-02",
         "artist-credit": [{"name": "Foreigner", "artist": {"id": aha, "name": "Foreigner"}}]}]})

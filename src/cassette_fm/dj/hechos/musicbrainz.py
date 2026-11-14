@@ -140,7 +140,7 @@ class ClienteMusicBrainz:
         if not n_artista or not n_titulo:
             return None            # sin letras con que comparar: no se puede verificar nada
         n_album = normalizar(album) if album else ""
-        clave = f"mb2:isrc:{isrc}" if isrc else f"mb2:{n_artista}|{n_titulo}|{n_album}"
+        clave = f"mb3:isrc:{isrc}" if isrc else f"mb3:{n_artista}|{n_titulo}|{n_album}"
         fallo: list[Exception] = []
 
         buscado = []
@@ -196,16 +196,21 @@ class ClienteMusicBrainz:
             grabaciones = self._filtrar(crudas, primero, normalizar(limpio))
         if not grabaciones:
             return None
+        generico = normalizar(limpio) in _GENERICOS
         confirmadas = self._del_album(grabaciones, album) if album else []
-        if confirmadas:
-            grabaciones = confirmadas
-        elif normalizar(limpio) in _GENERICOS:
+        if generico and not confirmadas:
             return None            # "Intro", "Interlude"…: sin el álbum no se sabe de cuál se trata
-        ids = {a["id"] for g in grabaciones for a in g["_artistas"]}
+        # el álbum de la etiqueta sirve para saber de qué artista se trata, no para el año: suele ser un
+        # recopilatorio, un disco en vivo o una reedición, y su grabación es posterior al tema
+        ids = {a["id"] for g in (confirmadas or grabaciones) for a in g["_artistas"]}
         if len(ids) != 1:
             return None            # dos artistas distintos con ese nombre: no se sabe cuál es
         id_artista = ids.pop()
-        anios = [a for a in (_anio(g.get("first-release-date")) for g in grabaciones) if a is not None]
+        del_anio = confirmadas if generico else [g for g in grabaciones
+                                                 if any(a["id"] == id_artista for a in g["_artistas"])]
+        anios = [a for a in (_anio(g.get("first-release-date")) for g in del_anio) if a is not None]
+        if not generico:           # la búsqueda trae 25 grabaciones y a veces ninguna es la original
+            anios += self._anios_de_grupos(limpio, primero, id_artista)
         anio = min(anios) if anios else None
         datos = self._pedir(f"/artist/{id_artista}", {"inc": "url-rels", "fmt": "json"})
         if not isinstance(datos, dict) or not ("id" in datos or "name" in datos):
@@ -223,6 +228,28 @@ class ClienteMusicBrainz:
             return None
         return {"anio": anio, "pais": pais, "anio_inicio_artista": inicio, "es_grupo": es_grupo,
                 "fuente": f"https://musicbrainz.org/artist/{id_artista}", "wikidata": _wikidata(datos)}
+
+    def _anios_de_grupos(self, titulo: str, artista: str, id_artista: str) -> list[int]:
+        """Años de los release groups (single, álbum, EP) con ese título y ese artista: el más viejo es el
+        primer lanzamiento del tema."""
+        consulta = 'releasegroup:"%s" AND artist:"%s"' % (_escapar(titulo), _escapar(artista))
+        datos = self._pedir("/release-group", {"query": consulta, "limit": "25", "fmt": "json"})
+        grupos = datos.get("release-groups") if isinstance(datos, dict) else None
+        if not isinstance(grupos, list):
+            raise _Fallo("la respuesta de MusicBrainz no trae 'release-groups'")
+        buscado = normalizar(titulo)
+        anios = []
+        for g in grupos:
+            if not isinstance(g, dict) or normalizar(_limpiar_titulo(str(g.get("title", "")))) != buscado:
+                continue
+            creditos = g.get("artist-credit") if isinstance(g.get("artist-credit"), list) else []
+            if not any(isinstance(x, dict) and isinstance(x.get("artist"), dict) and x["artist"].get("id") == id_artista
+                       for x in creditos):
+                continue
+            anio = _anio(g.get("first-release-date"))
+            if anio is not None:
+                anios.append(anio)
+        return anios
 
     def _grabaciones(self, ruta: str, parametros: dict) -> list:
         datos = self._pedir(ruta, parametros)
