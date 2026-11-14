@@ -217,6 +217,13 @@ trae año ni género en los tags.
 
 ### Datos verificados (MusicBrainz → Wikipedia)
 
+> Parte 3: pasos 1, 2 y 5 (MusicBrainz y caché). Pasos 3, 4 y 6 (Wikipedia/Wikidata y la frase extraída) → parte 4.
+> Hallazgos del 14/11 con la API real: la biblioteca no trae ISRC (0 de 395 temas), así que se identifica por
+> artista + título; la búsqueda devuelve muchas grabaciones del mismo tema (vivos, recopilaciones) con
+> `first-release-date` distintas, por eso el **año del tema es el mínimo** entre las que coinciden exactamente en título
+> y artista ("Take On Me" de a-ha: 1984); el comienzo del artista solo se usa si es un grupo (en una persona
+> `life-span.begin` es el nacimiento); los guiones de MusicBrainz (a‐ha usa U+2010) se normalizan al comparar.
+
 1. **Identificar el tema:** por ISRC si lo hay; si no, por artista + título (+ álbum) en MusicBrainz, **exigiendo que
    el artista coincida**. Si hay más de un candidato y no se puede desempatar, **no se usa ningún dato** (ejemplo
    real: el "True" de Spandau Ballet no es el EP "True" de Solange).
@@ -312,7 +319,7 @@ trabajadores, ruta de modelos de Kokoro, contacto para el `User-Agent` de MusicB
    frase y un comando de desarrollo (`cassette dj probar`) que registra un clip de prueba en el próximo hueco.
 2. **Servicio DJ: cola, contrato HTTP, texto para voz y Kokoro**, con frases armadas por plantillas; y en la radio el
    planificador, la cola de un trabajo y el cliente HTTP. Queda funcionando de punta a punta (con plantillas).
-3. **Hechos reales:** hora, clima, MusicBrainz, Wikipedia, caché y el selector de ingredientes.
+3. **Hechos reales:** hora, clima, MusicBrainz (año del tema, país y comienzo del artista), caché y el selector de ingredientes, con plantillas que usan esos datos. *(Acordado el 14/11: Wikipedia, Wikidata y la frase extraída pasan a la parte 4, donde el LLM las usa.)*
 4. **LLM redactor**, con verificación del texto, respaldo por plantillas y pruebas en la máquina de 8 GB.
 
 Cada parte tendrá su plan de implementación. Los beans actuales de la Etapa 3 se reparten entre estas partes.
