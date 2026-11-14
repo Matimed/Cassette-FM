@@ -275,3 +275,34 @@ def test_spotify_valores_invalidos(tmp_path, texto, mensaje):
     archivo.write_text(f"[spotify]\n{texto}\n")
     with pytest.raises(ErrorConfig, match=mensaje):
         cargar_config(archivo)
+
+
+def test_spotify_campos_de_reproduccion_por_defecto(tmp_path):
+    from cassette_fm.config import ConfigSpotify
+    s = ConfigSpotify()
+    assert (s.soloist_ws, s.nombre_dispositivo, s.ajuste_volumen_db, s.uris_por_pedido, s.tolerancia_resync_segundos,
+            s.activo) == ("ws://127.0.0.1:9787", "cassette-fm", 0.0, 100, 3.0, True)
+    assert s.soloist_bin == Path.home() / ".local/share/cassette-fm/soloist/bin/soloist"
+
+
+def test_spotify_campos_de_reproduccion_del_toml(tmp_path):
+    archivo = tmp_path / "config.toml"
+    archivo.write_text('[spotify]\nactivo = false\najuste_volumen_db = -4.5\nuris_por_pedido = 50\n'
+                       'nombre_dispositivo = "radio"\nsoloist_ws = "ws://127.0.0.1:1234"\nsoloist_bin = "~/x/soloist"\n')
+    s = cargar_config(archivo).spotify
+    assert (s.activo, s.ajuste_volumen_db, s.uris_por_pedido, s.nombre_dispositivo, s.soloist_ws) == (
+        False, -4.5, 50, "radio", "ws://127.0.0.1:1234")
+    assert s.soloist_bin == Path.home() / "x/soloist"
+
+
+@pytest.mark.parametrize("texto, mensaje", [("ajuste_volumen_db = 40", "ajuste_volumen_db"),
+                                            ("uris_por_pedido = 0", "uris_por_pedido"),
+                                            ("uris_por_pedido = 1000", "uris_por_pedido"),
+                                            ('soloist_ws = "http://x"', "soloist_ws"),
+                                            ("activo = 1", "activo"), ('nombre_dispositivo = ""', "nombre_dispositivo"),
+                                            ("tolerancia_resync_segundos = 0", "tolerancia")])
+def test_spotify_campos_de_reproduccion_invalidos(tmp_path, texto, mensaje):
+    archivo = tmp_path / "config.toml"
+    archivo.write_text(f"[spotify]\n{texto}\n")
+    with pytest.raises(ErrorConfig, match=mensaje):
+        cargar_config(archivo)

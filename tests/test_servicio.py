@@ -407,3 +407,58 @@ def test_servir_migra_y_usa_el_json(tmp_path, dir_corto, crear_mp3):
     finally:
         parar.set()
         hilo.join(3)
+
+
+def _hilos_soloist():
+    return [t for t in threading.enumerate() if t.name == "soloist-ws" and t.is_alive()]
+
+
+def _servir_en_hilo(config, rutas):
+    parar = threading.Event()
+    hilo = threading.Thread(target=servir, kwargs=dict(config=config, rutas=rutas, parar=parar,
+                                                       extra_args_mpv=["--ao=null"]), daemon=True)
+    hilo.start()
+    esperar_servicio(config.puerto)
+    return parar, hilo
+
+
+def test_servir_sin_spotify_no_arranca_soloist(tmp_path, dir_corto):
+    from cassette_fm.config import ConfigSpotify
+    rutas = Rutas(tmp_path / "c.toml", tmp_path / "e.json", tmp_path / "d.json", dir_corto)
+    config = Config(raiz_musica=tmp_path / "nada", puerto=puerto_libre(), avisos=False,
+                    spotify=ConfigSpotify(activo=False))
+    parar, hilo = _servir_en_hilo(config, rutas)
+    try:
+        assert _hilos_soloist() == [] and not (dir_corto / "estatica.wav").exists()
+    finally:
+        parar.set()
+        hilo.join(3)
+
+
+def test_servir_con_spotify_conecta_a_soloist_y_lo_cierra(tmp_path, dir_corto):
+    from websockets.sync.server import serve
+    from cassette_fm.config import ConfigSpotify
+    conectado = threading.Event()
+
+    def atender(ws):
+        conectado.set()
+        for _ in ws:
+            pass
+    puerto_ws = puerto_libre()
+    servidor_ws = serve(atender, "127.0.0.1", puerto_ws)
+    threading.Thread(target=servidor_ws.serve_forever, daemon=True).start()
+    rutas = Rutas(tmp_path / "c.toml", tmp_path / "e.json", tmp_path / "d.json", dir_corto)
+    config = Config(raiz_musica=tmp_path / "nada", puerto=puerto_libre(), avisos=False,
+                    spotify=ConfigSpotify(soloist_ws=f"ws://127.0.0.1:{puerto_ws}", api_url="http://127.0.0.1:9/v1"))
+    parar, hilo = _servir_en_hilo(config, rutas)
+    try:
+        assert conectado.wait(5) and (dir_corto / "estatica.wav").exists()
+    finally:
+        parar.set()
+        hilo.join(5)
+        servidor_ws.shutdown()
+    assert not hilo.is_alive()
+    fin = time.monotonic() + 3
+    while _hilos_soloist() and time.monotonic() < fin:
+        time.sleep(0.05)
+    assert _hilos_soloist() == []

@@ -389,3 +389,64 @@ def test_status_muestra_spotify():
     base = {"encendida": True, "estacion": "Sing", "pista": "A - T", "volumen": 70}
     assert "Spotify" in _linea_estado({**base, "fuente": "spotify"})
     assert "Spotify" not in _linea_estado({**base, "fuente": "carpeta"})
+
+
+def _soloist_falso_ws(eventos):
+    import json as _json
+    import socket
+    import threading
+    from websockets.sync.server import serve
+
+    def atender(ws):
+        for crudo in ws:
+            if _json.loads(crudo).get("command") == "get_auth_state":
+                ws.send(_json.dumps(eventos))
+    with socket.socket() as s:
+        s.bind(("127.0.0.1", 0))
+        puerto = s.getsockname()[1]
+    srv = serve(atender, "127.0.0.1", puerto)
+    threading.Thread(target=srv.serve_forever, daemon=True).start()
+    return srv, f"ws://127.0.0.1:{puerto}"
+
+
+def _bin_falso(tmp_path, fecha="20261113"):
+    b = tmp_path / "soloist"
+    b.write_text(f"#!/bin/sh\necho 'soloist 1.3.10.71 build 1794592912 ({fecha}) (g19412df6ea) (linux/x86_64)'\n")
+    b.chmod(0o755)
+    return b
+
+
+def test_spotify_estado_muestra_soloist_y_los_dias_que_le_quedan(tmp_path, monkeypatch, capsys):
+    import datetime
+    from cassette_fm import cli
+    r = _rutas_tmp(monkeypatch, tmp_path)
+    srv, url = _soloist_falso_ws({"type": "auth_state", "logged_in": True, "is_active": False,
+                                  "device_name": "cassette-fm"})
+    r.config.write_text(f'[spotify]\nsoloist_ws = "{url}"\nsoloist_bin = "{_bin_falso(tmp_path)}"\n')
+    monkeypatch.setattr(cli, "_hoy", lambda: datetime.date(2026, 11, 14))
+    try:
+        main(["spotify", "estado"])
+    finally:
+        srv.shutdown()
+    salida = capsys.readouterr().out
+    assert "Soloist: corriendo · sesión: sí · activo: no" in salida
+    assert "build 20261113: vence en 89 días" in salida and "⚠" not in salida
+
+
+def test_spotify_estado_avisa_si_soloist_esta_por_vencer_o_no_responde(tmp_path, monkeypatch, capsys):
+    import datetime
+    from cassette_fm import cli
+    r = _rutas_tmp(monkeypatch, tmp_path)
+    r.config.write_text(f'[spotify]\nsoloist_ws = "ws://127.0.0.1:9"\nsoloist_bin = "{_bin_falso(tmp_path)}"\n')
+    monkeypatch.setattr(cli, "_hoy", lambda: datetime.date(2027, 2, 1))
+    main(["spotify", "estado"])
+    salida = capsys.readouterr().out
+    assert "Soloist: no responde" in salida
+    assert "⚠ Soloist vence en 10 días" in salida and "actualizar-soloist.sh" in salida
+
+
+def test_spotify_estado_sin_soloist_instalado(tmp_path, monkeypatch, capsys):
+    r = _rutas_tmp(monkeypatch, tmp_path)
+    r.config.write_text(f'[spotify]\nsoloist_ws = "ws://127.0.0.1:9"\nsoloist_bin = "{tmp_path / "no-esta"}"\n')
+    main(["spotify", "estado"])
+    assert "no está instalado" in capsys.readouterr().out

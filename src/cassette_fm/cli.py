@@ -217,9 +217,59 @@ def _spotify(args, cfg, rutas) -> int:
     return 0
 
 
+def _hoy():
+    import datetime
+    return datetime.date.today()
+
+
+def _estado_soloist(c) -> None:
+    """Soloist: si responde, si tiene sesión y si es el dispositivo activo; y cuánto le queda al build (90 días)."""
+    import datetime
+    import re
+    import subprocess
+    import threading
+    from cassette_fm.spotify.api import ErrorSpotify
+    from cassette_fm.spotify.soloist import ClienteSoloist
+    auth: dict = {}
+    llego = threading.Event()
+
+    def evento(e):
+        if e.get("type") == "auth_state":
+            auth.update(e)
+            llego.set()
+    cliente = ClienteSoloist(c.soloist_ws, al_evento=evento)
+    try:
+        cliente.conectar(2)
+        cliente.comando("get_auth_state")
+        if llego.wait(2):
+            si = lambda v: "sí" if v else "no"      # noqa: E731
+            print(f"Soloist: corriendo · sesión: {si(auth.get('logged_in'))} · activo: {si(auth.get('is_active'))}")
+        else:
+            print("Soloist: corriendo, pero no contestó el estado de la sesión")
+    except ErrorSpotify as e:
+        print(f"Soloist: no responde ({e}) — systemctl --user status cassette-soloist")
+    finally:
+        cliente.cerrar()
+    try:
+        version = subprocess.run([str(c.soloist_bin), "--version"], capture_output=True, text=True, timeout=5).stdout
+    except (OSError, subprocess.SubprocessError):
+        print(f"Soloist: no está instalado en {c.soloist_bin} (scripts/instalar-spotify.sh)")
+        return
+    m = re.search(r"\((\d{8})\)", version)
+    if not m:
+        return
+    vence = datetime.datetime.strptime(m.group(1), "%Y%m%d").date() + datetime.timedelta(days=90)
+    dias = (vence - _hoy()).days
+    if dias < 14:
+        print(f"⚠ Soloist vence en {dias} días: corré scripts/actualizar-soloist.sh")
+    else:
+        print(f"Soloist build {m.group(1)}: vence en {dias} días")
+
+
 def _spotify_estado(cfg, rutas, s) -> int:
     from cassette_fm import emisoras, servicio
     from cassette_fm.spotify.api import ClienteSpotify, ErrorSpotify
+    _estado_soloist(cfg.spotify)
     try:
         yo = ClienteSpotify(s, cfg.spotify).get("/me")
     except ErrorSpotify as e:

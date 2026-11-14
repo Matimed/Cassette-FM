@@ -55,6 +55,13 @@ class ConfigSpotify:
     timeout_segundos: float = 10.0
     cuentas_url: str = "https://accounts.spotify.com"
     api_url: str = "https://api.spotify.com/v1"
+    activo: bool = True                       # false: las emisoras de Spotify se ignoran y Soloist no se usa
+    soloist_ws: str = "ws://127.0.0.1:9787"   # WebSocket local de Soloist (servicio cassette-soloist)
+    soloist_bin: Path = Path.home() / ".local/share/cassette-fm/soloist/bin/soloist"
+    nombre_dispositivo: str = "cassette-fm"   # nombre de Soloist como dispositivo de Spotify
+    ajuste_volumen_db: float = 0.0            # para que Spotify suene tan fuerte como las locales (scripts/calibrar-spotify.py)
+    uris_por_pedido: int = 100                # temas que se le mandan a Spotify de una vez (no se usa la cola)
+    tolerancia_resync_segundos: float = 3.0   # desfase con el reloj que hace re-sintonizar al empezar un tema
 
 
 @dataclass(frozen=True)
@@ -160,14 +167,35 @@ def _leer_spotify(archivo: Path, tabla) -> "ConfigSpotify":
     if not isinstance(tabla, dict):
         raise ErrorConfig(f"{archivo}: 'spotify' tiene que ser una tabla")
     campos = {}
-    for clave in ("client_id", "cuentas_url", "api_url"):
+    for clave in ("client_id", "cuentas_url", "api_url", "soloist_ws", "nombre_dispositivo", "soloist_bin"):
         if clave in tabla:
             valor = _texto(archivo, f"spotify.{clave}", tabla[clave]).strip()
             if not valor:
                 raise ErrorConfig(f"{archivo}: 'spotify.{clave}' no puede quedar vacío")
-            if clave != "client_id" and not re.match(r"^https?://\S+$", valor):
+            if clave in ("cuentas_url", "api_url") and not re.match(r"^https?://\S+$", valor):
                 raise ErrorConfig(f"{archivo}: 'spotify.{clave}' tiene que empezar con http:// o https://")
-            campos[clave] = valor.rstrip("/")
+            if clave == "soloist_ws" and not re.match(r"^ws://\S+$", valor):
+                raise ErrorConfig(f"{archivo}: 'spotify.soloist_ws' tiene que empezar con ws://")
+            campos[clave] = Path(valor).expanduser() if clave == "soloist_bin" else valor.rstrip("/")
+    if "activo" in tabla:
+        if not isinstance(tabla["activo"], bool):
+            raise ErrorConfig(f"{archivo}: 'spotify.activo' tiene que ser true o false")
+        campos["activo"] = tabla["activo"]
+    if "ajuste_volumen_db" in tabla:
+        valor = _numero(archivo, "spotify.ajuste_volumen_db", tabla["ajuste_volumen_db"])
+        if not -30 <= valor <= 30:
+            raise ErrorConfig(f"{archivo}: 'spotify.ajuste_volumen_db' tiene que estar entre -30 y 30")
+        campos["ajuste_volumen_db"] = valor
+    if "uris_por_pedido" in tabla:
+        valor = tabla["uris_por_pedido"]
+        if isinstance(valor, bool) or not isinstance(valor, int) or not 1 <= valor <= 500:
+            raise ErrorConfig(f"{archivo}: 'spotify.uris_por_pedido' tiene que ser un entero entre 1 y 500")
+        campos["uris_por_pedido"] = valor
+    if "tolerancia_resync_segundos" in tabla:
+        valor = _numero(archivo, "spotify.tolerancia_resync_segundos", tabla["tolerancia_resync_segundos"])
+        if valor <= 0:
+            raise ErrorConfig(f"{archivo}: 'spotify.tolerancia_resync_segundos' tiene que ser mayor que 0")
+        campos["tolerancia_resync_segundos"] = valor
     if "puerto_login" in tabla:
         valor = tabla["puerto_login"]
         if isinstance(valor, bool) or not isinstance(valor, int) or not 1 <= valor <= 65535:

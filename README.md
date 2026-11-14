@@ -329,8 +329,22 @@ usar una de esas, copiala a una playlist propia.
 - `cassette spotify estado` muestra la cuenta y cuántos temas tiene cada emisora de Spotify.
 - Los temas se guardan en `~/.cache/cassette-fm/spotify.json`: el rescan solo los vuelve a bajar si la playlist cambió,
   y si Spotify no responde usa los guardados.
-- **Todavía no suenan** (parte 4c, con Spotify Soloist): por ahora el rescan las lee y avisa en el log cuántos temas
-  tienen listos. `[spotify]` del `config.toml` admite `client_id`, `puerto_login` (8888) y `timeout_segundos`.
+- Suenan con **Spotify Soloist** (cliente oficial de Spotify sin ventana, ~45 MB de RAM), que corre como servicio de
+  usuario `cassette-soloist`. Instalación (una vez): guardá la API key de Soloist (se genera en
+  <https://developer.spotify.com/dashboard/soloist>) en `~/.config/cassette-fm/soloist.key` con `chmod 600` y corré
+  `scripts/instalar-spotify.sh` (baja Soloist, lo empareja desde el celular, instala el servicio y hace el login).
+- **Cada build de Soloist vence a los 90 días**: `cassette spotify estado` avisa cuando faltan menos de 14 y
+  `scripts/actualizar-soloist.sh` lo renueva.
+- Al sintonizar una emisora de Spotify suena un segundo de estática hasta que arranca la música. Los temas siguen la
+  misma agenda que una emisora local (orden mezclado, se entra con el tema empezado) y Spotify los encadena sin cortes.
+  El DJ habla igual, con la música bajada.
+- La radio no usa tu cola de Spotify: si agregás un tema a la cola desde la app mientras suena una emisora de
+  Spotify, suena a continuación y después la emisora vuelve a su agenda.
+- Si ponés Spotify en otro dispositivo (el celular), la radio se apaga y avisa. Si sintonizás una emisora de Spotify,
+  la radio toma el control de tu cuenta.
+- `[spotify]` del `config.toml`: `activo` (false = ignorar las emisoras de Spotify), `ajuste_volumen_db` (para que
+  suenen tan fuerte como las locales; lo propone `scripts/calibrar-spotify.py`), `nombre_dispositivo`, `soloist_ws`,
+  `soloist_bin`, `uris_por_pedido`, `tolerancia_resync_segundos`, `client_id`, `puerto_login` y `timeout_segundos`.
 
 ### Emisoras
 

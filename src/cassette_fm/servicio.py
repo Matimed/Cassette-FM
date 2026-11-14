@@ -14,7 +14,9 @@ from cassette_fm.locutor import Locutor
 from cassette_fm.mpv import ClienteMpv
 from cassette_fm.planificador import Planificador
 from cassette_fm.radio import Radio
+from cassette_fm.clips import generar_estatica
 from cassette_fm.reproductor import Reproductor
+from cassette_fm.reproductores import Reproductores
 
 
 _log = logging.getLogger("cassette_fm")
@@ -29,12 +31,32 @@ def argumentos_voz(dj, extra: Sequence[str] = ()) -> list[str]:
     return args
 
 
-def catalogo_spotify(config: Config, rutas: Rutas):
+def cliente_spotify(config: Config, rutas: Rutas):
+    """Un solo cliente (y una sola sesión) de Spotify para el catálogo y el reproductor."""
     from cassette_fm.spotify.api import ClienteSpotify
-    from cassette_fm.spotify.catalogo import CatalogoSpotify
     from cassette_fm.spotify.sesion import Sesion
-    return CatalogoSpotify(ClienteSpotify(Sesion(rutas.spotify_token, config.spotify), config.spotify),
-                           rutas.spotify_cache)
+    return ClienteSpotify(Sesion(rutas.spotify_token, config.spotify), config.spotify)
+
+
+def catalogo_spotify(config: Config, rutas: Rutas, cliente=None):
+    from cassette_fm.spotify.catalogo import CatalogoSpotify
+    return CatalogoSpotify(cliente or cliente_spotify(config, rutas), rutas.spotify_cache)
+
+
+def reproductor_spotify(config: Config, rutas: Rutas, cliente):
+    """El reproductor de Spotify con su WebSocket de Soloist (que se conecta en segundo plano)."""
+    from cassette_fm.reproductor_spotify import ReproductorSpotify
+    from cassette_fm.spotify.control import ControlSpotify
+    from cassette_fm.spotify.soloist import ClienteSoloist
+    c = config.spotify
+    rep: list = []
+    soloist = ClienteSoloist(c.soloist_ws, al_evento=lambda e: rep[0].manejar_evento(e) if rep else None,
+                             al_desconectar=lambda: rep[0].soloist_desconectado() if rep else None)
+    rep.append(ReproductorSpotify(ControlSpotify(cliente, c.nombre_dispositivo), soloist,
+                                  uris_por_pedido=c.uris_por_pedido, ajuste_volumen_db=c.ajuste_volumen_db,
+                                  tolerancia_resync_segundos=c.tolerancia_resync_segundos))
+    soloist.iniciar()
+    return rep[0], soloist
 
 
 def servir(config: Config, rutas: Rutas, avisar: Callable[[str, str], None] | None = None,
@@ -47,7 +69,9 @@ def servir(config: Config, rutas: Rutas, avisar: Callable[[str, str], None] | No
         for senal in (signal.SIGTERM, signal.SIGINT):
             signal.signal(senal, lambda *_: parar.set())
 
-    catalogo = Catalogo(config, rutas, spotify=catalogo_spotify(config, rutas))
+    cliente = cliente_spotify(config, rutas) if config.spotify.activo else None
+    catalogo = Catalogo(config, rutas, spotify=catalogo_spotify(config, rutas, cliente) if cliente else None,
+                        reproduce_spotify=config.spotify.activo)
     escanear = catalogo.escanear
 
     estado = cargar_estado(rutas.estado)
@@ -55,7 +79,11 @@ def servir(config: Config, rutas: Rutas, avisar: Callable[[str, str], None] | No
     mpv = ClienteMpv(rutas.runtime / "mpv.sock", extra_args=args_mpv)
     estaciones = escanear()
     _log.info("%d estaciones (de %s)", len(estaciones), rutas.emisoras)
-    reproductor = Reproductor(mpv)
+    spotify = soloist = estatica = None
+    if cliente is not None:
+        spotify, soloist = reproductor_spotify(config, rutas, cliente)
+        estatica = generar_estatica(rutas.runtime / "estatica.wav")
+    reproductor = Reproductores(Reproductor(mpv), spotify, estatica)
     locutor = None
     planificador = None
     extra_radio = {}
@@ -93,6 +121,8 @@ def servir(config: Config, rutas: Rutas, avisar: Callable[[str, str], None] | No
         pasos.append(radio.apagar)
         if locutor is not None:
             pasos.append(locutor.cerrar)
+        if soloist is not None:
+            pasos.append(soloist.cerrar)
         pasos.append(mpv.cerrar)
         for paso in pasos:
             try:

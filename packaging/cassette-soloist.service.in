@@ -1,0 +1,14 @@
+[Unit]
+Description=Spotify Soloist para cassette-fm (las emisoras de Spotify suenan acá)
+After=pipewire.service pipewire-pulse.service
+
+[Service]
+# La API key se lee del archivo al arrancar: no queda escrita en esta unidad.
+ExecStart=/bin/sh -c 'exec "@SOLOIST@" -n "@NOMBRE@" -k "$(cat "@KEY@")" -D "@DATOS@" -C "@CACHE@" -w 127.0.0.1:9787 -i 80'
+Restart=on-failure
+RestartSec=5
+# Código 10: el build venció (cada 90 días); no tiene sentido reintentar → scripts/actualizar-soloist.sh
+RestartPreventExitStatus=10
+
+[Install]
+WantedBy=default.target
