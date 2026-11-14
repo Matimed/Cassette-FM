@@ -255,6 +255,67 @@ def test_idle_sin_estacion_sintonizada_se_ignora(rep, mpv):
     assert caidas == []
 
 
+def _volumenes(mpv):
+    return [c[0][2] for c in mpv.comandos if c[0][:2] == ("set_property", "volume")]
+
+
+def test_atenuar_sin_rampa_aplica_el_volumen_por_el_factor(rep, mpv):
+    rep.volumen(80)
+    rep.atenuar(0.35, 0)
+    assert _volumenes(mpv)[-1] == pytest.approx(28.0)
+
+
+def test_atenuar_con_rampa_baja_en_pasos_y_llega_al_valor(rep, mpv):
+    rep.volumen(80)
+    mpv.comandos.clear()
+    rep.atenuar(0.5, 0.2)
+    fin = time.monotonic() + 1.0
+    while time.monotonic() < fin and (not _volumenes(mpv) or _volumenes(mpv)[-1] != pytest.approx(40.0)):
+        time.sleep(0.02)
+    v = _volumenes(mpv)
+    assert len(v) > 2
+    assert all(b <= a + 1e-9 for a, b in zip(v, v[1:]))
+    assert v[-1] == pytest.approx(40.0)
+
+
+def test_volumen_durante_la_atenuacion_respeta_el_factor(rep, mpv):
+    rep.volumen(80)
+    rep.atenuar(0.35, 0)
+    rep.volumen(60)
+    assert _volumenes(mpv)[-1] == pytest.approx(21.0)
+    rep.atenuar(1.0, 0)
+    assert _volumenes(mpv)[-1] == pytest.approx(60.0)
+
+
+def test_restaurar_devuelve_el_volumen_del_usuario(rep, mpv):
+    rep.volumen(70)
+    rep.atenuar(0.35, 0)
+    rep.atenuar(1.0, 0)
+    assert _volumenes(mpv)[-1] == pytest.approx(70.0)
+
+
+def test_una_rampa_nueva_reemplaza_a_la_anterior(rep, mpv):
+    rep.volumen(80)
+    rep.atenuar(0.2, 0.5)
+    rep.atenuar(1.0, 0)
+    time.sleep(0.7)
+    assert _volumenes(mpv)[-1] == pytest.approx(80.0)
+
+
+def test_volumen_cero_con_atenuacion_es_cero(rep, mpv):
+    rep.volumen(0)
+    rep.atenuar(0.35, 0)
+    assert _volumenes(mpv)[-1] == pytest.approx(0.0)
+
+
+def test_relanzamiento_reaplica_el_volumen_efectivo(rep, mpv):
+    rep.volumen(80)
+    rep.atenuar(0.5, 0)
+    mpv.generacion += 1
+    rep.asegurar()
+    assert _volumenes(mpv)[-1] == pytest.approx(40.0)
+
+
 # --- integración con mpv real ---
 
 def esperar(condicion, timeout):

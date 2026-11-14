@@ -15,6 +15,7 @@ class Reproductor:
     """Alimenta a mpv con la secuencia de la agenda: pista actual + `cola` siguientes."""
 
     MAX_FALLOS = 10   # errores de carga seguidos antes de darse por vencido
+    PASO_RAMPA = 0.05   # segundos entre pasos de una rampa de volumen
 
     pista_actual: Pista | None = None
     al_cambiar_pista: Callable[[Pista, Estacion], None] | None = None
@@ -32,6 +33,8 @@ class Reproductor:
         self._avisada = True
         self._estacion: Estacion | None = None
         self._volumen: int | None = None
+        self._factor = 1.0          # atenuación vigente (la voz baja la música)
+        self._rampa = 0             # identifica la rampa en curso; una nueva invalida a la anterior
         self._fallos = 0
         self._fallidos: set[int] = set()   # ids de entradas que no cargaron
         self._generacion = mpv.generacion
@@ -91,8 +94,45 @@ class Reproductor:
         with self._lock:
             self._asegurar()
             self._volumen = valor
-            self._mpv.comando("set_property", "volume", valor)
+            self._aplicar_volumen()
         return valor
+
+    def atenuar(self, factor: float, segundos: float = 0.0) -> None:
+        """Lleva el volumen efectivo a `volumen_usuario * factor`, con una rampa lineal de `segundos`.
+
+        Una rampa nueva reemplaza a la que esté en curso, partiendo del valor actual."""
+        with self._lock:
+            self._rampa += 1
+            token, inicio = self._rampa, self._factor
+            if segundos <= 0 or inicio == factor:
+                self._factor = factor
+                self._asegurar()
+                self._aplicar_volumen()
+                return
+        threading.Thread(target=self._correr_rampa, args=(token, inicio, factor, segundos),
+                         daemon=True, name="mpv-rampa").start()
+
+    def _correr_rampa(self, token: int, inicio: float, fin: float, segundos: float) -> None:
+        t0 = time.monotonic()
+        while True:
+            avance = (time.monotonic() - t0) / segundos
+            ultimo = avance >= 1
+            with self._lock:
+                if token != self._rampa:
+                    return
+                self._factor = fin if ultimo else inicio + (fin - inicio) * avance
+                try:
+                    self._aplicar_volumen()
+                except ErrorMpv:
+                    _log.warning("no se pudo aplicar la rampa de volumen")
+                    return
+            if ultimo:
+                return
+            time.sleep(self.PASO_RAMPA)
+
+    def _aplicar_volumen(self) -> None:
+        if self._volumen is not None:
+            self._mpv.comando("set_property", "volume", self._volumen * self._factor)
 
     def manejar_evento(self, evento: dict) -> None:
         avisar = None
@@ -162,8 +202,7 @@ class Reproductor:
         if self._mpv.generacion == self._generacion:
             return
         self._generacion = self._mpv.generacion
-        if self._volumen is not None:
-            self._mpv.comando("set_property", "volume", self._volumen)
+        self._aplicar_volumen()
         if restaurar_estacion and self._estacion is not None:
             self._sintonizar(self._estacion)
 
