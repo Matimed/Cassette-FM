@@ -81,3 +81,73 @@ def test_config_invalida_da_error_claro(tmp_path, contenido):
     with pytest.raises(ErrorConfig) as exc:
         cargar_config(archivo)
     assert str(archivo) in str(exc.value)
+
+
+# --- DJ ---
+
+from cassette_fm.config import ConfigDJ, configuracion_dj  # noqa: E402
+
+
+def test_dj_por_defecto():
+    assert Config().dj == ConfigDJ()
+    d = ConfigDJ()
+    assert d.activo is False
+    assert (d.duracion_maxima_segundos, d.retraso_voz_segundos, d.nivel_musica_con_voz,
+            d.rampa_bajada_segundos, d.rampa_subida_segundos, d.minimo_restante_segundos,
+            d.tolerancia_desfase_segundos, d.desfase_aviso_segundos,
+            d.margen_seguridad_voz_segundos) == (15.0, 1.0, 0.35, 0.4, 1.0, 1.5, 60.0, 5.0, 2.0)
+
+
+def test_dj_lee_la_tabla_y_acepta_enteros(tmp_path):
+    archivo = tmp_path / "config.toml"
+    archivo.write_text("[dj]\nactivo = true\nduracion_maxima_segundos = 20\nnivel_musica_con_voz = 0.5\n")
+    dj = cargar_config(archivo).dj
+    assert dj.activo is True and dj.nivel_musica_con_voz == 0.5
+    assert dj.duracion_maxima_segundos == 20.0 and isinstance(dj.duracion_maxima_segundos, float)
+
+
+def test_dj_por_estacion_pisa_a_la_general(tmp_path):
+    archivo = tmp_path / "config.toml"
+    archivo.write_text('[dj]\nduracion_maxima_segundos = 15\nretraso_voz_segundos = 2\n'
+                       '[dj.estaciones."Lentos"]\nduracion_maxima_segundos = 25\n')
+    cfg = cargar_config(archivo)
+    lentos = configuracion_dj(cfg, "Lentos")
+    assert lentos.duracion_maxima_segundos == 25.0
+    assert lentos.retraso_voz_segundos == 2.0          # lo demás es el valor general
+    assert configuracion_dj(cfg, "Otra").duracion_maxima_segundos == 15.0
+
+
+def test_dj_ignora_claves_de_otras_partes(tmp_path):
+    archivo = tmp_path / "config.toml"
+    archivo.write_text('[dj]\nurl = "http://x"\nmargen_minutos = 6\npalabras_maximas = 45\n'
+                       'frecuencia = {modo = "temas", min = 2, max = 3}\n'
+                       '[dj.estaciones."X"]\nvoz = "em_santa"\nidioma = "es"\npersonalidad = "hola"\n')
+    assert cargar_config(archivo).dj == ConfigDJ()
+
+
+@pytest.mark.parametrize("contenido", [
+    "[dj]\nnivel_musica_con_voz = 0",
+    "[dj]\nnivel_musica_con_voz = 1.5",
+    "[dj]\nduracion_maxima_segundos = 0",
+    "[dj]\nduracion_maxima_segundos = -3",
+    "[dj]\nrampa_bajada_segundos = -1",
+    '[dj]\nretraso_voz_segundos = "uno"',
+    '[dj]\nactivo = "si"',
+    "[dj]\nestaciones = 5",
+    "[dj.estaciones]\nLentos = 3",
+    "[dj]\nretraso_voz_segundos = true",
+])
+def test_dj_invalido_da_error_claro(tmp_path, contenido):
+    archivo = tmp_path / "config.toml"
+    archivo.write_text(contenido + "\n")
+    with pytest.raises(ErrorConfig) as exc:
+        cargar_config(archivo)
+    assert str(archivo) in str(exc.value)
+
+
+def test_rutas_del_dj(tmp_path):
+    from cassette_fm.config import Rutas
+    r = Rutas(config=tmp_path / "c.toml", estado=tmp_path / "s" / "estado.json",
+              cache=tmp_path / "k" / "duraciones.json", runtime=tmp_path / "r")
+    assert r.intervenciones == tmp_path / "s" / "intervenciones.json"
+    assert r.clips == tmp_path / "k" / "dj"
