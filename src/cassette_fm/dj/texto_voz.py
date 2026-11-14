@@ -72,14 +72,16 @@ def _unir(anterior: str, siguiente: str) -> str:
 
 
 def limpiar(marcado: str, lang_base: str, minimo_palabras: int = 4) -> str:
-    y = _y(lang_base)
     nombres: list[str] = []
+    marcado = marcado.replace(_INICIO, "").replace(_FIN, "")     # no se pueden inyectar los marcadores internos
 
     def guardar(m: re.Match) -> str:
         nombre = re.sub("[" + _COMILLAS + "]", "", m.group(2))
-        nombre = re.sub(r"\s*&\s*", f" {y} ", nombre)
+        nombre = re.sub(r"\s*&\s*", f" {_y(m.group(1))} ", nombre)     # "and"/"y" según el idioma del NOMBRE
+        # Kokoro trata . ! ? , ; : como marcas de pausa también adentro de un nombre ("Mr. Big", "Panic! At...")
+        nombre = re.sub(r"[¡¿!?.,;:—–]", " ", nombre)
         nombre = re.sub(r"\s+", " ", nombre).strip()
-        if not nombre:
+        if not any(c.isalnum() for c in nombre):
             return " "
         nombres.append("{" + m.group(1) + ":" + nombre + "}")
         return f" {_INICIO}{len(nombres) - 1}{_FIN} "
@@ -90,7 +92,7 @@ def limpiar(marcado: str, lang_base: str, minimo_palabras: int = 4) -> str:
     t = re.sub("[" + _COMILLAS + "]", "", t)
     t = re.sub(r"(?<=\w)[‘’](?=\w)", "'", t)
     t = re.sub(r"[‘’]", "", t)
-    t = re.sub(r"\s*&\s*", f" {y} ", t)
+    t = re.sub(r"\s*&\s*", f" {_y(lang_base)} ", t)
     t = t.replace("…", ".")
     t = re.sub(r"\.{2,}", ".", t)
     t = re.sub(r"\s+", " ", t).strip()

@@ -1,4 +1,6 @@
+import ctypes
 import gc
+import http.client
 import os
 import threading
 import time
@@ -7,8 +9,6 @@ from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
-import numpy as np
-
 from cassette_fm.dj.config import ConfigServicioDJ
 
 ARCHIVOS_MODELO = ("kokoro-v1.0.onnx", "voices-v1.0.bin")
@@ -16,7 +16,16 @@ URL_MODELOS = "https://github.com/thewh1teagle/kokoro-onnx/releases/download/mod
 
 
 class ErrorModelos(Exception):
-    """Faltan los archivos del modelo de Kokoro."""
+    """Faltan los archivos del modelo de Kokoro, están corruptos o falta el extra [dj]."""
+
+
+def _devolver_memoria() -> None:
+    """Después de soltar Kokoro, glibc se queda con cientos de MB; se le piden de vuelta al sistema."""
+    gc.collect()
+    try:
+        ctypes.CDLL("libc.so.6").malloc_trim(0)
+    except (OSError, AttributeError):
+        pass          # no es glibc (o no es Linux): no hay nada que devolver
 
 
 def faltan_modelos(modelos_dir: Path) -> list[Path]:
@@ -36,9 +45,17 @@ def descargar_modelos(modelos_dir: Path, url_base: str = URL_MODELOS,
         url = url_base.rstrip("/") + "/" + destino.name
         progreso(f"bajando {destino.name} …")
         try:
-            with urllib.request.urlopen(url, timeout=30) as respuesta, open(parcial, "wb") as f:
-                while bloque := respuesta.read(1 << 20):
-                    f.write(bloque)
+            hecho = 0
+            try:
+                with urllib.request.urlopen(url, timeout=30) as respuesta, open(parcial, "wb") as f:
+                    esperado = respuesta.headers.get("Content-Length")
+                    while bloque := respuesta.read(1 << 20):
+                        f.write(bloque)
+                        hecho += len(bloque)
+            except http.client.HTTPException as e:       # p. ej. IncompleteRead: la conexión se cortó
+                raise OSError(f"la descarga de {destino.name} se cortó: {e}") from e
+            if esperado and esperado.isdigit() and hecho != int(esperado):
+                raise OSError(f"descarga incompleta de {destino.name}: {hecho} de {esperado} bytes")
             os.replace(parcial, destino)
         except BaseException:
             parcial.unlink(missing_ok=True)
@@ -85,9 +102,16 @@ class Sintetizador:
         if faltan:
             raise ErrorModelos(f"faltan los modelos de Kokoro ({', '.join(p.name for p in faltan)}) en "
                                f"{self._config.modelos_dir}: corré `cassette-dj modelos`")
-        from kokoro_onnx import Kokoro
+        try:
+            from kokoro_onnx import Kokoro
+        except ImportError as e:
+            raise ErrorModelos("falta instalar el extra [dj] (pip install -e '.[dj]')") from e
         onnx, voces = (self._config.modelos_dir / n for n in ARCHIVOS_MODELO)
-        return Kokoro(str(onnx), str(voces))
+        try:
+            return Kokoro(str(onnx), str(voces))
+        except Exception as e:
+            raise ErrorModelos(f"el modelo de Kokoro está corrupto o no se puede cargar ({type(e).__name__}): "
+                               f"borrá {self._config.modelos_dir} y corré `cassette-dj modelos`") from e
 
     def _modelo(self):
         if self._kokoro is None:
@@ -101,14 +125,23 @@ class Sintetizador:
         archivo = self._config.modelos_dir / ARCHIVOS_MODELO[1]
         if not archivo.is_file() or archivo.stat().st_size == 0:
             raise ErrorModelos(f"falta {ARCHIVOS_MODELO[1]} en {self._config.modelos_dir}: corré `cassette-dj modelos`")
-        with np.load(archivo) as v:
-            return sorted(v.files)
+        import numpy as np
+        try:
+            with np.load(archivo) as v:
+                return sorted(v.files)
+        except Exception as e:
+            raise ErrorModelos(f"el archivo de voces está corrupto ({type(e).__name__}): borralo y corré "
+                               "`cassette-dj modelos`") from e
 
     def sintetizar(self, fonemas: str, voz: str, lang: str, salida: Path) -> float:
-        import soundfile
         salida = Path(salida)
         with self._lock:
             kokoro = self._modelo()
+            try:
+                import numpy as np
+                import soundfile
+            except ImportError as e:
+                raise ErrorModelos("falta instalar el extra [dj] (pip install -e '.[dj]')") from e
             disponibles = list(kokoro.get_voices())
             partes = voz.split("+")
             for parte in partes:
@@ -137,5 +170,5 @@ class Sintetizador:
             if self._reloj() - self._ultimo_uso < self._config.descargar_tras_minutos * 60:
                 return False
             self._kokoro = None
-        gc.collect()
+        _devolver_memoria()
         return True

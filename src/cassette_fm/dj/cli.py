@@ -95,7 +95,7 @@ def main(argv: list[str] | None = None, *, sintetizador=None, fonemizar=None) ->
         logging.basicConfig(level=logging.INFO, format="%(levelname)s %(name)s: %(message)s")
         try:
             servir(config, rutas)
-        except ErrorConfig as e:
+        except (ErrorConfig, sint.ErrorModelos) as e:
             print(e, file=sys.stderr)
             return 1
         return 0

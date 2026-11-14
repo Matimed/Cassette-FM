@@ -43,7 +43,7 @@ def test_ignora_claves_desconocidas(tmp_path):
     "trabajadores = 0", "palabras_maximas = 2", "velocidad = 3", "velocidad = 0.1",
     "pausa_oracion_segundos = -1", "pausa_coma_segundos = -0.5", "descargar_tras_minutos = -1",
     "retencion_minutos = 0", 'host = ""', 'zona_horaria = "Marte/Olimpo"', 'continuo = "si"',
-    "esto no es toml =",
+    "esto no es toml =", 'modelos_dir = ""', 'modelos_dir = "relativo/dir"', 'modelos_dir = "."',
 ])
 def test_invalido_da_error_claro(tmp_path, contenido):
     archivo = tmp_path / "config.toml"
@@ -78,3 +78,11 @@ def test_rutas_sin_xdg_usan_los_defaults(monkeypatch):
 def test_cli_version(capsys):
     assert main(["--version"]) == 0
     assert capsys.readouterr().out.strip() != ""
+
+
+def test_modelos_dir_acepta_absoluta_y_tilde(tmp_path):
+    archivo = tmp_path / "c.toml"
+    archivo.write_text('modelos_dir = "/opt/modelos"\n')
+    assert cargar_config_dj(archivo).modelos_dir == Path("/opt/modelos")
+    archivo.write_text('modelos_dir = "~/modelos"\n')
+    assert cargar_config_dj(archivo).modelos_dir == Path.home() / "modelos"

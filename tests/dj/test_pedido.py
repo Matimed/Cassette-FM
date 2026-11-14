@@ -149,3 +149,21 @@ def test_no_modifica_la_entrada():
     copia = copy.deepcopy(d)
     leer_pedido(d)
     assert d == copia
+
+
+@pytest.mark.parametrize("donde,campo", [("siguiente", "artista"), ("siguiente", "titulo"), ("anterior", "titulo")])
+@pytest.mark.parametrize("basura", ['""', "{}", "“”", " {} \"\" "])
+def test_un_nombre_que_queda_vacio_al_limpiarlo_se_rechaza_con_su_campo(donde, campo, basura):
+    d = pedido_valido()
+    d[donde][campo] = basura
+    with pytest.raises(ValueError) as exc:
+        leer_pedido(d)
+    assert f"{donde}.{campo}" in str(exc.value)
+
+
+def test_estacion_que_queda_vacia_al_limpiarla_se_rechaza():
+    d = pedido_valido()
+    d["estacion"] = "{}"
+    with pytest.raises(ValueError) as exc:
+        leer_pedido(d)
+    assert "estacion" in str(exc.value)

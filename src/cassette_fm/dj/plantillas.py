@@ -2,7 +2,7 @@
 import random
 import re
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import datetime, tzinfo
 
 from cassette_fm.dj.lexico import Lexico
 from cassette_fm.dj.pedido import Pedido
@@ -105,8 +105,10 @@ def _palabras(marcado: str) -> int:
     return len(_MARCA.sub(lambda m: m.group(2), marcado).split())
 
 
-def redactar(pedido: Pedido, lexico: Lexico, azar: random.Random, palabras_maximas: int) -> Redaccion:
+def redactar(pedido: Pedido, lexico: Lexico, azar: random.Random, palabras_maximas: int,
+             zona: tzinfo | None = None) -> Redaccion:
     es = pedido.idioma == "es"
+    momento = pedido.momento.astimezone(zona) if zona is not None else pedido.momento
     lang = pedido.lang
     disponibles = set()
     if pedido.siguiente.album:
@@ -118,12 +120,12 @@ def redactar(pedido: Pedido, lexico: Lexico, azar: random.Random, palabras_maxim
     def m(nombre: str) -> str:
         return marcar(nombre, lexico.idioma_de(nombre, lang))
 
-    hora = frase_hora(pedido.momento, "es" if es else "en")
+    hora = frase_hora(momento, "es" if es else "en")
     campos = {
         "artista": m(pedido.siguiente.artista), "titulo": m(pedido.siguiente.titulo), "estacion": m(pedido.estacion),
         "hora": hora, "son": "Es" if hora.startswith("la ") else "Son",
         "son_min": "es" if hora.startswith("la ") else "son",
-        "este_momento": _este_momento(pedido.momento, es),
+        "este_momento": _este_momento(momento, es),
     }
     if pedido.siguiente.album:
         campos["album"] = m(pedido.siguiente.album)

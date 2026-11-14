@@ -45,8 +45,11 @@ def _texto(datos: dict, campo: str, donde: str = "", obligatorio: bool = True) -
     if not isinstance(valor, str):
         raise ValueError(f"campo '{nombre}': tiene que ser un texto")
     valor = valor.strip()[:_MAX_TEXTO]
-    if obligatorio and not valor:
-        raise ValueError(f"campo '{nombre}': no puede estar vacío")
+    # lo que queda al sacarle las llaves y las comillas (lo que se va a decir): no puede ser nada
+    if not re.sub(r"[{}\"“”]", "", valor).strip():
+        if obligatorio:
+            raise ValueError(f"campo '{nombre}': no puede estar vacío")
+        return None
     return valor
 
 

@@ -97,7 +97,7 @@ def test_una_sola_oracion_corta_se_deja():
 def test_los_nombres_marcados_cuentan_como_palabras():
     r = limpiar("Ahora {en-us:Wisin & Yandel con Daddy Yankee}. Seguimos con mucha música para todos.", "es")
     # la primera oración tiene 7 palabras (el nombre cuenta las suyas): no se une a la siguiente
-    assert r == "Ahora {en-us:Wisin y Yandel con Daddy Yankee}. Seguimos con mucha música para todos."
+    assert r == "Ahora {en-us:Wisin and Yandel con Daddy Yankee}. Seguimos con mucha música para todos."
 
 
 def test_conserva_apostrofes_dentro_de_palabras():
@@ -109,9 +109,30 @@ def test_termina_con_punto_y_respeta_la_pregunta():
     assert limpiar("Querés seguir escuchando con nosotros hoy?", "es").endswith("?")
 
 
-def test_no_toca_el_contenido_de_los_nombres_salvo_comillas():
+def test_los_nombres_pierden_la_puntuacion_que_hace_pausas():
+    """Review: Kokoro trata `. ! ? , ; :` como marcas de pausa también adentro de un nombre."""
     r = limpiar('Escuchamos {es:Héctor "El Father", Jowell} con mucho entusiasmo hoy.', "es")
-    assert "{es:Héctor El Father, Jowell}" in r        # la coma de adentro del nombre se conserva
+    assert "{es:Héctor El Father Jowell}" in r
+    for crudo, esperado in [("Mr. Big", "Mr Big"), ("Panic! At The Disco", "Panic At The Disco"),
+                            ("P!nk", "P nk"), ("¿Quién será?", "Quién será"), ("Re: Mix; uno", "Re Mix uno")]:
+        assert "{en-us:" + esperado + "}" in limpiar("Ahora suena {en-us:" + crudo + "} para todos ustedes hoy.", "es")
+
+
+def test_ampersand_usa_el_idioma_del_nombre():
+    """Review: `&` dentro de un nombre se lee con el idioma del nombre, no con el de la frase."""
+    es = limpiar("Ahora suena {en-us:Earth, Wind & Fire} para todos ustedes en vivo.", "es")
+    assert "{en-us:Earth Wind and Fire}" in es
+    en = limpiar("Now playing {es:Wisin & Yandel} for everybody listening out there.", "en-us")
+    assert "{es:Wisin y Yandel}" in en
+
+
+def test_el_texto_no_puede_inyectar_los_marcadores_internos():
+    r = limpiar("Hola \ue0000\ue001 gente de todo el mundo que nos escucha hoy.", "es")
+    assert "\ue000" not in r and "\ue001" not in r
+
+
+def test_nombre_que_queda_vacio_se_descarta_sin_romper():
+    assert "{" not in limpiar("Ahora suena {es:..!!} para todos los que nos escuchan hoy.", "es")
 
 
 def test_espacios_normalizados():

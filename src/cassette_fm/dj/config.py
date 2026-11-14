@@ -103,6 +103,10 @@ def _validar(archivo: Path, c: dict) -> None:
     for clave in ("pausa_oracion_segundos", "pausa_coma_segundos", "descargar_tras_minutos"):
         if clave in c and c[clave] < 0:
             error(clave, "no puede ser negativo")
+    if "modelos_dir" in c:
+        ruta = Path(c["modelos_dir"]).expanduser()
+        if not c["modelos_dir"].strip() or not ruta.is_absolute():
+            error("modelos_dir", "tiene que ser una ruta absoluta (o empezar con ~)")
     if "host" in c and not c["host"].strip():
         error("host", "no puede estar vacío")
     if "zona_horaria" in c:

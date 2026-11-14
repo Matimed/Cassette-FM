@@ -1,5 +1,6 @@
 import random
 import re
+from zoneinfo import ZoneInfo
 from datetime import datetime, timedelta, timezone
 
 import pytest
@@ -152,3 +153,27 @@ def test_el_momento_del_dia_se_adapta():
 def test_es_determinista_con_la_misma_semilla():
     p = pedido("es")
     assert redactar(p, Lexico(), random.Random(7), 45) == redactar(p, Lexico(), random.Random(7), 45)
+
+
+def test_la_hora_usa_la_zona_horaria_configurada():
+    """Review: el `momento` puede venir en otra zona (UTC); se habla en la hora local configurada."""
+    utc = datetime(2026, 11, 14, 0, 47, tzinfo=timezone.utc)          # 21:47 en Buenos Aires
+    p = pedido("es", momento=utc)
+    ba = ZoneInfo("America/Argentina/Buenos_Aires")
+    con_hora = [redactar(p, Lexico(), random.Random(s), 45, ba) for s in range(80)]
+    con_hora = [r for r in con_hora if "hora" in r.ingredientes]
+    assert con_hora and all("diez menos cuarto" in r.marcado for r in con_hora)
+    sin_zona = [redactar(p, Lexico(), random.Random(s), 45) for s in range(80)]
+    assert any("una menos cuarto" in r.marcado for r in sin_zona if "hora" in r.ingredientes)   # tal cual vino
+
+
+def test_el_momento_del_dia_tambien_usa_la_zona():
+    utc = datetime(2026, 11, 14, 0, 47, tzinfo=timezone.utc)          # de noche en Buenos Aires, 00 h en UTC
+    ba = ZoneInfo("America/Argentina/Buenos_Aires")
+    p = pedido("es", momento=utc)
+    textos = " ".join(redactar(p, Lexico(), random.Random(s), 45, ba).marcado for s in range(80))
+    assert "esta noche" in textos
+    mediodia_utc = datetime(2026, 11, 13, 15, 0, tzinfo=timezone.utc)  # 12 h en Buenos Aires: tarde
+    textos = " ".join(redactar(pedido("es", momento=mediodia_utc), Lexico(), random.Random(s), 45, ba).marcado
+                      for s in range(80))
+    assert "esta tarde" in textos and "esta noche" not in textos

@@ -85,7 +85,7 @@ y volvés con la voz todavía sonando, retoma la frase en el punto que correspon
 ## Servicio DJ
 
 Servicio aparte (`cassette-dj`) que escribe y sintetiza las frases del DJ. Puede correr en esta PC o en otra:
-la radio solo necesita su dirección. **No tiene autenticación**: para usarlo desde otra máquina hay que poner
+la radio solo necesita su dirección. **No tiene autenticación** (con un `host` que no sea local, avisa en el log): para usarlo desde otra máquina hay que poner
 `host = "0.0.0.0"` y hacerlo en una red de confianza.
 
 **Instalación** (la hacés vos; instala el extra `[dj]` y el servicio de usuario `cassette-dj`):
@@ -103,7 +103,7 @@ cassette-dj modelos        # baja los modelos de voz de Kokoro (~350 MB), una so
 | `trabajadores` | 1 | pedidos que se procesan a la vez |
 | `retencion_minutos` | 60 | cuánto se conserva un clip terminado |
 | `descargar_tras_minutos` | 5 | Kokoro se descarga de la memoria tras este tiempo sin trabajo |
-| `modelos_dir` | `~/.local/share/cassette-dj/modelos` | dónde están los modelos |
+| `modelos_dir` | `~/.local/share/cassette-dj/modelos` | dónde están los modelos (ruta absoluta o con `~`) |
 | `palabras_maximas` | 45 | largo máximo de una frase |
 | `velocidad` | 1.05 | velocidad de la voz |
 | `pausa_oracion_segundos` / `pausa_coma_segundos` | 0.25 / 0.1 | pausas mínimas tras un punto y una coma |

@@ -2,7 +2,6 @@ import os
 from pathlib import Path
 from types import SimpleNamespace
 
-import numpy as np
 import pytest
 
 
@@ -17,12 +16,14 @@ class KokoroFalso:
         self.estado.llamadas.append(dict(text=text, voice=voice, speed=speed, lang=lang, is_phonemes=is_phonemes,
                                          sentence_pause=sentence_pause, clause_pause=clause_pause,
                                          continuous=continuous))
+        import numpy as np
         return np.zeros(12000, dtype=np.float32), 24000        # 0,5 s de silencio
 
     def get_voices(self):
         return ["am_michael", "em_alex", "em_santa"]
 
     def get_voice_style(self, nombre):
+        import numpy as np
         return np.full((4, 1, 3), float({"am_michael": 1, "em_alex": 3, "em_santa": 5}[nombre]), dtype=np.float32)
 
 

@@ -137,3 +137,12 @@ def test_los_nombres_en_otro_idioma_llevan_su_marca(montaje, hacer_pedido):
     marcados = [g["marcado"] for g in guiones.ultimos(100)]
     assert any("{en-us:Daddy Yankee}" in m for m in marcados)
     assert all("{es:Daddy Yankee}" not in m for m in marcados)
+
+
+def test_el_productor_habla_en_la_zona_horaria_configurada(montaje, hacer_pedido):
+    crear, _, guiones = montaje
+    productor, _ = crear()
+    for i in range(40):
+        productor.producir(hacer_pedido(f"z{i}", momento="2026-11-14T00:47:00+00:00"))   # 21:47 en Buenos Aires
+    textos = [g["texto"] for g in guiones.ultimos(100) if "hora" in g.get("ingredientes", [])]
+    assert textos and all("diez menos cuarto" in t for t in textos)

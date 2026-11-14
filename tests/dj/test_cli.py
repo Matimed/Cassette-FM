@@ -160,6 +160,7 @@ def test_config_invalida_da_mensaje_y_codigo_1(entorno, capsys):
 
 
 def test_serve_arranca_aunque_falten_modelos(entorno, tmp_path):
+    pytest.importorskip("kokoro_onnx")       # el fonemizador es del extra [dj]
     from cassette_fm.dj.servidor import servir
     with socket.socket() as s:
         s.bind(("127.0.0.1", 0))
@@ -181,3 +182,14 @@ def test_serve_arranca_aunque_falten_modelos(entorno, tmp_path):
         parar.set()
         hilo.join(5)
     assert not hilo.is_alive()
+
+
+def test_serve_sin_el_extra_da_un_mensaje_claro_y_codigo_1(entorno, monkeypatch, capsys):
+    from cassette_fm.dj import servidor
+
+    def sin_extra():
+        raise ErrorModelos("falta instalar el extra [dj] (pip install -e '.[dj]')")
+
+    monkeypatch.setattr(servidor, "fonemizador", sin_extra)
+    assert cli.main(["serve"]) == 1
+    assert "extra [dj]" in capsys.readouterr().err

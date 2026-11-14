@@ -1,6 +1,7 @@
 import json
 import logging
 import random
+import socket
 import threading
 import time
 import urllib.error
@@ -55,7 +56,8 @@ class Servicio:
     pass
 
 
-def montar(tmp_path, sintetizador, fonemizar=fon_falso, lexico=None, cola=None, modelos_dir=None, config=None):
+def montar(tmp_path, sintetizador, fonemizar=fon_falso, lexico=None, cola=None, modelos_dir=None, config=None,
+           timeout=10.0):
     s = Servicio()
     s.rutas = RutasDJ(config=tmp_path / "cfg" / "config.toml", estado=tmp_path / "estado", clips=tmp_path / "clips")
     s.config = config or ConfigServicioDJ(modelos_dir=modelos_dir or tmp_path / "sin-modelos")
@@ -64,7 +66,7 @@ def montar(tmp_path, sintetizador, fonemizar=fon_falso, lexico=None, cola=None, 
     s.productor = Productor(s.config, s.rutas, sintetizador, fonemizar, lexico or Lexico(), s.guiones,
                             azar=random.Random(1))
     s.cola = cola or Cola(s.productor, trabajadores=1)
-    s.srv = crear_servidor(s.cola, sintetizador, "127.0.0.1", 0, s.config.modelos_dir)
+    s.srv = crear_servidor(s.cola, sintetizador, "127.0.0.1", 0, s.config.modelos_dir, timeout=timeout)
     threading.Thread(target=lambda: s.srv.serve_forever(poll_interval=0.02), daemon=True).start()
     s.base = f"http://127.0.0.1:{s.srv.server_address[1]}"
     return s
@@ -242,6 +244,56 @@ def test_error_inesperado_500_y_se_loguea(servicio, caplog):
     codigo, d = json_de(pedir(s, "GET", "/intervenciones/x"))
     assert codigo == 500 and "falla interna rara" not in d["error"]
     assert "falla interna rara" in caplog.text
+
+
+def crudo(s, texto: bytes, esperar_cierre=True, lectura=4.0) -> bytes:
+    """Habla HTTP a mano: manda `texto` tal cual y devuelve lo que conteste el servidor."""
+    with socket.create_connection(("127.0.0.1", s.srv.server_address[1]), timeout=lectura) as c:
+        c.sendall(texto)
+        trozos = []
+        while True:
+            try:
+                dato = c.recv(65536)
+            except (TimeoutError, ConnectionResetError):
+                break
+            if not dato:
+                break
+            trozos.append(dato)
+        return b"".join(trozos)
+
+
+@pytest.mark.parametrize("largo", ["-1", "abc", "1e3", " ", "99999999999999999999"])
+def test_content_length_invalido_da_400_o_413(servicio, largo):
+    s = servicio(SintetizadorFalso())
+    r = crudo(s, f"POST /intervenciones HTTP/1.0\r\nContent-Length: {largo}\r\n\r\n{{}}".encode())
+    assert r.split(b" ")[1] in (b"400", b"413"), r[:80]
+
+
+def test_cuerpo_incompleto_da_408_y_no_cuelga_el_hilo(servicio):
+    s = servicio(SintetizadorFalso(), timeout=0.5)
+    t0 = time.monotonic()
+    r = crudo(s, b"POST /intervenciones HTTP/1.0\r\nContent-Length: 100\r\n\r\n{}")   # promete 100 bytes, manda 2
+    assert r.split(b" ")[1] == b"408", r[:80]
+    assert time.monotonic() - t0 < 3.0
+
+
+def test_json_muy_anidado_da_400(servicio):
+    s = servicio(SintetizadorFalso())
+    cuerpo = b"[" * 30000 + b"]" * 30000
+    r = crudo(s, b"POST /intervenciones HTTP/1.0\r\nContent-Length: %d\r\n\r\n" % len(cuerpo) + cuerpo)
+    assert r.split(b" ")[1] == b"400", r[:80]
+
+
+def test_un_host_que_no_es_local_avisa_que_no_hay_autenticacion(servicio, tmp_path, caplog):
+    caplog.set_level(logging.WARNING, logger="cassette_fm")
+    s = servicio(SintetizadorFalso())
+    srv = crear_servidor(s.cola, s.sint, "0.0.0.0", 0, tmp_path)
+    srv.server_close()
+    assert "sin autenticación" in caplog.text
+    caplog.clear()
+    srv = crear_servidor(s.cola, s.sint, "127.0.0.1", 0, tmp_path)
+    srv.server_close()
+    assert "sin autenticación" not in caplog.text
 
 
 def test_de_punta_a_punta_con_kokoro_real(servicio, modelos_reales):

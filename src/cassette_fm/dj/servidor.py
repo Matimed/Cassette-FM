@@ -22,8 +22,15 @@ MAX_DRENAR = 1024 * 1024
 _MANTENIMIENTO_SEGUNDOS = 30.0
 
 
-def crear_servidor(cola: Cola, sintetizador, host: str, puerto: int, modelos_dir: Path) -> ThreadingHTTPServer:
+def crear_servidor(cola: Cola, sintetizador, host: str, puerto: int, modelos_dir: Path,
+                   timeout: float = 10.0) -> ThreadingHTTPServer:
+    if host not in ("127.0.0.1", "localhost", "::1"):
+        _log.warning("el servicio DJ escucha en %s sin autenticación: usalo solo en una red de confianza", host)
+
     class Manejador(BaseHTTPRequestHandler):
+        # tiempo máximo de espera por lectura: una conexión que no manda lo prometido no retiene el hilo
+        timeout = None
+
         def log_message(self, *args):
             pass
 
@@ -44,6 +51,9 @@ def crear_servidor(cola: Cola, sintetizador, host: str, puerto: int, modelos_dir
         def _protegido(self, accion) -> None:
             try:
                 accion(self.path.split("?", 1)[0])
+            except TimeoutError:
+                self.close_connection = True
+                self._error(408, "el pedido no llegó completo a tiempo")
             except Exception:
                 _log.exception("error inesperado en %s %s", self.command, self.path)
                 self._error(500, "error interno (mirá el log del servicio)")
@@ -92,15 +102,21 @@ def crear_servidor(cola: Cola, sintetizador, host: str, puerto: int, modelos_dir
         def _post(self, ruta: str) -> None:
             if ruta != "/intervenciones":
                 return self._error(404, f"ruta desconocida: {ruta}")
-            largo = int(self.headers.get("Content-Length") or 0)
+            crudo = (self.headers.get("Content-Length") or "0").strip()
+            if not (crudo.isascii() and crudo.isdigit()):
+                return self._error(400, "Content-Length inválido")
+            largo = int(crudo)
             if largo > MAX_CUERPO:
                 restante = largo if largo <= MAX_DRENAR else 0
                 while restante > 0:                       # se lee y descarta para poder contestar
                     restante -= len(self.rfile.read(min(restante, 65536)) or b"\0" * restante)
                 return self._error(413, f"el pedido es demasiado grande (máximo {MAX_CUERPO} bytes)")
+            cuerpo = self.rfile.read(largo)
+            if len(cuerpo) < largo:
+                return self._error(400, "el cuerpo está incompleto")
             try:
-                datos = json.loads(self.rfile.read(largo).decode("utf-8"))
-            except (ValueError, UnicodeDecodeError):
+                datos = json.loads(cuerpo.decode("utf-8"))
+            except (ValueError, UnicodeDecodeError, RecursionError):
                 return self._error(400, "el cuerpo no es JSON válido")
             try:
                 pedido = leer_pedido(datos)
@@ -119,6 +135,7 @@ def crear_servidor(cola: Cola, sintetizador, host: str, puerto: int, modelos_dir
                 return self._error(404, f"no existe la intervención {id_}")
             self._json(200, {"cancelado": cola.cancelar(id_)})
 
+    Manejador.timeout = timeout
     servidor = ThreadingHTTPServer((host, puerto), Manejador)
     servidor.daemon_threads = True
     return servidor

@@ -1,5 +1,6 @@
 import random
 import re
+from zoneinfo import ZoneInfo
 from collections.abc import Callable
 from dataclasses import asdict, dataclass
 from pathlib import Path
@@ -38,6 +39,7 @@ class Productor:
         self._lexico = lexico
         self._guiones = guiones
         self._azar = azar or random.Random()
+        self._zona = ZoneInfo(config.zona_horaria)
 
     def producir(self, pedido: Pedido) -> Resultado:
         if not _ID.fullmatch(pedido.id):
@@ -65,7 +67,7 @@ class Productor:
         palabras = self._config.palabras_maximas
         descartadas: list[float] = []
         for _ in range(INTENTOS):
-            redaccion = redactar(pedido, self._lexico, self._azar, palabras)
+            redaccion = redactar(pedido, self._lexico, self._azar, palabras, self._zona)
             prep = preparar(redaccion.marcado, pedido.lang, self._fonemizar)
             duracion = self._sintetizador.sintetizar(prep.fonemas, pedido.voz, pedido.lang, ruta)
             guion = dict(self._base(pedido), ingredientes=list(redaccion.ingredientes), texto=prep.texto,
