@@ -106,7 +106,7 @@ def test_registrar_con_la_ventana_activa_habla_desde_el_segundo_que_corresponde(
     cargas = mundo.voz.cargas()
     assert len(cargas) == 1 and cargas[0][1]["url"] == str(i.audio)
     assert start_de(cargas[0]) == pytest.approx(3.0)
-    assert mundo.musica.llamadas[0] == (0.35, 0.01)
+    assert mundo.musica.llamadas[0] == (CFG.nivel_musica_con_voz, 0.01)
     assert mundo.locutor.hablando
 
 
@@ -314,7 +314,7 @@ def test_integracion_la_voz_entra_a_mitad_de_frase(dir_corto, tmp_path, crear_wa
                 return 0      # todavía no empezó a reproducir
 
         assert esperar(lambda: posicion() >= 1.0, 3)
-        assert musica.llamadas[0] == (0.35, 0.01)
+        assert musica.llamadas[0] == (CFG.nivel_musica_con_voz, 0.01)
         assert esperar(lambda: musica.llamadas[-1] == (1.0, 0.01), 6)     # el fin del clip restaura la música
     finally:
         loc.cerrar()

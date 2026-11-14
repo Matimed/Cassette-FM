@@ -95,7 +95,7 @@ def test_dj_por_defecto():
     assert (d.duracion_maxima_segundos, d.retraso_voz_segundos, d.nivel_musica_con_voz,
             d.rampa_bajada_segundos, d.rampa_subida_segundos, d.minimo_restante_segundos,
             d.tolerancia_desfase_segundos, d.desfase_aviso_segundos,
-            d.margen_seguridad_voz_segundos) == (15.0, 1.0, 0.35, 0.4, 1.0, 1.5, 60.0, 5.0, 2.0)
+            d.margen_seguridad_voz_segundos) == (15.0, 1.0, 0.6, 0.4, 1.0, 1.5, 60.0, 5.0, 2.0)
 
 
 def test_dj_lee_la_tabla_y_acepta_enteros(tmp_path):

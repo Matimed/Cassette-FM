@@ -25,7 +25,7 @@ class ConfigDJ:
     activo: bool = False
     duracion_maxima_segundos: float = 15.0
     retraso_voz_segundos: float = 1.0
-    nivel_musica_con_voz: float = 0.35
+    nivel_musica_con_voz: float = 0.6   # en la escala del volumen de mpv (cúbica): 0.6 ≈ 13 dB más bajo
     rampa_bajada_segundos: float = 0.4
     rampa_subida_segundos: float = 1.0
     minimo_restante_segundos: float = 1.5

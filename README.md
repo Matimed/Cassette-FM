@@ -72,7 +72,7 @@ Parámetros de la sección `[dj]` (todos opcionales; también se pueden pisar po
 |---|---|---|
 | `duracion_maxima_segundos` | 15 | tope de duración de la voz |
 | `retraso_voz_segundos` | 1 | cuánto después del comienzo del tema entra la voz |
-| `nivel_musica_con_voz` | 0.35 | volumen de la música mientras habla (fracción del tuyo) |
+| `nivel_musica_con_voz` | 0.6 | volumen de la música mientras habla, como fracción del tuyo **en la escala de mpv, que es cúbica**: 0.6 ≈ 13 dB más bajo (de fondo), 0.35 ≈ 28 dB (casi mudo), 0.7 ≈ 9 dB |
 | `rampa_bajada_segundos` / `rampa_subida_segundos` | 0.4 / 1 | tiempo de bajar y de volver a subir la música |
 | `minimo_restante_segundos` | 1.5 | si queda menos de esto de la frase, no se reproduce |
 | `tolerancia_desfase_segundos` | 60 | cuánto puede apartarse el inicio real del tema del previsto |

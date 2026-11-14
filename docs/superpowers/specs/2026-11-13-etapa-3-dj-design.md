@@ -112,7 +112,7 @@ class Intervencion:
 - Un **segundo proceso mpv** (solo voz, idle, `--no-config`, sin video) reproduce el clip, con `start` = el segundo de
   entrada. No se usa ffmpeg ni compresión por sidechain.
 - **Ducking:** se baja el volumen de la música con una rampa corta antes de la voz (~0,4 s) y se restaura con otra más
-  lenta al terminar (~1 s), hasta `nivel_musica_con_voz` (por defecto 35 %) del volumen del usuario; los tiempos de las rampas también son
+  lenta al terminar (~1 s), hasta `nivel_musica_con_voz` (por defecto 0,6 desde el 14/11; la escala de volumen de mpv es cúbica, así que 0,35 dejaba la música ~28 dB abajo, casi muda) del volumen del usuario; los tiempos de las rampas también son
   configurables (`rampa_bajada_segundos` 0,4 y `rampa_subida_segundos` 1). El volumen que el usuario fija con `cassette vol` o
   las teclas sigue valiendo durante y después del ducking, y el volumen 0 (radio apagada) corta la voz también. Cómo
   se implementa la rampa (propiedad `volume` o `volume-gain` de mpv) queda a criterio de quien construye, con esa
@@ -294,7 +294,7 @@ margen_minutos = 6                      # antelación mínima para planificar
 duracion_maxima_segundos = 15           # tope de la voz
 palabras_maximas = 45
 retraso_voz_segundos = 1                # después del comienzo del tema
-nivel_musica_con_voz = 0.35             # ducking
+nivel_musica_con_voz = 0.6              # ducking (escala cúbica de mpv: 0.6 ≈ -13 dB)
 rampa_bajada_segundos = 0.4
 rampa_subida_segundos = 1.0
 
