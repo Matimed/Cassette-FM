@@ -316,3 +316,38 @@ def test_de_punta_a_punta_con_kokoro_real(servicio, modelos_reales):
     pedir(s, "POST", "/intervenciones", pedido_json("en1", idioma="en", voz="am_michael"))
     d = esperar_estado(s, "en1", timeout=60)
     assert d["estado"] == "listo", d
+
+
+def test_servicio_con_hechos_falsos_de_punta_a_punta(servicio, servidor_http):
+    """El servicio arma clima + MusicBrainz y los usa; con los servidores caídos igual hay frase."""
+    from cassette_fm.dj.config import ConfigServicioDJ
+    from cassette_fm.dj.hechos import FuenteHechos
+    from cassette_fm.dj.hechos.cache import CacheHechos
+    from cassette_fm.dj.hechos.clima import ClienteClima
+    from cassette_fm.dj.hechos.musicbrainz import ClienteMusicBrainz
+
+    aha = "7364dea6-0000-4000-8000-000000000001"
+    servidor_http.responder("/v1/forecast", {"current": {"temperature_2m": 22.0, "weather_code": 3, "is_day": 1}})
+    servidor_http.responder("/ws/2/recording", {"recordings": [{
+        "id": "r1", "title": "Waiting for a Girl Like You", "first-release-date": "1981-09-02",
+        "artist-credit": [{"name": "Foreigner", "artist": {"id": aha, "name": "Foreigner"}}]}]})
+    servidor_http.responder(f"/ws/2/artist/{aha}", {"type": "Group", "country": "GB", "life-span": {"begin": "1976"}})
+    cfg = ConfigServicioDJ(contacto="t@example.com", open_meteo_url=servidor_http.url + "/v1/forecast",
+                           musicbrainz_url=servidor_http.url + "/ws/2", timeout_hechos_segundos=1.0,
+                           pesos_ingredientes={"estacion": 0.0, "hora": 0.0, "momento": 0.0, "album": 0.0,
+                                               "anterior": 0.0, "clima": 1.0, "dato": 1.0}, ingredientes_max=3)
+    cache = CacheHechos(None)
+    fuente = FuenteHechos(ClienteClima(cfg, cache), ClienteMusicBrainz(cfg, cache, dormir=lambda s: None), 3)
+    s = servicio(SintetizadorFalso(), config=cfg)
+    s.productor._hechos = fuente
+    codigo, d = json_de(pedir(s, "POST", "/intervenciones", pedido_json("hr1")))
+    assert codigo == 202
+    listo = esperar_estado(s, "hr1", timeout=8)
+    assert listo["estado"] == "listo" and {"clima", "dato"} <= set(listo["ingredientes"])
+    guion = s.guiones.ultimos(1)[0]
+    assert guion["hechos"]["musicbrainz"]["anio"] == 1981 and guion["hechos"]["clima"]["temperatura"] == 22
+    # servicios de hechos caídos: la frase sale igual, sin clima ni dato
+    servidor_http.reglas.clear()
+    codigo, _ = json_de(pedir(s, "POST", "/intervenciones", pedido_json("hr2", recientes=[])))
+    listo = esperar_estado(s, "hr2", timeout=8)
+    assert listo["estado"] == "listo" and listo["texto"]

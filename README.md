@@ -172,6 +172,48 @@ configura en `~/.config/cassette-dj/lexico.toml`:
 La velocidad de la voz de cada estación se pone con `velocidad` (0,5 a 2) en `[dj.estaciones."X"]` de la configuración
 de la radio; si falta, vale la del servicio (`velocidad` de `cassette-dj`, 1,05).
 
+### Hechos reales en las frases
+
+El servicio junta datos **verificados** y los mezcla en las frases; si no hay un dato confiable, no lo dice:
+
+- **Clima de Buenos Aires** (open-meteo, sin clave): temperatura y cielo, dichos en palabras.
+- **Datos del tema y del artista** (MusicBrainz): año de lanzamiento (el más antiguo entre las grabaciones que coinciden
+  exacto en título y artista), país del artista y, si es una banda, cuándo empezó. No se usa nada si hay dos artistas con
+  el mismo nombre o si el dato no es coherente. Todo queda en una caché SQLite (`~/.local/state/cassette-dj/hechos.sqlite`),
+  también lo que no se encontró.
+- **MusicBrainz pide un contacto en el `User-Agent`**: poné el tuyo en `~/.config/cassette-dj/config.toml` con
+  `contacto = "tu@mail"` (no se guarda en ningún otro lado). Sin `contacto` no se consulta MusicBrainz.
+
+Cada frase combina de 1 a 3 ingredientes (el tema siempre; estación, hora, momento del día o día de la semana, álbum,
+tema anterior, clima y dato, de a uno por vez). El peso de cada uno y las demás claves se pueden cambiar:
+
+```toml
+contacto = "tu@mail"
+ingredientes_max = 3            # cuántos ingredientes junta una frase
+penalizacion_reciente = 0.3     # lo que salió hace poco pesa 0,3 veces por cada aparición
+
+[ingredientes]                  # probabilidad de ofrecer cada ingrediente (0 a 1); el tema siempre va
+estacion = 0.5
+hora = 0.35
+momento = 0.3
+album = 0.3
+anterior = 0.3
+clima = 0.12
+dato = 0.25
+```
+
+Otras claves (con su valor por defecto): `latitud`/`longitud` (Buenos Aires), `timeout_hechos_segundos = 5`,
+`cache_clima_minutos = 15`, `cache_datos_dias = 90`, `cache_sin_dato_dias = 14`, `cache_error_minutos = 10`,
+`musicbrainz_url` y `open_meteo_url`. `cassette-dj hechos` muestra el clima de ahora y
+`cassette-dj hechos --artista "a-ha" --titulo "Take On Me"` los datos que se usarían; `cassette-dj guiones` y el
+registro de guiones anotan, en cada frase, qué hechos se usaron y su fuente.
+
+**Verificación con los servicios reales (la hacemos juntos):** (1) poner `contacto` y reiniciar `cassette-dj`;
+(2) `cassette-dj hechos --artista "a-ha" --titulo "Take On Me"` tiene que dar 1984, Noruega y grupo desde 1983, y
+`cassette-dj hechos` el clima de ahora; (3) subir temporalmente `clima` y `dato` a 1 en `[ingredientes]`, correr
+`cassette dj pedir --en 30` en varias estaciones y escuchar; (4) volver a los pesos de fábrica y dejarlo andar:
+tienen que aparecer frases distintas y, de vez en cuando, clima o un dato.
+
 **Contrato HTTP** (JSON UTF-8; todo viaja en el pedido, el servicio no guarda estado entre pedidos):
 
 | Método y ruta | Qué hace |

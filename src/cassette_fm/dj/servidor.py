@@ -6,9 +6,14 @@ import threading
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
+from cassette_fm import __version__
 from cassette_fm.dj.cola import Cola
 from cassette_fm.dj.config import ConfigServicioDJ, RutasDJ
 from cassette_fm.dj.guiones import RegistroGuiones
+from cassette_fm.dj.hechos import FuenteHechos
+from cassette_fm.dj.hechos.cache import CacheHechos
+from cassette_fm.dj.hechos.clima import ClienteClima
+from cassette_fm.dj.hechos.musicbrainz import ClienteMusicBrainz
 from cassette_fm.dj.lexico import Lexico
 from cassette_fm.dj.pedido import leer_pedido
 from cassette_fm.dj.produccion import Productor
@@ -149,8 +154,11 @@ def servir(config: ConfigServicioDJ, rutas: RutasDJ, parar: threading.Event | No
         for senal in (signal.SIGTERM, signal.SIGINT):
             signal.signal(senal, lambda *_: parar.set())
     sintetizador = Sintetizador(config, fabrica=fabrica_sintetizador)
+    cache = CacheHechos(rutas.hechos)
+    hechos = FuenteHechos(ClienteClima(config, cache), ClienteMusicBrainz(config, cache, version=__version__),
+                          espera_segundos=config.timeout_hechos_segundos + 1)
     productor = Productor(config, rutas, sintetizador, fonemizador(), Lexico.cargar(rutas.lexico),
-                          RegistroGuiones(rutas.guiones))
+                          RegistroGuiones(rutas.guiones), hechos=hechos)
     cola = Cola(productor, trabajadores=config.trabajadores, retencion_segundos=config.retencion_minutos * 60)
     servidor = crear_servidor(cola, sintetizador, config.host, config.puerto, config.modelos_dir)
     threading.Thread(target=lambda: servidor.serve_forever(poll_interval=0.05), daemon=True,

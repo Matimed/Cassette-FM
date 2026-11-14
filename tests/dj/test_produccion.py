@@ -166,3 +166,67 @@ def test_el_texto_limpio_llega_al_sintetizador_para_los_motores_que_no_usan_fone
     r = productor.producir(hacer_pedido("t1"))
     from cassette_fm.dj.texto_voz import texto_para_piper
     assert sint.textos == [texto_para_piper(r.marcado)]
+
+
+# --- hechos reales (parte 3) ---
+
+def test_el_guion_anota_los_hechos_y_sus_fuentes(montaje, hacer_pedido):
+    from cassette_fm.dj.hechos import Hechos
+    from cassette_fm.dj.hechos.clima import Clima
+    from cassette_fm.dj.hechos.musicbrainz import DatosTema
+
+    class Fuente:
+        def reunir(self, pedido):
+            return (Hechos(Clima(22, "lluvia", True), DatosTema(1984, "NO", 1983, True, "https://mb/x")),
+                    {"clima": {"temperatura": 22}, "musicbrainz": {"fuente": "https://mb/x"}})
+
+    crear, _, guiones = montaje
+    productor, _ = crear()
+    productor._hechos = Fuente()
+    productor._config = ConfigServicioDJ(pesos_ingredientes={k: 1.0 for k in ("estacion", "hora", "momento", "album",
+                                                                              "anterior", "clima", "dato")})
+    productor.producir(hacer_pedido("h1"))
+    (g,) = guiones.ultimos(5)
+    assert g["hechos"] == {"clima": {"temperatura": 22}, "musicbrainz": {"fuente": "https://mb/x"}}
+    assert "cancion" in g["ingredientes"]
+
+
+def test_sin_fuente_de_hechos_funciona_como_antes(montaje, hacer_pedido):
+    crear, _, guiones = montaje
+    productor, _ = crear()
+    productor.producir(hacer_pedido("h2"))
+    assert "hechos" not in guiones.ultimos(1)[0]
+
+
+def test_los_reintentos_por_duracion_no_vuelven_a_pedir_hechos(montaje, hacer_pedido):
+    from cassette_fm.dj.hechos import Hechos
+
+    class Fuente:
+        llamadas = 0
+
+        def reunir(self, pedido):
+            Fuente.llamadas += 1
+            return Hechos(), {"clima": None, "musicbrainz": None}
+
+    crear, _, _ = montaje
+    productor, _ = crear(SintetizadorFalso(duraciones=(30.0, 30.0, 4.0)))
+    productor._hechos = Fuente()
+    productor.producir(hacer_pedido("h3", duracion_maxima_segundos=10.0))
+    assert Fuente.llamadas == 1
+
+
+def test_los_recientes_del_pedido_llegan_al_selector(montaje, hacer_pedido, monkeypatch):
+    from cassette_fm.dj import plantillas
+    vistos = []
+    original = plantillas.elegir_ingredientes
+
+    def espia(disponibles, pesos, recientes, azar, maximo=3, penalizacion=0.3):
+        vistos.append((tuple(recientes), maximo, penalizacion))
+        return original(disponibles, pesos, recientes, azar, maximo, penalizacion)
+
+    monkeypatch.setattr(plantillas, "elegir_ingredientes", espia)
+    crear, _, _ = montaje
+    productor, _ = crear()
+    productor._config = ConfigServicioDJ(ingredientes_max=2, penalizacion_reciente=0.5)
+    productor.producir(hacer_pedido("h4", recientes=["hora", "clima"]))
+    assert vistos == [(("hora", "clima"), 2, 0.5)]

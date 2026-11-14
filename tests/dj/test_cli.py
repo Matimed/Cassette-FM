@@ -193,3 +193,52 @@ def test_serve_sin_el_extra_da_un_mensaje_claro_y_codigo_1(entorno, monkeypatch,
     monkeypatch.setattr(servidor, "fonemizador", sin_extra)
     assert cli.main(["serve"]) == 1
     assert "extra [dj]" in capsys.readouterr().err
+
+
+def test_cassette_dj_hechos_imprime_clima_y_tema(entorno, capsys):
+    from cassette_fm.dj.hechos.clima import Clima
+    from cassette_fm.dj.hechos.musicbrainz import DatosTema
+
+    class ClimaF:
+        def actual(self):
+            return Clima(22, "lluvia", False)
+
+    class MBF:
+        def datos_del_tema(self, artista, titulo, isrc=None):
+            self.visto = (artista, titulo, isrc)
+            return DatosTema(1984, "NO", 1983, True, "https://musicbrainz.org/artist/x")
+
+    mb = MBF()
+    assert cli.main(["hechos", "--artista", "a-ha", "--titulo", "Take On Me", "--isrc", "NOA018500001"],
+                clientes=(ClimaF(), mb)) == 0
+    salida = capsys.readouterr().out
+    assert "22" in salida and "lluvia" in salida and "noche" in salida
+    assert "1984" in salida and "NO" in salida and "grupo" in salida and "1983" in salida
+    assert "https://musicbrainz.org/artist/x" in salida and mb.visto == ("a-ha", "Take On Me", "NOA018500001")
+
+
+def test_cassette_dj_hechos_sin_datos_lo_dice(entorno, capsys):
+    class Nada:
+        def actual(self):
+            return None
+
+        def datos_del_tema(self, *a, **k):
+            return None
+
+    assert cli.main(["hechos", "--artista", "x", "--titulo", "y"], clientes=(Nada(), Nada())) == 0
+    salida = capsys.readouterr().out
+    assert "sin datos" in salida.lower() or "no hay" in salida.lower()
+
+
+def test_cassette_dj_hechos_sin_tema_solo_el_clima(entorno, capsys):
+    class ClimaF:
+        def actual(self):
+            return None
+
+    assert cli.main(["hechos"], clientes=(ClimaF(), None)) == 0
+    assert "clima" in capsys.readouterr().out.lower()
+
+
+def test_artista_y_titulo_van_juntos(entorno, capsys):
+    with pytest.raises(SystemExit):
+        cli.main(["hechos", "--artista", "x"])

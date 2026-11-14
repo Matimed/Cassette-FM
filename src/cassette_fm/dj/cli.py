@@ -27,6 +27,10 @@ def _armar_parser() -> argparse.ArgumentParser:
     v.add_argument("--ultimos", type=int, default=5)
     v.add_argument("--salida", default="voz-prueba")
     v.add_argument("--idioma", choices=["es", "en"])
+    h = sub.add_parser("hechos", help="muestra el clima de ahora y, con --artista y --titulo, los datos del tema")
+    h.add_argument("--artista")
+    h.add_argument("--titulo")
+    h.add_argument("--isrc")
     return parser
 
 
@@ -75,9 +79,39 @@ def _voz_prueba(config, rutas, args, sintetizador, fonemizar) -> int:
     return 0
 
 
-def main(argv: list[str] | None = None, *, sintetizador=None, fonemizar=None) -> int:
+def _hechos(config, rutas, args, clientes) -> int:
+    if clientes is None:
+        from cassette_fm.dj.hechos.cache import CacheHechos
+        from cassette_fm.dj.hechos.clima import ClienteClima
+        from cassette_fm.dj.hechos.musicbrainz import ClienteMusicBrainz
+        cache = CacheHechos(rutas.hechos)
+        clientes = (ClienteClima(config, cache), ClienteMusicBrainz(config, cache, version=__version__))
+    clima_cliente, musicbrainz = clientes
+    clima = clima_cliente.actual() if clima_cliente is not None else None
+    if clima is None:
+        print("Clima: sin datos (mirá el log del aviso o la conexión).")
+    else:
+        momento = "de día" if clima.es_de_dia else "de noche"
+        print(f"Clima en Buenos Aires: {clima.temperatura} grados, {clima.cielo}, {momento}.")
+    if args.artista and musicbrainz is not None:
+        tema = musicbrainz.datos_del_tema(args.artista, args.titulo, args.isrc)
+        if tema is None:
+            print(f"MusicBrainz: sin datos verificados de «{args.titulo}» de {args.artista} "
+                  "(sin 'contacto' configurado, sin coincidencia clara o sin conexión).")
+        else:
+            partes = [f"año {tema.anio}" if tema.anio else None, f"país {tema.pais}" if tema.pais else None,
+                      (f"grupo desde {tema.anio_inicio_artista}" if tema.es_grupo and tema.anio_inicio_artista
+                       else "grupo" if tema.es_grupo else None)]
+            print(f"MusicBrainz: «{args.titulo}» de {args.artista}: {' · '.join(p for p in partes if p)}")
+            print(f"  fuente: {tema.fuente}")
+    return 0
+
+
+def main(argv: list[str] | None = None, *, sintetizador=None, fonemizar=None, clientes=None) -> int:
     parser = _armar_parser()
     args = parser.parse_args(argv)
+    if args.comando == "hechos" and bool(args.artista) != bool(args.titulo):
+        parser.error("--artista y --titulo van juntos")
     if args.version:
         print(__version__)
         return 0
@@ -119,4 +153,6 @@ def main(argv: list[str] | None = None, *, sintetizador=None, fonemizar=None) ->
         return 0
     if args.comando == "guiones":
         return _guiones(rutas, args)
+    if args.comando == "hechos":
+        return _hechos(config, rutas, args, clientes)
     return _voz_prueba(config, rutas, args, sintetizador, fonemizar)

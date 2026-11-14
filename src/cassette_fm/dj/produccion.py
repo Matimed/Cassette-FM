@@ -6,6 +6,7 @@ from dataclasses import asdict, dataclass
 from pathlib import Path
 
 from cassette_fm.dj.config import ConfigServicioDJ, RutasDJ
+from cassette_fm.dj.hechos import FuenteHechos, Hechos
 from cassette_fm.dj.guiones import RegistroGuiones
 from cassette_fm.dj.lexico import Lexico
 from cassette_fm.dj.pedido import Pedido
@@ -31,7 +32,8 @@ class Productor:
     """Encadena redactar → preparar para la voz → sintetizar → anotar el guion."""
 
     def __init__(self, config: ConfigServicioDJ, rutas: RutasDJ, sintetizador, fonemizar: Callable[[str, str], str],
-                 lexico: Lexico, guiones: RegistroGuiones, azar: random.Random | None = None):
+                 lexico: Lexico, guiones: RegistroGuiones, azar: random.Random | None = None,
+                 hechos: FuenteHechos | None = None):
         self._config = config
         self._rutas = rutas
         self._sintetizador = sintetizador
@@ -39,6 +41,7 @@ class Productor:
         self._lexico = lexico
         self._guiones = guiones
         self._azar = azar or random.Random()
+        self._hechos = hechos
         self._zona = ZoneInfo(config.zona_horaria)
 
     def producir(self, pedido: Pedido) -> Resultado:
@@ -66,13 +69,19 @@ class Productor:
         maxima = pedido.duracion_maxima_segundos
         palabras = self._config.palabras_maximas
         descartadas: list[float] = []
+        c = self._config
+        hechos, fuentes = self._hechos.reunir(pedido) if self._hechos is not None else (Hechos(), None)
         for _ in range(INTENTOS):
-            redaccion = redactar(pedido, self._lexico, self._azar, palabras, self._zona)
+            redaccion = redactar(pedido, self._lexico, self._azar, palabras, self._zona, hechos=hechos,
+                                 pesos=c.pesos_ingredientes, maximo=c.ingredientes_max,
+                                 penalizacion=c.penalizacion_reciente)
             prep = preparar(redaccion.marcado, pedido.lang, self._fonemizar)
             duracion = self._sintetizador.sintetizar(prep.fonemas, pedido.voz, pedido.lang, ruta,
                                                    velocidad=pedido.velocidad, texto=texto_para_piper(prep.marcado))
             guion = dict(self._base(pedido), ingredientes=list(redaccion.ingredientes), texto=prep.texto,
                          marcado=prep.marcado, fonemas=prep.fonemas, duracion=duracion)
+            if fuentes is not None:
+                guion["hechos"] = fuentes
             if maxima is None or duracion <= maxima:
                 self._guiones.anotar(**guion, audio=str(ruta))
                 return Resultado(prep.texto, prep.marcado, redaccion.ingredientes, duracion, ruta,
