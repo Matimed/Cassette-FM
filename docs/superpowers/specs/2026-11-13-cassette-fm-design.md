@@ -177,6 +177,15 @@ Ideas sueltas para más adelante: crear y borrar emisoras por la API (nombre + f
 link de una playlist de Spotify), estática entre estaciones también en la CLI, evitar repetir artistas
 seguidos. El volumen entre temas ya se parejiza con el filtro `dynaudnorm` de mpv (opción `normalizar`).
 
+## Evolución prevista: estaciones como objetos
+
+Hoy una estación es una subcarpeta de la raíz de música. **El usuario quiere que más adelante sean objetos en un JSON**
+(no necesariamente derivados de carpetas), con al menos: nombre, **fuente** (un directorio en cualquier ruta o el link de una
+playlist de Spotify), y los ajustes del DJ de esa estación (voz, idioma, personalidad, frecuencia). La voz se elige al
+crear la estación. Se crean y se borran por la API (`CASSETTE-FM-40h0`). Es una evolución de la Etapa 4 en adelante: hasta
+entonces rige "una estación = una subcarpeta". Las etapas intermedias no deben acoplarse a que la estación sea una carpeta
+(en particular el DJ, ver [`2026-11-13-etapa-3-dj-design.md`](2026-11-13-etapa-3-dj-design.md)).
+
 ## Decisiones del usuario
 
 - Estación = carpeta. MVP: todas suenan en aleatorio, se rota entre ellas y se entra con el tema empezado.

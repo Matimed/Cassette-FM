@@ -20,7 +20,10 @@ prefiere un dato verificado a uno inventado.
 
 ## Objetivos
 
-- Intervenciones del DJ cada **2 o 3 temas** (unos 10 a 15 minutos entre apariciones), con una voz por estación.
+- Intervenciones del DJ con una frecuencia **configurable** (por defecto cada 2 o 3 temas, unos 10 a 15 minutos), con una voz
+  que se elige por estación.
+- **Nada fijo en el código:** todo valor que pueda querer cambiarse (duración máxima de la voz, frecuencia, margen, nivel
+  y rampas del ducking, pesos de los ingredientes, tiempos de espera) vive en la configuración, con un valor por defecto.
 - Variedad real en el contenido: la selección de qué decir es al azar y ponderada, y evita repetir lo dicho hace poco.
 - **Cero datos inventados.** Todo hecho que se dice sale de los tags, del reloj, del clima o de una fuente consultada
   (MusicBrainz, Wikipedia). El LLM redacta; nunca es la fuente de un hecho.
@@ -97,7 +100,7 @@ class Intervencion:
 ```
 
 - Se registra cuando el clip está listo. El hueco (`inicio`) se eligió **antes** de pedir el clip y se reserva para que
-  dos intervenciones de una misma estación no se pisen (separación mínima de 2 temas).
+  dos intervenciones de una misma estación no se pisen (separación mínima configurable, por defecto igual al mínimo de la frecuencia).
 - Persisten en `~/.local/state/cassette-fm/intervenciones.json`; los clips en `~/.cache/cassette-fm/dj/`. Se descartan
   las que ya terminaron y sus archivos.
 - Si el usuario está en esa estación y el instante cae dentro de `[inicio, inicio+duracion)`, la voz suena **desde el
@@ -109,12 +112,15 @@ class Intervencion:
 - Un **segundo proceso mpv** (solo voz, idle, `--no-config`, sin video) reproduce el clip, con `start` = el segundo de
   entrada. No se usa ffmpeg ni compresión por sidechain.
 - **Ducking:** se baja el volumen de la música con una rampa corta antes de la voz (~0,4 s) y se restaura con otra más
-  lenta al terminar (~1 s), hasta ~35 % del volumen del usuario. El volumen que el usuario fija con `cassette vol` o
+  lenta al terminar (~1 s), hasta `nivel_musica_con_voz` (por defecto 35 %) del volumen del usuario; los tiempos de las rampas también son
+  configurables (`rampa_bajada_segundos` 0,4 y `rampa_subida_segundos` 1). El volumen que el usuario fija con `cassette vol` o
   las teclas sigue valiendo durante y después del ducking, y el volumen 0 (radio apagada) corta la voz también. Cómo
   se implementa la rampa (propiedad `volume` o `volume-gain` de mpv) queda a criterio de quien construye, con esa
   restricción de comportamiento.
-- La voz empieza **~1 s después del comienzo del tema siguiente** (arriba del arranque del tema) y dura como máximo
-  ~15 s (el texto se limita a ~45 palabras).
+- La voz empieza **`retraso_voz_segundos` (por defecto 1 s) después del comienzo del tema siguiente** (arriba del
+  arranque del tema) y dura como máximo **`duracion_maxima_segundos` (por defecto 15 s)**. El texto que se le pide al
+  LLM se limita en proporción (`palabras_maximas`, por defecto ~45); si el clip generado igual excede la duración
+  máxima, se descarta y se usa la plantilla.
 - **Quién manda, el reloj o mpv:** las duraciones de la agenda salen de mutagen y pueden diferir de las que mide mpv
   (sobre todo en MP3 VBR), y el reproductor no resincroniza, así que con una escucha larga la música real se corre un
   poco respecto del reloj. Por eso, **estando sintonizada la estación, la voz se dispara por el inicio real del tema en
@@ -138,8 +144,10 @@ class Intervencion:
   terminar lo ya iniciado). Con la radio apagada no se planifica.
 - Para la estación sintonizada, si no hay una intervención pendiente o lista en el futuro y pasó la separación mínima
   desde la última, se elige la próxima transición entre temas que cumpla: (a) empieza al menos `margen` en el futuro
-  (por defecto 6 minutos, para dar tiempo a generar; configurable) y (b) cae entre 2 y 3 temas después de la última
-  intervención de esa estación (el número exacto se sortea). Esa transición fija `inicio`. Si ni la del tema 2 ni la
+  (por defecto 6 minutos, para dar tiempo a generar; configurable) y (b) cumple la **frecuencia configurada**: o bien
+  entre `min` y `max` **temas** después de la última intervención de esa estación (por defecto 2 y 3), o bien entre
+  `min` y `max` **minutos** (modo por tiempo); el valor exacto se sortea dentro del rango. Esa transición fija
+  `inicio`. Si ni la del tema 2 ni la
   del 3 respetan el `margen`, se toma la **primera transición posterior que sí lo respete**, aunque quede a más de 3
   temas. Si un `rescan` cambia la agenda de una estación, se descartan sus reservas.
 - Al cambiar a otra estación B: si B no tiene intervención reservada en el futuro, se encola una para B detrás del
@@ -262,22 +270,37 @@ Capa propia entre el texto del LLM y Kokoro, con las reglas de [`texto-para-voz.
    queda a criterio de quien construye (por ejemplo, buscar los nombres conocidos del tema, artista y álbum del propio
    pedido).
 
-Voces elegidas por el usuario (Kokoro): español `em_santa`; inglés `am_michael` y `af_heart`.
+Voces: el usuario eligió **algunas para empezar** (Kokoro: español `em_santa`; inglés `am_michael` y `af_heart`), pero
+**no son una lista cerrada**: la voz es un dato de cada estación y se elige al crearla o configurarla. El servicio debe
+aceptar cualquier voz que ofrezca el modelo y poder listar las disponibles.
 
 ## Configuración
 
-En `config.toml` de la radio (todo opcional; **el DJ viene apagado**):
+En `config.toml` de la radio (todo opcional; **el DJ viene apagado**). Los valores de abajo son los **por defecto**; todos
+se pueden cambiar, y los de la estación pisan a los generales:
 
 ```toml
 [dj]
 activo = false
-url = "http://127.0.0.1:7720"     # el servicio DJ
-margen_minutos = 6
+url = "http://127.0.0.1:7720"          # el servicio DJ
+margen_minutos = 6                      # antelación mínima para planificar
+duracion_maxima_segundos = 15           # tope de la voz
+palabras_maximas = 45
+retraso_voz_segundos = 1                # después del comienzo del tema
+nivel_musica_con_voz = 0.35             # ducking
+rampa_bajada_segundos = 0.4
+rampa_subida_segundos = 1.0
 
-[dj.estaciones."Lentos"]           # una tabla por estación; las que falten usan los valores por defecto
+[dj.frecuencia]                         # modo = "temas" | "minutos"
+modo = "temas"
+min = 2
+max = 3
+
+[dj.estaciones."Lentos"]                # una tabla por estación; lo que falte usa los valores generales
 voz = "am_michael"
 idioma = "en"
 personalidad = "baladas de los 80, tono cálido y tranquilo"
+frecuencia = { modo = "minutos", min = 8, max = 15 }   # opcional
 ```
 
 El servicio DJ tiene su propia configuración (`~/.config/cassette-dj/config.toml`): dirección del LLM y modelo,
@@ -301,15 +324,18 @@ Cada parte tendrá su plan de implementación. Los beans actuales de la Etapa 3 
 - Un solo trabajo a la vez; el ya iniciado termina; se prepara para la estación sintonizada.
 - Datos verificados (MusicBrainz, Wikipedia) en vez de inventados; sin dato, el DJ dice lo básico.
 - Variedad de ingredientes y frecuencias como en la tabla; una intervención cada 2 o 3 temas.
-- Voces Kokoro del relevamiento; reglas de texto para voz de `texto-para-voz.md` (seseo, sin signos de pausa,
-  nada de oraciones cortas, fonemas por idioma).
+- Voces de ejemplo del relevamiento para empezar (la voz se elige por estación, sin lista cerrada); reglas de texto para
+  voz de `texto-para-voz.md` (seseo, sin signos de pausa, nada de oraciones cortas, fonemas por idioma).
+- Duración máxima de la voz, frecuencia y demás parámetros: **configurables en archivo, nunca fijos en el código**; la
+  frecuencia se puede dar por cantidad de temas o por tiempo.
 - El LLM puede correr en esta PC y después en otra de 8 GB solo CPU; la latencia no importa.
 
 ## Decisiones tomadas en el diseño (a revisar por el usuario)
 
 - **La voz va arriba del comienzo del tema siguiente**, ~1 s después de que arranca, no antes ni en un hueco aparte.
-- Ducking a ~35 % con rampas (0,4 s y 1 s), sin ffmpeg, con un segundo mpv para la voz.
-- Un solo `margen` de 6 minutos de antelación mínima, y duración máxima ~15 s (~45 palabras).
+- Ducking a 35 % con rampas de 0,4 s y 1 s (valores por defecto, configurables), sin ffmpeg, con un segundo mpv para la voz.
+- `margen` de 6 minutos de antelación mínima y duración máxima de 15 s (~45 palabras) como **valores por defecto
+  configurables**.
 - Contrato HTTP asíncrono con `recientes` llevado por el cliente.
 - El DJ viene **apagado** por defecto y se configura por estación.
 - Plantillas como respaldo cuando el LLM falla, tarda o no pasa la verificación.
@@ -324,6 +350,19 @@ Cada parte tendrá su plan de implementación. Los beans actuales de la Etapa 3 
   primera posterior que lo respete.
 - Un plan por parte: ahora se planifica **solo la parte 1**; las demás se planifican cuando se llegue a ellas, con lo
   aprendido (por ejemplo el desfase medido).
+
+## Evolución prevista: estaciones como objetos (fuera de esta fase)
+
+Hoy una estación es una subcarpeta de `~/Música`. **A futuro** el usuario quiere que las estaciones sean **objetos en un
+JSON** (nombre, fuente, voz, idioma, personalidad, frecuencia del DJ, etc.), de modo que puedan apuntar a una carpeta
+en cualquier lugar o a una playlist de Spotify, y que la voz se elija al crearlas (ver
+[`CASSETTE-FM-40h0`](../../../.beans) y la sección homónima del [diseño general](2026-11-13-cassette-fm-design.md)).
+**No entra en la Etapa 3**, pero el DJ no debe cerrarle la puerta:
+
+- La configuración del DJ de una estación se lee a través de una sola función (`configuracion_dj(nombre_estacion)`), de
+  modo que mañana su fuente sea el objeto de la estación y no la tabla `[dj.estaciones."..."]` de `config.toml`.
+- Nada del DJ depende de que la estación sea una carpeta: solo necesita su nombre, sus temas (artista, título, álbum,
+  `isrc`) y su agenda.
 
 ## Queda a criterio del que construye
 
