@@ -18,7 +18,7 @@ class Reproductor:
 
     pista_actual: Pista | None = None
     al_cambiar_pista: Callable[[Pista, Estacion], None] | None = None
-    al_fallar: Callable[[], None] | None = None   # no hay forma de seguir sonando
+    al_fallar: Callable[[Estacion], None] | None = None   # no hay forma de seguir sonando en esa estación
 
     def __init__(self, mpv, reloj: Callable[[], float] = time.time, cola: int = 2):
         self._mpv = mpv
@@ -33,6 +33,7 @@ class Reproductor:
         self._estacion: Estacion | None = None
         self._volumen: int | None = None
         self._fallos = 0
+        self._fallidos: set[int] = set()   # ids de entradas que no cargaron
         self._generacion = mpv.generacion
         self._mpv.al_evento = self.manejar_evento
         self._mpv.al_perder = self._al_perder_mpv
@@ -50,6 +51,7 @@ class Reproductor:
 
     def _sintonizar(self, estacion: Estacion) -> None:
         self._fallos = 0
+        self._fallidos = set()
         self._secuencia = secuencia(estacion, self._reloj())
         self._pistas = {}
         self._ids = deque()
@@ -94,7 +96,7 @@ class Reproductor:
 
     def manejar_evento(self, evento: dict) -> None:
         avisar = None
-        fallo = False
+        fallo = None
         with self._lock:
             tipo = evento.get("event")
             if tipo == "start-file":
@@ -122,23 +124,38 @@ class Reproductor:
                     ocioso = self._mpv.comando("get_property", "idle-active")
                 except ErrorMpv:
                     ocioso = False
-                if ocioso:
+                if ocioso and not self._reanudar():
                     _log.error("mpv se quedó sin temas que reproducir en %r: se detiene",
                                self._estacion.nombre)
+                    fallo = self._estacion
                     self._detener()
-                    fallo = True
             elif (tipo == "end-file" and evento.get("reason") == "error"
                   and evento.get("playlist_entry_id") in self._pistas):
                 self._fallos += 1
+                self._fallidos.add(evento["playlist_entry_id"])
                 if self._fallos >= self.MAX_FALLOS:
                     _log.error("%d errores de carga seguidos en %r: se detiene la reproducción",
                                self._fallos, self._estacion.nombre if self._estacion else None)
+                    fallo = self._estacion
                     self._detener()
-                    fallo = True
         if avisar is not None and self.al_cambiar_pista is not None:
             self.al_cambiar_pista(*avisar)
-        if fallo and self.al_fallar is not None:
-            self.al_fallar()
+        if fallo is not None and self.al_fallar is not None:
+            self.al_fallar(fallo)
+
+    def _reanudar(self) -> bool:
+        """mpv quedó ocioso pero puede haber temas encolados que sí cargan (el primero falló antes
+        de que llegaran los `append`): arranca el primero sano. False si no queda ninguno."""
+        try:
+            lista = self._mpv.comando("get_property", "playlist") or []
+        except ErrorMpv:
+            return False
+        for indice, entrada in enumerate(lista):
+            id_ = entrada.get("id")
+            if id_ in self._pistas and id_ not in self._fallidos:
+                self._mpv.comando("playlist-play-index", indice)
+                return True
+        return False
 
     def _asegurar(self, restaurar_estacion: bool = True) -> None:
         self._mpv.asegurar()

@@ -199,8 +199,15 @@ def test_el_aviso_usa_la_estacion_del_evento_y_no_depende_de_encendida():
 def test_si_el_reproductor_falla_la_radio_se_apaga():
     radio, rep, _, _ = crear()
     radio.encender()
-    rep.al_fallar()
+    rep.al_fallar(est("A"))
     assert not radio.encendida and rep.llamadas[-1] == ("detener",)
+
+
+def test_un_aviso_de_falla_de_otra_estacion_no_apaga_la_actual():
+    radio, rep, _, _ = crear()
+    radio.sintonizar("B")
+    rep.al_fallar(est("A"))   # la falla era de una estación que ya no suena
+    assert radio.encendida and rep.sintonizadas() == ["B"]
 
 
 def test_buscar_normaliza_unicode():

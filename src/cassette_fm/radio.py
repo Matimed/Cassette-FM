@@ -159,7 +159,8 @@ class Radio:
         if self._avisar is not None and estacion is not None:
             self._avisar(estacion.nombre, pista.titulo)
 
-    def _al_fallar(self) -> None:
+    def _al_fallar(self, estacion) -> None:
         with self._lock:
-            if self.encendida:
+            # el aviso llega con la estación que falló: si el usuario ya cambió, no se la apaga
+            if self.encendida and self._estado.estacion == estacion.nombre:
                 self._apagar()

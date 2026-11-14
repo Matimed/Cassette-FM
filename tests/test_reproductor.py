@@ -172,20 +172,20 @@ def _fallo(rep, id_):
 
 def test_demasiados_errores_seguidos_detienen_y_avisan(rep, mpv):
     caidas = []
-    rep.al_fallar = lambda: caidas.append(1)
+    rep.al_fallar = lambda e: caidas.append(e.nombre)
     rep.sintonizar(E)  # ids 1..3
     mpv.comandos.clear()
     for _ in range(Reproductor.MAX_FALLOS - 1):
         _fallo(rep, 1)
     assert caidas == [] and (("stop",), {}) not in mpv.comandos
     _fallo(rep, 1)
-    assert caidas == [1] and (("stop",), {}) in mpv.comandos
+    assert caidas == ["E"] and (("stop",), {}) in mpv.comandos
     assert rep.pista_actual is None
 
 
 def test_cargar_bien_reinicia_la_cuenta_de_errores(rep, mpv):
     caidas = []
-    rep.al_fallar = lambda: caidas.append(1)
+    rep.al_fallar = lambda e: caidas.append(e.nombre)
     rep.sintonizar(E)
     for _ in range(Reproductor.MAX_FALLOS - 1):
         _fallo(rep, 1)
@@ -196,33 +196,52 @@ def test_cargar_bien_reinicia_la_cuenta_de_errores(rep, mpv):
     assert caidas == []
 
 
-def _con_idle_activo(mpv, valor):
+def _con_mpv(mpv, idle, playlist=()):
+    """El mpv falso responde idle-active y la playlist actual (lista de {"id": n})."""
     original = mpv.comando
 
     def comando(*args, **kw):
         if args[:2] == ("get_property", "idle-active"):
             mpv.comandos.append((args, kw))
-            return valor
+            return idle
+        if args[:2] == ("get_property", "playlist"):
+            mpv.comandos.append((args, kw))
+            return [{"id": i} for i in playlist]
         return original(*args, **kw)
 
     mpv.comando = comando
 
 
-def test_idle_con_mpv_realmente_ocioso_detiene_y_avisa(rep, mpv):
+def test_idle_con_todos_los_temas_fallidos_detiene_y_avisa(rep, mpv):
     caidas = []
-    rep.al_fallar = lambda: caidas.append(1)
-    rep.sintonizar(E)
-    _con_idle_activo(mpv, True)
+    rep.al_fallar = lambda e: caidas.append(e.nombre)
+    rep.sintonizar(E)  # ids 1..3
+    for i in (1, 2, 3):
+        _fallo(rep, i)
+    _con_mpv(mpv, idle=True, playlist=(1, 2, 3))
     rep.manejar_evento({"event": "idle"})
-    assert caidas == [1] and (("stop",), {}) in mpv.comandos
+    assert caidas == ["E"] and (("stop",), {}) in mpv.comandos
     assert rep.pista_actual is None
+
+
+def test_idle_con_temas_buenos_pendientes_sigue_con_el_primero_sano(rep, mpv):
+    caidas = []
+    rep.al_fallar = lambda e: caidas.append(e.nombre)
+    rep.sintonizar(E)  # ids 1..3
+    _fallo(rep, 1)     # el primero no cargó
+    _con_mpv(mpv, idle=True, playlist=(1, 2, 3))
+    mpv.comandos.clear()
+    rep.manejar_evento({"event": "idle"})
+    assert caidas == []
+    assert (("playlist-play-index", 1), {}) in mpv.comandos
+    assert (("stop",), {}) not in mpv.comandos
 
 
 def test_idle_falso_con_mpv_sonando_se_ignora(rep, mpv):
     caidas = []
-    rep.al_fallar = lambda: caidas.append(1)
+    rep.al_fallar = lambda e: caidas.append(e.nombre)
     rep.sintonizar(E)
-    _con_idle_activo(mpv, False)
+    _con_mpv(mpv, idle=False)
     mpv.comandos.clear()
     rep.manejar_evento({"event": "idle"})
     assert caidas == [] and (("stop",), {}) not in mpv.comandos
@@ -230,8 +249,8 @@ def test_idle_falso_con_mpv_sonando_se_ignora(rep, mpv):
 
 def test_idle_sin_estacion_sintonizada_se_ignora(rep, mpv):
     caidas = []
-    rep.al_fallar = lambda: caidas.append(1)
-    _con_idle_activo(mpv, True)
+    rep.al_fallar = lambda e: caidas.append(e.nombre)
+    _con_mpv(mpv, idle=True)
     rep.manejar_evento({"event": "idle"})
     assert caidas == []
 
@@ -309,7 +328,21 @@ def test_integracion_estacion_sin_archivos_termina_parando(mpv_real, crear_mp3, 
         p.ruta.unlink()
     rep = Reproductor(mpv_real, reloj=lambda: EPOCA + 1)
     caidas = []
-    rep.al_fallar = lambda: caidas.append(1)
+    rep.al_fallar = lambda e: caidas.append(e.nombre)
     rep.sintonizar(e)
     assert esperar(lambda: caidas, 8)
     assert rep.pista_actual is None
+
+
+def test_integracion_primer_archivo_roto_sigue_con_el_siguiente(mpv_real, crear_mp3, tmp_path):
+    e = _estacion_real(crear_mp3, tmp_path, 4)
+    reloj = lambda: EPOCA + 0.5
+    s = [p for p, _ in islice(secuencia(e, reloj()), 4)]
+    s[0].ruta.unlink()   # falla el primero, justo el que se carga con `replace`
+    rep = Reproductor(mpv_real, reloj=reloj)
+    vistas, caidas = [], []
+    rep.al_cambiar_pista = lambda p, est: vistas.append(p)
+    rep.al_fallar = lambda est: caidas.append(1)
+    rep.sintonizar(e)
+    assert esperar(lambda: s[1] in vistas, 8)
+    assert caidas == []

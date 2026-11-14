@@ -46,3 +46,11 @@ def test_el_applet_no_duplica_la_logica_del_protocolo():
     js = _js()
     assert "HTTP/1.0" not in js and "Content-Length" not in js
     assert "JSON.parse" not in js
+
+
+def test_la_rueda_se_conecta_a_la_senal_del_actor():
+    js = _js()
+    # la clase base Applet de Cinnamon 6.4 no llama a on_applet_scrolled: hay que conectar la señal
+    assert "scroll-event" in js
+    assert "on_applet_scrolled" not in js
+    assert "Clutter.ScrollDirection.SMOOTH" in js and "EVENT_PROPAGATE" in js

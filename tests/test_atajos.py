@@ -28,6 +28,10 @@ class GsettingsFalso:
 
     def __call__(self, args):
         self.llamadas.append(args)
+        if args[0] == "reset-recursively":
+            for k in [k for k in self.d if k[0] == args[1]]:
+                del self.d[k]
+            return ""
         accion, esquema, clave, *resto = args
         if accion == "get":
             defecto = "@as []" if clave == "binding" else "''"
@@ -44,33 +48,52 @@ class GsettingsFalso:
         return ast.literal_eval(v.removeprefix("@as "))
 
 
+def por_nombre(gs, nombre):
+    """Id de la entrada de custom-list cuyo `name` es `nombre` (o None)."""
+    for id_ in gs.lista():
+        if id_ != "__dummy__" and gs.campo(id_, "name") == nombre:
+            return id_
+    return None
+
+
+ESPERADO = {
+    "cassette-fm: siguiente estación": ("next", ["<Super><Alt>Right"]),
+    "cassette-fm: estación anterior": ("prev", ["<Super><Alt>Left"]),
+    "cassette-fm: subir volumen": ("vol +10", ["<Super><Alt>Up"]),
+    "cassette-fm: bajar volumen": ("vol -10", ["<Super><Alt>Down"]),
+}
+
+
 def test_instala_los_cuatro_atajos_con_su_comando():
     gs = GsettingsFalso()
     instalar(EJE, gs)
-    esperado = {
-        "cassette-fm-siguiente": ("next", ["<Super><Alt>Right"]),
-        "cassette-fm-anterior": ("prev", ["<Super><Alt>Left"]),
-        "cassette-fm-volumen-mas": ("vol +10", ["<Super><Alt>Up"]),
-        "cassette-fm-volumen-menos": ("vol -10", ["<Super><Alt>Down"]),
-    }
-    for id_, (accion, teclas) in esperado.items():
+    for nombre, (accion, teclas) in ESPERADO.items():
+        id_ = por_nombre(gs, nombre)
+        assert id_ is not None, nombre
         assert gs.campo(id_, "command") == f"{EJE} {accion}"
         assert gs.campo(id_, "binding") == teclas
-        assert gs.campo(id_, "name").startswith("cassette-fm")
-    assert {a.id for a in ATAJOS} == set(esperado)
+    assert {a.nombre for a in ATAJOS} == set(ESPERADO)
+
+
+def test_los_ids_son_customN_como_espera_la_configuracion_de_cinnamon():
+    gs = GsettingsFalso()
+    instalar(EJE, gs)
+    for id_ in gs.lista():
+        if id_ != "__dummy__":
+            int(id_.replace("custom", ""))   # lo que hace cinnamon-settings con cada entrada
+    assert gs.lista()[2:6] == ["custom2", "custom3", "custom4", "custom5"]
 
 
 def test_conserva_la_lista_y_el_orden():
     gs = GsettingsFalso()
     instalar(EJE, gs)
-    assert gs.lista() == ["custom0", "custom1", "cassette-fm-siguiente", "cassette-fm-anterior",
-                          "cassette-fm-volumen-mas", "cassette-fm-volumen-menos", "__dummy__"]
+    assert gs.lista() == ["custom0", "custom1", "custom2", "custom3", "custom4", "custom5", "__dummy__"]
 
 
 def test_lista_vacia_con_formato_as():
     gs = GsettingsFalso(lista="@as []")
     instalar(EJE, gs)
-    assert gs.lista() == [a.id for a in ATAJOS]
+    assert gs.lista() == ["custom0", "custom1", "custom2", "custom3"]
 
 
 def test_es_idempotente():
@@ -85,26 +108,71 @@ def test_es_idempotente():
 def test_no_pisa_la_tecla_que_el_usuario_cambio():
     gs = GsettingsFalso()
     instalar(EJE, gs)
-    gs.d[(f"{ENTRADA}cassette-fm-siguiente/", "binding")] = "['<Super>n']"
+    id_ = por_nombre(gs, "cassette-fm: siguiente estación")
+    gs.d[(f"{ENTRADA}{id_}/", "binding")] = "['<Super>n']"
     instalar("/opt/otro/cassette", gs)
-    assert gs.campo("cassette-fm-siguiente", "binding") == ["<Super>n"]
-    assert gs.campo("cassette-fm-siguiente", "command") == "/opt/otro/cassette next"
+    assert gs.campo(id_, "binding") == ["<Super>n"]
+    assert gs.campo(id_, "command") == "/opt/otro/cassette next"
 
 
 def test_omite_tecla_ocupada_por_otro_atajo():
     gs = GsettingsFalso()
     gs._entrada("custom1", "Mi atajo", "xterm", "['<Super><Alt>Right']")
     mensajes = instalar(EJE, gs)
-    assert "cassette-fm-siguiente" not in gs.lista()
+    assert por_nombre(gs, "cassette-fm: siguiente estación") is None
     assert any("Mi atajo" in m and "omitido" in m for m in mensajes)
-    assert {"cassette-fm-anterior", "cassette-fm-volumen-mas", "cassette-fm-volumen-menos"} <= set(gs.lista())
+    for nombre in ESPERADO:
+        if "siguiente" not in nombre:
+            assert por_nombre(gs, nombre) is not None
 
 
 def test_los_valores_de_texto_se_escriben_como_gvariant():
     gs = GsettingsFalso()
     instalar(EJE, gs)
     sets = {tuple(a[1:4]) for a in gs.llamadas if a[0] == "set"}
-    assert (f"{ENTRADA}cassette-fm-siguiente/", "command", repr(f"{EJE} next")) in sets
+    assert (f"{ENTRADA}custom2/", "command", repr(f"{EJE} next")) in sets
+
+
+def _instalar_a_la_antigua(gs):
+    """Imita lo que dejó la primera versión: ids `cassette-fm-*` en vez de `customN`."""
+    viejos = {
+        "cassette-fm-siguiente": ("cassette-fm: siguiente estación", "next", "['<Super><Alt>Right']"),
+        "cassette-fm-anterior": ("cassette-fm: estación anterior", "prev", "['<Super>n']"),
+        "cassette-fm-volumen-mas": ("cassette-fm: subir volumen", "vol +10", "['<Super><Alt>Up']"),
+        "cassette-fm-volumen-menos": ("cassette-fm: bajar volumen", "vol -10", "['<Super><Alt>Down']"),
+    }
+    for id_, (nombre, accion, binding) in viejos.items():
+        gs._entrada(id_, nombre, f"/viejo/cassette {accion}", binding)
+    gs.d[(LISTA, "custom-list")] = str(["custom0", "custom1", *viejos, "__dummy__"])
+    return viejos
+
+
+def test_migra_los_ids_viejos_a_customN_conservando_las_teclas():
+    gs = GsettingsFalso()
+    viejos = _instalar_a_la_antigua(gs)
+    mensajes = instalar(EJE, gs)
+    lista = gs.lista()
+    assert not [i for i in lista if i in viejos]
+    for id_ in lista:
+        if id_ != "__dummy__":
+            int(id_.replace("custom", ""))
+    assert lista[-1] == "__dummy__" and len(lista) == 7
+    anterior = por_nombre(gs, "cassette-fm: estación anterior")
+    assert gs.campo(anterior, "binding") == ["<Super>n"]          # la tecla que el usuario cambió
+    assert gs.campo(anterior, "command") == f"{EJE} prev"          # y el comando, actualizado
+    assert gs.campo(por_nombre(gs, "cassette-fm: subir volumen"), "binding") == ["<Super><Alt>Up"]
+    assert any("migrado" in m for m in mensajes)
+    # lo viejo se borra de dconf y no queda nada colgado
+    assert not [k for k in gs.d if any(k[0].endswith(f"/{v}/") for v in viejos)]
+
+
+def test_migrar_es_idempotente():
+    gs = GsettingsFalso()
+    _instalar_a_la_antigua(gs)
+    instalar(EJE, gs)
+    antes = gs.lista()
+    mensajes = instalar(EJE, gs)
+    assert gs.lista() == antes and all("actualizado" in m for m in mensajes)
 
 
 def test_cli_atajos_sin_cassette_en_el_path(monkeypatch, capsys):

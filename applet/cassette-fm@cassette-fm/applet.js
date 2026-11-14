@@ -34,6 +34,9 @@ class CassetteApplet extends Applet.TextIconApplet {
         this._seccionEstaciones = new PopupMenu.PopupMenuSection();
         this._applet_context_menu.addMenuItem(this._seccionEstaciones, 0);
 
+        // La clase base Applet de Cinnamon no atiende la rueda por su cuenta: se conecta la señal del actor.
+        this.actor.connect("scroll-event", (actor, event) => this._alRueda(event));
+
         this._aplicar(null);
         this._sondear();
         this._temporizador = Mainloop.timeout_add_seconds(INTERVALO_SEGUNDOS, () => {
@@ -46,14 +49,17 @@ class CassetteApplet extends Applet.TextIconApplet {
         this._accion("/alternar");
     }
 
-    on_applet_scrolled(event) {
+    _alRueda(event) {
         const direccion = event.get_scroll_direction();
+        // Los touchpads emiten SMOOTH (con deltas): no se interpretan, se deja pasar el evento.
+        if (direccion === Clutter.ScrollDirection.SMOOTH) return Clutter.EVENT_PROPAGATE;
         let nombre = null;
         if (direccion === Clutter.ScrollDirection.UP) nombre = "up";
         else if (direccion === Clutter.ScrollDirection.DOWN) nombre = "down";
         const accion = AppletDir.logic.accionDeRueda(nombre);
-        if (accion === null || !this._limitador(Date.now())) return;
-        this._accion("/" + accion);
+        if (accion === null) return Clutter.EVENT_PROPAGATE;
+        if (this._limitador(Date.now())) this._accion("/" + accion);
+        return Clutter.EVENT_STOP;
     }
 
     on_applet_removed_from_panel() {
