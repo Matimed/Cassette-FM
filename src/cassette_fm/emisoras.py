@@ -1,11 +1,17 @@
 """Las emisoras de la radio: `estaciones.json` (nombre, fuente y ajustes del DJ de cada una)."""
 import json
+import logging
+import os
 import re
+import tomllib
 import unicodedata
 from dataclasses import dataclass, field, replace
 from pathlib import Path
 
+from cassette_fm import biblioteca
 from cassette_fm.config import ConfigDJ, ErrorConfig, campos_dj
+
+_log = logging.getLogger("cassette_fm")
 
 _CAMPOS = {"nombre", "fuente", "dj"}
 _PLAYLIST = re.compile(r"^(?:https?://open\.spotify\.com/(?:intl-[a-z-]+/)?playlist/|spotify:playlist:)"
@@ -92,3 +98,39 @@ def leer_emisoras(archivo: Path, general: ConfigDJ) -> list[DefEmisora]:
         dj = replace(general, **campos_dj(archivo, crudo, f'"{nombre}".dj.', general))
         emisoras.append(DefEmisora(nombre, fuente, dj, crudo))
     return emisoras
+
+
+def _ajustes_del_toml(toml: Path) -> dict:
+    try:
+        with open(toml, "rb") as f:
+            datos = tomllib.load(f)
+    except (OSError, tomllib.TOMLDecodeError):
+        return {}
+    estaciones = (datos.get("dj") or {}).get("estaciones") if isinstance(datos.get("dj"), dict) else None
+    return {k: v for k, v in estaciones.items() if isinstance(v, dict)} if isinstance(estaciones, dict) else {}
+
+
+def migrar_emisoras(archivo: Path, raiz: Path, toml: Path) -> bool:
+    """La primera vez: escribe `archivo` con las subcarpetas de `raiz` (como eran las estaciones hasta ahora) y los
+    `[dj.estaciones."X"]` del `toml`. No pisa un archivo existente; sin carpetas no escribe nada."""
+    archivo = Path(archivo)
+    if archivo.exists():
+        return False
+    carpetas = biblioteca.carpetas_de_estaciones(raiz)
+    if not carpetas:
+        return False
+    ajustes = _ajustes_del_toml(toml)
+    emisoras = []
+    for carpeta in carpetas:
+        e = {"nombre": carpeta.name, "fuente": {"carpeta": str(carpeta)}}
+        if carpeta.name in ajustes:
+            e["dj"] = ajustes[carpeta.name]
+        emisoras.append(e)
+    for nombre in sorted(set(ajustes) - {c.name for c in carpetas}):
+        _log.warning("los ajustes del DJ de %r no se migraron: no hay una carpeta con ese nombre en %s", nombre, raiz)
+    archivo.parent.mkdir(parents=True, exist_ok=True)
+    tmp = archivo.with_name(archivo.name + ".tmp")
+    tmp.write_text(json.dumps(emisoras, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    os.replace(tmp, archivo)
+    _log.info("se migraron %d emisoras a %s", len(emisoras), archivo)
+    return True

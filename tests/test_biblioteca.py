@@ -1,7 +1,7 @@
 import os
 
 from cassette_fm import biblioteca
-from cassette_fm.biblioteca import escanear, leer_pista
+from cassette_fm.biblioteca import carpetas_de_estaciones, escanear, leer_pista
 
 
 def test_leer_pista_con_tags(tmp_path, crear_mp3):
@@ -189,3 +189,14 @@ def test_una_entrada_de_cache_en_formato_viejo_se_vuelve_a_leer(tmp_path, crear_
 def test_la_clave_de_una_pista_local_es_su_ruta(tmp_path, crear_mp3):
     p = leer_pista(crear_mp3(tmp_path / "x.mp3", 2, titulo="T", artista="A"))
     assert p.clave == str(tmp_path / "x.mp3")
+
+
+def test_carpetas_de_estaciones(tmp_path, crear_mp3):
+    crear_mp3(tmp_path / "b" / "x.mp3")
+    crear_mp3(tmp_path / "Árbol" / "sub" / "y.mp3")
+    (tmp_path / "vacia").mkdir()
+    crear_mp3(tmp_path / ".oculta" / "z.mp3")
+    (tmp_path / "solo-texto").mkdir()
+    (tmp_path / "solo-texto" / "notas.txt").write_text("x")
+    assert [c.name for c in carpetas_de_estaciones(tmp_path)] == ["Árbol", "b"]
+    assert carpetas_de_estaciones(tmp_path / "no-existe") == []

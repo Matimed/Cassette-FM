@@ -130,26 +130,30 @@ def _pista_con_cache(ruta: Path, previa: dict, nueva: dict) -> Pista | None:
     return pista
 
 
-def escanear(raiz: Path, cache: Path | None = None) -> list[Estacion]:
+def carpetas_de_estaciones(raiz: Path) -> list[Path]:
+    """Las subcarpetas de `raiz` que forman una estación: no ocultas, con nombre UTF-8 y con algún audio."""
     raiz = Path(raiz)
     if not raiz.is_dir():
         return []
-    previa = _cargar_cache(cache)
-    nueva: dict = {}
-    estaciones = []
     try:
         carpetas = list(raiz.iterdir())
     except OSError as e:
         _log.warning("no se puede leer %s: %s", raiz, e)
         return []
-    for carpeta in carpetas:
-        if not carpeta.is_dir() or carpeta.name.startswith(".") or not _es_utf8(carpeta):
-            continue
+    elegidas = [c for c in carpetas if c.is_dir() and not c.name.startswith(".") and _es_utf8(c)
+                and next(_archivos_de_audio(c), None) is not None]
+    return sorted(elegidas, key=lambda c: clave_orden(c.name))
+
+
+def escanear(raiz: Path, cache: Path | None = None) -> list[Estacion]:
+    previa = _cargar_cache(cache)
+    nueva: dict = {}
+    estaciones = []
+    for carpeta in carpetas_de_estaciones(raiz):
         pistas = [p for r in _archivos_de_audio(carpeta)
                   if (p := _pista_con_cache(r, previa, nueva)) is not None]
         if pistas:
             pistas.sort(key=lambda p: p.clave)
             estaciones.append(Estacion(carpeta.name, tuple(pistas)))
-    estaciones.sort(key=lambda e: clave_orden(e.nombre))
     _guardar_cache(cache, nueva)
     return estaciones
