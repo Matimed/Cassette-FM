@@ -50,3 +50,31 @@ def secuencia(estacion: Estacion, instante: float) -> Iterator[tuple[Pista, floa
             primera = False
             resto = 0.0
         k += 1
+
+
+def transiciones(estacion: Estacion, instante: float) -> Iterator[tuple[Pista, float]]:
+    """(tema que empieza, epoch de su inicio) para todos los temas posteriores a `instante`, en orden."""
+    siguientes = secuencia(estacion, instante)
+    actual, desde = next(siguientes)
+    inicio = instante + (actual.duracion - desde)
+    for pista, _ in siguientes:
+        yield pista, inicio
+        inicio += pista.duracion
+
+
+def desfase(estacion: Estacion, pista: Pista, instante: float) -> float | None:
+    """Cuánto se aparta la música real del reloj cuando `pista` acaba de empezar a sonar.
+
+    > 0: la agenda ya contó esos segundos de `pista` (la música real va atrasada);
+    < 0: la agenda todavía está en el tema anterior y `pista` empieza en |valor| s (la real va adelantada);
+    None: `pista` no es ni el tema actual ni el siguiente de la agenda.
+    """
+    it = secuencia(estacion, instante)
+    actual, desde = next(it)
+    siguiente, _ = next(it)
+    candidatos = []
+    if actual == pista:
+        candidatos.append(desde)
+    if siguiente == pista:
+        candidatos.append(-(actual.duracion - desde))
+    return min(candidatos, key=abs) if candidatos else None

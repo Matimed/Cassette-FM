@@ -106,3 +106,57 @@ def test_el_desplazamiento_nunca_es_negativo_en_los_bordes():
         for k in range(1, 3000):
             _, desde = next(secuencia(e, EPOCA + k * total))
             assert desde >= 0.0
+
+
+# --- transiciones y desfase (Etapa 3) ---
+
+from cassette_fm.agenda import desfase, transiciones  # noqa: E402
+
+
+def test_transiciones_son_posteriores_y_acumulan_duraciones():
+    t = EPOCA + 123.0
+    (p, d), (s1, _), (s2, _) = list(islice(secuencia(E, t), 3))
+    (u1, ini1), (u2, ini2) = list(islice(transiciones(E, t), 2))
+    assert u1 == s1 and u2 == s2
+    assert ini1 == pytest.approx(t + (p.duracion - d))
+    assert ini2 == pytest.approx(ini1 + s1.duracion)
+    assert ini1 > t
+
+
+def test_transiciones_cruzan_ciclos():
+    inicios = [i for _, i in islice(transiciones(E, EPOCA + 5), 12)]
+    assert all(b > a for a, b in zip(inicios, inicios[1:]))
+    assert len(inicios) == 12
+
+
+def _inicio_de(estacion, instante, n=0):
+    return list(islice(transiciones(estacion, instante), n + 1))[n]
+
+
+def test_desfase_en_el_inicio_exacto_es_cero():
+    pista, inicio = _inicio_de(E, EPOCA + 40)
+    assert desfase(E, pista, inicio) == pytest.approx(0.0, abs=1e-6)
+
+
+def test_desfase_positivo_si_la_agenda_ya_avanzo():
+    pista, inicio = _inicio_de(E, EPOCA + 40)
+    assert desfase(E, pista, inicio + 3) == pytest.approx(3.0)
+
+
+def test_desfase_negativo_si_la_real_va_adelantada():
+    pista, inicio = _inicio_de(E, EPOCA + 40)
+    assert desfase(E, pista, inicio - 2) == pytest.approx(-2.0)
+
+
+def test_desfase_none_si_no_coincide():
+    pista, inicio = _inicio_de(E, EPOCA + 40)
+    actual = next(secuencia(E, inicio - 2))[0]
+    siguiente2, _ = _inicio_de(E, EPOCA + 40, 1)
+    otra = next(p for p in E.pistas if p not in (pista, actual))
+    assert desfase(E, otra, inicio - 2) is None
+
+
+def test_desfase_estacion_de_un_tema_elige_el_menor():
+    e = estacion([100])
+    assert desfase(e, e.pistas[0], EPOCA + 103) == pytest.approx(3.0)
+    assert desfase(e, e.pistas[0], EPOCA + 97) == pytest.approx(-3.0)
