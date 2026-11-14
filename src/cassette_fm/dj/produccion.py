@@ -128,7 +128,7 @@ class Productor:
             self._llm_avisado = False
             guion["crudo"] = crudo
             texto = limpiar_salida(crudo)
-            motivo = verificar(texto, pedido, peticion, palabras)
+            motivo = verificar(texto, pedido, peticion, palabras, self._zona)
             marcado = None
             if motivo is None:
                 try:       # primero se marcan los nombres: los números que llevan (U2, Blink-182) no se convierten

@@ -189,13 +189,40 @@ def test_nombres_del_pedido_y_de_wikipedia_si_pasan():
 
 def test_las_excepciones_de_nombres_comunes():
     assert ver("Este sábado en Buenos Aires suena Take On Me de a-ha para todos.") is None
-    assert ver("Un viernes de noviembre suena Take On Me de a-ha para todos ustedes.") is None
+    assert ver("Un sábado de noviembre suena Take On Me de a-ha para todos ustedes.") is None
     en = pedido("en")
     assert ver("This Saturday we play Take On Me by a-ha and I hope you enjoy it.", p=en) is None
 
 
 def test_inicio_de_oracion_comun_no_cuenta_como_nombre():
     assert ver("Madrugada tranquila. Ahora suena Take On Me de a-ha. Gracias por escuchar.") is None
+
+
+def test_cuatro_oraciones_pasan():
+    assert ver("Hola gente linda. Ahora suena Take On Me de a-ha. Es un clásico. Gracias por escuchar.") is None
+
+
+def test_un_dia_de_la_semana_que_no_es_hoy_no_pasa():
+    # el pedido es un sábado
+    assert "viernes" in ver("Ahora suena Take On Me de a-ha, una gran forma de empezar tu viernes.")
+    assert ver("Ahora suena Take On Me de a-ha, una gran forma de pasar tu sábado.") is None
+    en = pedido("en")
+    assert "Friday" in ver("Now playing Take On Me by a-ha, a fantastic way to start your Friday.", p=en)
+    assert ver("Now playing Take On Me by a-ha, a fantastic way to enjoy your Saturday.", p=en) is None
+
+
+def test_el_dia_se_cuenta_en_la_zona_horaria_de_la_radio():
+    from datetime import timezone
+    p = Pedido(**{**pedido("en").__dict__, "momento": datetime(2026, 11, 14, 1, 30, tzinfo=timezone.utc)})
+    pet = construir_peticion(p, ["cancion"], HECHOS, campos_de_voz(p, HECHOS, ZONA), 45)
+    texto = "Now playing Take On Me by a-ha, a fantastic way to end your Friday."
+    assert verificar(texto, p, pet, 45, ZONA) is None          # en Buenos Aires todavía es viernes
+    assert "Friday" in verificar(texto, p, pet, 45)             # en UTC ya es sábado
+
+
+def test_un_dia_dentro_del_titulo_no_cuenta():
+    p = pedido("en", siguiente=("The Cure", "Friday I'm in Love"))
+    assert ver("Now playing Friday I'm in Love by The Cure, a fantastic song.", p=p) is None
 
 
 def test_demasiadas_oraciones():

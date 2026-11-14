@@ -215,7 +215,8 @@ def _oraciones(texto: str) -> list[str]:
     return [o for o in re.split(r"(?<=[.!?])[\"”’»)]*\s+", texto) if o.strip()]
 
 
-def verificar(texto: str, pedido: Pedido, peticion: Peticion, palabras_maximas: int) -> str | None:
+def verificar(texto: str, pedido: Pedido, peticion: Peticion, palabras_maximas: int,
+              zona: tzinfo | None = None) -> str | None:
     """None si la frase se puede decir; si no, el motivo (corto, en español) para el guion."""
     palabras = texto.split()
     if not texto.strip():
@@ -238,6 +239,11 @@ def verificar(texto: str, pedido: Pedido, peticion: Peticion, palabras_maximas: 
     n_propias, n_ajenas = sum(f in propias for f in fichas), sum(f in ajenas for f in fichas)
     if n_ajenas >= 2 and n_ajenas > n_propias:
         return f"no está en {'español' if idioma == 'es' else 'inglés'}"
+    momento = pedido.momento.astimezone(zona) if zona is not None else pedido.momento
+    hoy = momento.weekday()
+    for i, dia in enumerate(_DIAS[idioma]):
+        if i != hoy and re.search(rf"(?<!\w){_norm(dia)}(?!\w)", _norm(resto)):
+            return f"día de la semana que no es hoy: {dia}"
     permitidos = {int(n) for n in re.findall(r"\d+", peticion.permitido)}
     for numero in _NUMERO.findall(resto):
         if not numero.isdigit():
@@ -261,7 +267,7 @@ def verificar(texto: str, pedido: Pedido, peticion: Peticion, palabras_maximas: 
             partes = [p for p in re.split(r"['’-]", _sin_acentos(palabra)) if p]
             if not all(p in vocabulario or len(p) == 1 for p in partes):
                 return f"nombre propio que no está en los hechos: {palabra}"
-    if len(_oraciones(texto)) > 3:
+    if len(_oraciones(texto)) > 4:
         return "demasiadas oraciones"
     return None
 
