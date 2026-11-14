@@ -93,9 +93,11 @@ def test_el_prompt_prohibe_mencionar_momento_dia_o_clima_que_no_se_dieron():
     assert "time of day" in peticion(["cancion"], p=pedido("en")).sistema
 
 
-def test_el_prompt_prohibe_hablar_de_popularidad():
-    assert "popularidad" in peticion(["cancion"]).sistema
-    assert "popular" in peticion(["cancion"], p=pedido("en")).sistema and "charts" in peticion(["cancion"], p=pedido("en")).sistema
+def test_el_prompt_insiste_en_no_hacer_enfasis_en_la_popularidad():
+    es = peticion(["cancion"]).sistema
+    assert "NUNCA" in es and "popular" in es and "éxito" in es and "listas" in es
+    en = peticion(["cancion"], p=pedido("en")).sistema
+    assert "NEVER" in en and "popular" in en and "hit" in en and "charts" in en
 
 
 def test_el_prompt_no_lleva_el_feat_del_titulo():
@@ -265,22 +267,12 @@ def test_un_dia_dentro_del_titulo_no_cuenta():
 
 
 @pytest.mark.parametrize("texto, idioma", [
-    ("Now playing Take On Me by a-ha, a hugely popular hit that fans love.", "en"),
-    ("Now playing Take On Me by a-ha, a track that has been streamed millions of times.", "en"),
-    ("Now playing Take On Me by a-ha, climbing the charts right now.", "en"),
-    ("Now playing Take On Me by a-ha, one of the best-selling songs ever.", "en"),
-    ("Ahora suena Take On Me de a-ha, un éxito enorme que todos conocen.", "es"),
-    ("Ahora suena Take On Me de a-ha, un tema muy popular en todo el mundo.", "es"),
-    ("Ahora suena Take On Me de a-ha, que está subiendo en el ranking.", "es"),
+    ("Now playing Take On Me by a-ha, a really popular track that fans love.", "en"),
+    ("Now playing Take On Me by a-ha, a huge hit that keeps climbing the charts.", "en"),
+    ("Ahora suena Take On Me de a-ha, un tema muy popular que todos conocen.", "es"),
 ])
-def test_la_popularidad_que_no_esta_en_los_hechos_no_pasa(texto, idioma):
-    assert "popularidad" in ver(texto, p=pedido(idioma))
-
-
-def test_la_popularidad_que_si_esta_en_los_hechos_pasa():
-    sin_wiki = Hechos(None, HECHOS.tema, Resumen("A-ha vendió más de 10 millones de discos y fue un éxito en las listas de éxitos.", "A-ha", "es", "https://x"))
-    texto = "Ahora suena Take On Me de a-ha, una banda que fue un éxito en las listas de éxitos."
-    assert ver(texto, ingredientes=("cancion", "dato"), hechos=sin_wiki) is None
+def test_mencionar_la_popularidad_no_descarta_la_frase(texto, idioma):
+    assert ver(texto, p=pedido(idioma)) is None
 
 
 @pytest.mark.parametrize("texto", ["Ahora suena Take On Me de a-ha con 1,5 millones de fans.",

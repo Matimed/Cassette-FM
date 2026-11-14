@@ -129,7 +129,8 @@ def construir_peticion(pedido: Pedido, ingredientes: Sequence[str], hechos: Hech
                    "\"por cierto\", \"mientras tanto\") en vez de frases sueltas.\n"
                    "- No empieces con \"aquí tienes\" ni digas que sos una IA.\n"
                    "- No menciones el momento del día, el día de la semana ni el clima si el mensaje no los da.\n"
-                   "- No hables de popularidad, éxito, listas, ventas ni reproducciones si el mensaje no lo dice.\n"
+                   "- NUNCA digas que el tema es popular, un éxito, un clásico, que sube en las listas ni que lo escucha mucha "
+                   "gente: es inventado y aburre. Hablá de la canción, del artista o de los datos del mensaje.\n"
                    "- Escribí los años con cifras (por ejemplo 1984).\n"
                    "- Si hay un dato de Wikipedia, usá a lo sumo uno y decilo con tus palabras en una frase corta."
                    + tono)
@@ -145,7 +146,8 @@ def construir_peticion(pedido: Pedido, ingredientes: Sequence[str], hechos: Hech
                    "\"meanwhile\") instead of separate stand-alone sentences.\n"
                    "- Do not start with \"here is\" and never say you are an AI.\n"
                    "- Do not mention the time of day, the day of the week or the weather unless the message gives it.\n"
-                   "- Do not talk about popularity, hits, charts, sales or streams unless the message says so.\n"
+                   "- NEVER say the song is popular, a hit or a classic, that it is climbing the charts or that many people "
+                   "listen to it: it is made up and boring. Talk about the song, the artist or the facts in the message.\n"
                    "- Write years as digits (for example 1984).\n"
                    "- If there is a Wikipedia fact, use at most one, in your own words, in one short sentence."
                    + tono)
@@ -213,13 +215,6 @@ _FUNCIONALES = {
               "muy sin sobre entre vos nos te mi tu todo todos esta este eso".split()),
     "en": set("the and of is to in for with by on it this that you your are we our here next now at as be was an or "
               "from there they have has not but all".split()),
-}
-# afirmaciones de popularidad: el LLM las inventa casi siempre; solo valen si están en los hechos del mensaje
-_POPULARIDAD = {
-    "es": re.compile(r"\b(?:popular(?:es|idad)?|exito(?:s|so|sa|sos|sas)?|exitazo|ranking|rankings|viral(?:es)?|"
-                     r"reproducciones|numero uno|mas escuchad[oa]s?|furor|tendencia|platino|superventas)\b"),
-    "en": re.compile(r"\b(?:popular|popularity|charts?|charting|hits?|streamed|streams?|streaming|viral|trending|"
-                     r"best selling|bestselling|number one|top ten|platinum|blockbuster|smash)\b"),
 }
 _ANIOS_EN_PALABRAS = {
     "es": re.compile(r"\b(?:mil novecientos|dos mil)\b"),
@@ -289,10 +284,6 @@ def verificar(texto: str, pedido: Pedido, peticion: Peticion, palabras_maximas: 
             if not all(p in vocabulario or len(p) == 1 or difflib.get_close_matches(p, vocabulario, 1, 0.85)
                        for p in partes):
                 return f"nombre propio que no está en los hechos: {palabra}"
-    hechos_dichos = _norm(peticion.permitido)
-    for m in _POPULARIDAD[idioma].finditer(_norm(resto)):
-        if not re.search(rf"\b{re.escape(m.group(0))}\b", hechos_dichos):
-            return f"afirma popularidad que no está en los hechos: {m.group(0)}"
     return None
 
 
