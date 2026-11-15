@@ -1,10 +1,11 @@
 ---
 # CASSETTE-FM-waxf
 title: Estaciones desde playlists de Spotify
-status: todo
+status: completed
 type: feature
+priority: normal
 created_at: 2026-11-13T23:03:55Z
-updated_at: 2026-11-13T23:03:55Z
+updated_at: 2026-11-15T01:57:47Z
 parent: CASSETTE-FM-4yzi
 blocked_by:
     - CASSETTE-FM-u2yr

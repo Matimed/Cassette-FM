@@ -1,10 +1,11 @@
 ---
 # CASSETTE-FM-jbqg
 title: Reproducción por Spotify Web API
-status: todo
+status: completed
 type: feature
+priority: normal
 created_at: 2026-11-13T23:03:55Z
-updated_at: 2026-11-13T23:03:55Z
+updated_at: 2026-11-15T01:57:47Z
 parent: CASSETTE-FM-4yzi
 ---
 
