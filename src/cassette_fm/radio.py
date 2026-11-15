@@ -11,7 +11,7 @@ from pathlib import Path
 import mutagen
 
 from cassette_fm.agenda import desfase, transiciones
-from cassette_fm.biblioteca import Estacion
+from cassette_fm.biblioteca import Estacion, Pista
 from cassette_fm.clips import generar_clip_de_prueba
 from cassette_fm.config import ConfigDJ, Estado
 from cassette_fm.intervenciones import Intervencion
@@ -64,6 +64,8 @@ class Radio:
         self._avisar = avisar
         self._lock = threading.RLock()
         self.encendida = False
+        # avisa cada cambio de emisora, de tema o de prendida/apagada; puede llegar con el lock tomado: no bloquear
+        self.al_cambiar: Callable[[], None] | None = None
         reproductor.al_cambiar_pista = self._al_cambiar_pista
         reproductor.al_fallar = self._al_fallar
         self._poner_volumen(estado.volumen)
@@ -141,6 +143,22 @@ class Radio:
                 "segundo": round(segundo, 1) if segundo is not None else None,
             }
 
+    def sonando(self) -> tuple[str, Pista] | None:
+        """(emisora, pista) de lo que está sonando, o None si está apagada o todavía sin tema."""
+        with self._lock:
+            pista = self._reproductor.pista_actual
+            if not self.encendida or pista is None:
+                return None
+            return self._estado.estacion, pista
+
+    def _avisar_cambio(self) -> None:
+        if self.al_cambiar is None:
+            return
+        try:
+            self.al_cambiar()
+        except Exception:
+            _log.exception("error al avisar un cambio de la radio")
+
     def _fuente_actual(self) -> str | None:
         i = self._indice_actual()
         return self._estaciones[i].fuente if i is not None else None
@@ -193,6 +211,7 @@ class Radio:
             self._dj.al_sintonizar(estacion.nombre)
         if self._planificador is not None:
             self._planificador.al_sintonizar(estacion)
+        self._avisar_cambio()
 
     def _poner_volumen(self, valor: int) -> int:
         valor = self._reproductor.volumen(valor)
@@ -207,6 +226,7 @@ class Radio:
             self._dj.detener()
         if self._planificador is not None:
             self._planificador.al_apagar()
+        self._avisar_cambio()
 
     def _al_cambiar_pista(self, pista, estacion) -> None:
         if self._avisar is not None and estacion is not None:
@@ -214,6 +234,7 @@ class Radio:
         if self._dj is not None and estacion is not None:
             self._dj.pista_iniciada(pista, estacion.nombre)
             self._medir_desfase(pista, estacion)
+        self._avisar_cambio()
 
     def _medir_desfase(self, pista, estacion) -> None:
         with self._lock_dj:

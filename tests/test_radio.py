@@ -641,3 +641,30 @@ def test_el_estado_dice_la_fuente():
     assert radio.estado()["fuente"] is None
     radio.encender()
     assert radio.estado()["fuente"] == "carpeta"
+
+
+def test_al_cambiar_se_llama_al_sintonizar_apagar_y_cambiar_de_tema():
+    radio, rep, _, _ = crear()
+    cambios = []
+    radio.al_cambiar = lambda: cambios.append(radio.encendida)
+    radio.siguiente()
+    radio.apagar()
+    rep.al_cambiar_pista(est("A").pistas[0], est("A"))
+    assert cambios == [True, False, False]
+
+
+def test_al_cambiar_que_falla_no_rompe_la_radio():
+    radio, _, _, _ = crear()
+    radio.al_cambiar = lambda: 1 / 0
+    radio.encender()
+    assert radio.encendida
+
+
+def test_sonando_da_emisora_y_pista():
+    radio, rep, _, _ = crear()
+    assert radio.sonando() is None
+    radio.sintonizar("B")
+    rep.pista_actual = est("B").pistas[0]
+    assert radio.sonando() == ("B", est("B").pistas[0])
+    radio.apagar()
+    assert radio.sonando() is None
