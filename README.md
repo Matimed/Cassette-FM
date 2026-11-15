@@ -305,6 +305,21 @@ las mismas frases.
 | `Super+Alt+→` / `Super+Alt+←` | estación siguiente / anterior |
 | `Super+Alt+↑` / `Super+Alt+↓` | volumen +10 / −10 (en 0 se apaga; subir lo enciende) |
 
+### Teclas multimedia y parlantes Bluetooth
+
+Mientras corre el servicio, la radio se queda con las teclas multimedia (las del teclado y los botones de un
+parlante o auriculares Bluetooth, que llegan como teclas) y aparece en el applet de sonido de Cinnamon con el tema,
+el artista y la emisora:
+
+| Tecla / botón | Acción |
+|---|---|
+| Siguiente (dos toques en un JBL) | emisora siguiente |
+| Anterior (tres toques) | emisora anterior |
+| Play/pausa (un toque) | prende o apaga la radio (al volver entra con el tema en curso) |
+
+Mientras la radio corre, otros reproductores (un video en el navegador, por ejemplo) no reciben esas teclas: Cinnamon
+se las da al último programa que las pidió.
+
 ## Configuración
 
 `~/.config/cassette-fm/config.toml` (todas las claves son opcionales):

@@ -22,6 +22,9 @@ por la Web API y reproducción con **Spotify Soloist** (servicio `cassette-soloi
 renueva con `scripts/actualizar-soloist.sh`). Diseño:
 [`superpowers/specs/2026-11-14-etapa-4-spotify-design.md`](superpowers/specs/2026-11-14-etapa-4-spotify-design.md).
 Los menores que quedaron pendientes de cada parte están en los mensajes de commit de sus revisiones finales.
+Además la radio se anuncia por MPRIS y pide las teclas multimedia a Cinnamon (`GrabMediaPlayerKeys`), así los
+botones de un parlante Bluetooth cambian de emisora:
+[`superpowers/specs/2026-11-14-teclas-multimedia-design.md`](superpowers/specs/2026-11-14-teclas-multimedia-design.md).
 
 ## Relevamiento previo (leer antes de diseñar)
 

@@ -11,6 +11,7 @@ from cassette_fm.config import Config, Rutas, cargar_estado, guardar_estado
 from cassette_fm.emisoras import Catalogo
 from cassette_fm.intervenciones import RegistroIntervenciones
 from cassette_fm.locutor import Locutor
+from cassette_fm.mpris import ServicioMpris
 from cassette_fm.mpv import ClienteMpv
 from cassette_fm.planificador import Planificador
 from cassette_fm.radio import Radio
@@ -61,8 +62,11 @@ def reproductor_spotify(config: Config, rutas: Rutas, cliente):
 
 
 def servir(config: Config, rutas: Rutas, avisar: Callable[[str, str], None] | None = None,
-           parar: threading.Event | None = None, extra_args_mpv: Sequence[str] = ()) -> None:
-    """Arma la radio y sirve la API hasta SIGTERM/SIGINT o hasta que se setee `parar`."""
+           parar: threading.Event | None = None, extra_args_mpv: Sequence[str] = (),
+           bus_mpris: str | None = None) -> None:
+    """Arma la radio y sirve la API hasta SIGTERM/SIGINT o hasta que se setee `parar`.
+
+    `bus_mpris`: dirección del bus donde anunciarse por MPRIS (None = el bus de sesión)."""
     parar = parar or threading.Event()
     if avisar is None and config.avisos:
         avisar = Notificador()
@@ -106,6 +110,10 @@ def servir(config: Config, rutas: Rutas, avisar: Callable[[str, str], None] | No
     radio = Radio(reproductor, estaciones, estado,
                   guardar=lambda e: guardar_estado(rutas.estado, e),
                   escanear=escanear, avisar=avisar, **extra_radio)
+    # teclas multimedia y botones del parlante; sin bus de sesión la radio anda igual
+    mpris = ServicioMpris(radio, direccion=bus_mpris)
+    radio.al_cambiar = mpris.cambio
+    mpris.iniciar()
     if planificador is not None:
         planificador.iniciar()
         _log.info("planificador del DJ activo (servicio en %s)", config.dj.url)
@@ -116,7 +124,7 @@ def servir(config: Config, rutas: Rutas, avisar: Callable[[str, str], None] | No
     try:
         parar.wait()
     finally:
-        pasos = [servidor.shutdown, servidor.server_close]
+        pasos = [servidor.shutdown, servidor.server_close, mpris.cerrar]
         if planificador is not None:
             pasos.append(planificador.cerrar)     # antes de apagar la radio y de cerrar el locutor y mpv
         pasos.append(radio.apagar)

@@ -462,3 +462,66 @@ def test_servir_con_spotify_conecta_a_soloist_y_lo_cierra(tmp_path, dir_corto):
     while _hilos_soloist() and time.monotonic() < fin:
         time.sleep(0.05)
     assert _hilos_soloist() == []
+
+
+def _mpris_next(direccion):
+    import asyncio
+    from dbus_fast import Message, MessageType
+    from dbus_fast.aio import MessageBus
+
+    async def llamar_next():
+        bus = await MessageBus(bus_address=direccion).connect()
+        try:
+            r = await bus.call(Message(destination="org.mpris.MediaPlayer2.cassette_fm",
+                                       path="/org/mpris/MediaPlayer2", interface="org.mpris.MediaPlayer2.Player",
+                                       member="Next"))
+            assert r.message_type == MessageType.METHOD_RETURN, r.body
+        finally:
+            bus.disconnect()
+    asyncio.run(llamar_next())
+
+
+def test_servir_publica_mpris_y_next_cambia_de_emisora(tmp_path, dir_corto, crear_mp3, bus_privado):
+    musica = tmp_path / "musica"
+    crear_mp3(musica / "A" / "a.mp3", 30, titulo="Tema A")
+    crear_mp3(musica / "B" / "b.mp3", 30, titulo="Tema B")
+    rutas = Rutas(config=tmp_path / "config.toml", estado=tmp_path / "st" / "estado.json",
+                  cache=tmp_path / "cache" / "d.json", runtime=dir_corto)
+    puerto = puerto_libre()
+    parar = threading.Event()
+    hilo = threading.Thread(target=servir, kwargs=dict(
+        config=Config(raiz_musica=musica, puerto=puerto, avisos=False), rutas=rutas,
+        parar=parar, extra_args_mpv=["--ao=null"], bus_mpris=bus_privado), daemon=True)
+    hilo.start()
+    try:
+        esperar_servicio(puerto)
+        assert llamar(puerto, "POST", "/encender")["estacion"] == "A"
+        _mpris_next(bus_privado)
+        fin = time.monotonic() + 3
+        while llamar(puerto, "GET", "/estado")["estacion"] != "B" and time.monotonic() < fin:
+            time.sleep(0.05)
+        assert llamar(puerto, "GET", "/estado")["estacion"] == "B"
+    finally:
+        parar.set()
+        hilo.join(5)
+    assert not hilo.is_alive()
+    assert not any(t.name == "mpris" and t.is_alive() for t in threading.enumerate())
+
+
+def test_servir_sin_bus_igual_arranca(tmp_path, dir_corto, caplog):
+    rutas = Rutas(config=tmp_path / "c.toml", estado=tmp_path / "e.json",
+                  cache=tmp_path / "d.json", runtime=dir_corto)
+    puerto = puerto_libre()
+    parar = threading.Event()
+    hilo = threading.Thread(target=servir, kwargs=dict(
+        config=Config(raiz_musica=tmp_path / "x", puerto=puerto, avisos=False), rutas=rutas,
+        parar=parar, extra_args_mpv=["--ao=null"], bus_mpris=f"unix:path={tmp_path}/no-hay"), daemon=True)
+    with caplog.at_level("WARNING", logger="cassette_fm"):
+        hilo.start()
+        try:
+            assert esperar_servicio(puerto)["encendida"] is False
+            assert "MPRIS" in caplog.text
+        finally:
+            parar.set()
+            hilo.join(5)
+    assert not hilo.is_alive()
