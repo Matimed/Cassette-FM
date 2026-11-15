@@ -103,6 +103,7 @@ class ReproductorSpotify:
         self._primero_pendiente = False
         self._encolados: dict[str, Pista] = {}   # la cola de la app según el último queue_changed, por URI
         self._anunciado: str | None = None        # el encolado próximo que ya se avisó con al_encolado
+        self._por_anunciar: Pista | None = None   # el próximo encolado, esperando la posición para avisarlo
 
     # --- sintonía ---
 
@@ -230,7 +231,7 @@ class ReproductorSpotify:
                     pista, ahora = pedida, self._reloj()
                     estacion = con_pedido(estacion, pedida, ahora)
                     agenda = (estacion, Pedido(pedida, ahora))
-                    self._anunciado = None
+                    self._anunciado = self._por_anunciar = None
                 elif not retomado and estacion.pedidos and pista.clave in self._por_clave:
                     estacion = plegar(estacion, self._reloj())    # antes de medir el desfase
                     agenda = (estacion, None)
@@ -265,6 +266,8 @@ class ReproductorSpotify:
                     self._posicion = (float(p["position_ms"]), float(p["timestamp_ms"]), float(p.get("speed", 1)))
                 except (KeyError, TypeError, ValueError):
                     pass
+                if self._por_anunciar is not None:    # Soloist manda la cola antes que la posición del tema
+                    encolado = self._aviso_de_encolado(self._por_anunciar, estacion)
         if sonar and self.al_sonar is not None:
             self.al_sonar()
         if agenda is not None and self.al_cambiar_agenda is not None:
@@ -305,13 +308,22 @@ class ReproductorSpotify:
                 if pista is not None and pista.duracion > 0:
                     encolados.setdefault(pista.clave, pista)
         self._encolados = encolados
+        self._por_anunciar = None
         if not entradas or entradas[0].get("source") != "queue" or estacion is None:
             return None
         proxima = encolados.get((entradas[0].get("item") or {}).get("uri"))
-        posicion = self.posicion()
-        if proxima is None or proxima.clave == self._anunciado or posicion is None:
+        if proxima is None or proxima.clave == self._anunciado:
             return None
-        self._anunciado = proxima.clave
+        return self._aviso_de_encolado(proxima, estacion)
+
+    def _aviso_de_encolado(self, proxima: Pista, estacion: Estacion) -> tuple[Pista, Estacion, float] | None:
+        """Con el lock tomado: el aviso de `proxima` con el fin del tema actual; sin posición todavía (recién
+        empezó un tema), queda pendiente hasta el próximo position_sync."""
+        posicion = self.posicion()
+        if posicion is None:
+            self._por_anunciar = proxima
+            return None
+        self._anunciado, self._por_anunciar = proxima.clave, None
         return proxima, estacion, self._reloj() + max(0.0, self.pista_actual.duracion - posicion)
 
     def _pista_del_item(self, item) -> Pista | None:

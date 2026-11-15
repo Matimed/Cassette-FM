@@ -79,11 +79,14 @@ class Locutor:
                 if i.inicio <= ahora:
                     self._reproducidas.add(i.id)
 
-    def descartar_estacion(self, estacion: str) -> None:
+    def descartar_estacion(self, estacion: str, desde: float | None = None) -> None:
         """La agenda de la estación cambió: sus intervenciones ya no valen (y la voz en curso tampoco), salvo las
-        que anuncian una petición: están ancladas a su tema, que sigue valiendo."""
+        que anuncian una petición: están ancladas a su tema, que sigue valiendo. Con `desde` (encolaron un pedido
+        que empieza ahí) solo cambia lo que viene: la voz y el anclaje del tema actual siguen."""
         with self._lock:
-            self._registro.quitar_estacion(estacion, salvo_peticiones=True)
+            self._registro.quitar_estacion(estacion, salvo_peticiones=True, desde=desde)
+            if desde is not None:
+                return
             if self._estacion_anclaje == estacion and not (self._anclada and self._anclada.peticion):
                 self._cancelar_anclaje()
             if self._hablando and self._estacion_voz == estacion and not (self._en_voz and self._en_voz.peticion):

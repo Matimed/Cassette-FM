@@ -92,9 +92,9 @@ class LocutorFalso:
         self.registro.agregar(i)
         self.registradas.append(i)
 
-    def descartar_estacion(self, nombre):
+    def descartar_estacion(self, nombre, desde=None):
         self.descartadas.append(nombre)
-        self.registro.quitar_estacion(nombre)
+        self.registro.quitar_estacion(nombre, desde=desde)
 
 
 CFG = ConfigDJ(margen_minutos=0.0, frecuencia=Frecuencia("temas", 1, 1), retraso_voz_segundos=1.0,
@@ -651,8 +651,10 @@ def _fin_del_tema(est, ahora):
 
 @pytest.fixture
 def con_peticiones(mundo):
-    mundo.locutor.descartar_estacion = lambda nombre: (mundo.locutor.descartadas.append(nombre),
-                                                       mundo.registro.quitar_estacion(nombre, salvo_peticiones=True))
+    mundo.locutor.desde = []
+    mundo.locutor.descartar_estacion = lambda nombre, desde=None: (
+        mundo.locutor.descartadas.append(nombre), mundo.locutor.desde.append(desde),
+        mundo.registro.quitar_estacion(nombre, salvo_peticiones=True, desde=desde))
     return mundo
 
 
@@ -799,3 +801,31 @@ def test_pedido_sin_artista_no_se_anuncia(con_peticiones):
     m.p.al_encolado(sin_nombre, est, _fin_del_tema(est, T0))
     m.p.paso()
     assert _peticiones(m) == []
+
+
+def test_encolar_no_descarta_lo_del_tema_actual(con_peticiones):
+    from cassette_fm.planificacion import Ultima
+    m = con_peticiones
+    est = estacion()
+    m.p.al_sintonizar(est)
+    fin = _fin_del_tema(est, T0)
+    m.p._ultima["E"] = Ultima(T0 - 10, T0 + 5)          # la del tema actual: puede estar sonando
+    m.p.al_encolado(PEDIDO, est, fin)
+    m.p.paso()
+    assert m.locutor.desde == [fin] and "E" in m.p._ultima
+
+
+def test_saltear_hasta_el_pedido_descarta_el_antes_y_pide_el_despues(con_peticiones):
+    m = con_peticiones
+    est = estacion()
+    m.p.al_sintonizar(est)
+    m.reloj.t = next(transiciones(est, T0))[1] + 5      # recién empezó el tema actual
+    fin, antes = _registrar_antes(m, est)
+    inicio = m.reloj.t + 50                              # el usuario lo salteó para llegar a su pedido
+    assert fin - inicio > CFG.tolerancia_desfase_segundos
+    m.reloj.t = inicio
+    nueva = con_pedido(est, PEDIDO, inicio)
+    m.p.al_cambiar_agenda(nueva, nueva.pedidos[0])
+    m.p.paso()
+    assert antes["id"] not in [i.id for i in m.registro.todas()]
+    assert [p["peticion"] for p in _peticiones(m)] == ["antes", "despues"]

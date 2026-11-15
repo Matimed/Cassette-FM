@@ -169,9 +169,14 @@ class Planificador:
         with self._lock:
             self._encolados.discard(clave)
             self._pendientes = [p for p in self._pendientes if not (p.modo == "antes" and p.pedido == clave)]
-            if any(i.estacion == estacion.nombre and i.peticion == "antes" and i.pista_destino == clave
-                   for i in self._registro.todas()):
-                return                         # el "antes" ya está reservado: va a sonar
+            cfg = self._configuracion(estacion.nombre)
+            for i in self._registro.todas():
+                if i.estacion != estacion.nombre or i.peticion != "antes" or i.pista_destino != clave:
+                    continue
+                if abs(i.inicio - cfg.retraso_voz_segundos - nuevo.inicio) <= cfg.tolerancia_desfase_segundos:
+                    return                     # el "antes" ya está reservado: va a sonar
+                # empezó lejos de donde se esperaba (salteado el tema actual): el "antes" no va a sonar
+                self._registro.quitar(i)
             t = self._trabajo
             if t is not None and t.peticion == "antes" and t.pedido == clave:
                 self._a_cancelar.append(t.id)
@@ -289,15 +294,17 @@ class Planificador:
         self._guardar()
         return [estacion.nombre] if previa is not None and not _misma_agenda(previa, firma) else []
 
-    def _descartar(self, nombre: str, motivo: str = "la agenda de %r cambió") -> None:
+    def _descartar(self, nombre: str, motivo: str = "la agenda de %r cambió", desde: float | None = None) -> None:
         """La agenda de `nombre` cambió: sus reservas, su última intervención y su trabajo en curso ya no valen
-        (salvo los anuncios de peticiones, anclados a su tema)."""
+        (salvo los anuncios de peticiones, anclados a su tema). Con `desde`, lo de antes de ese instante sigue."""
         _log.info(motivo + ": se descartan sus intervenciones reservadas", nombre)
         with self._lock:
             self._epoca[nombre] = self._epoca.get(nombre, 0) + 1
-        self._locutor.descartar_estacion(nombre)
+        self._locutor.descartar_estacion(nombre, desde=desde)
         with self._lock:
-            if nombre not in self._ultima_peticion:
+            ultima = self._ultima.get(nombre)
+            if nombre not in self._ultima_peticion and ultima is not None and (desde is None
+                                                                               or ultima.inicio_tema >= desde):
                 self._ultima.pop(nombre, None)
             if self._trabajo is not None and self._trabajo.estacion == nombre and not self._trabajo.peticion:
                 self._a_cancelar.append(self._trabajo.id)
@@ -440,8 +447,9 @@ class Planificador:
         if inicio_voz <= ahora:
             _log.info("el anuncio de la petición de %r ya no llega a tiempo: se saltea", p.estacion)
             return
-        # lo normal planificado para esta emisora ya no va a caer donde debía (el pedido corre la agenda)
-        self._descartar(p.estacion, "llegó una petición en %r")
+        # lo normal planificado desde el pedido ya no va a caer donde debía (el pedido corre la agenda); lo del
+        # tema actual (la voz que suena, la anclada) sigue valiendo
+        self._descartar(p.estacion, "llegó una petición en %r", desde=p.inicio_tema)
         self._cancelaciones_pendientes()
         id_ = uuid.uuid4().hex
         with self._lock:

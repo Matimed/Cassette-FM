@@ -591,9 +591,9 @@ def test_dos_pedidos_seguidos():
     siguiente, fin = proximo(e, reloj())
     r.manejar_evento(cola(item(AJENO, "Uno"), item(OTRO, "Dos", 100000)))
     reloj.t = fin
-    r.manejar_evento(cambio(AJENO, "Uno", 150000))
+    r.manejar_evento(cambio(AJENO, "Uno", 150000))      # el orden de la captura: track_changed, queue_changed
+    r.manejar_evento(cola(item(OTRO, "Dos", 100000)))   # y recién después la posición
     r.manejar_evento(posicion_en(reloj, 0))
-    r.manejar_evento(cola(item(OTRO, "Dos", 100000)))
     assert [p.uri for p, _, _ in r.eventos["encolados"]] == [AJENO, OTRO]
     assert [f for _, _, f in r.eventos["encolados"]] == [pytest.approx(fin), pytest.approx(fin + 150)]
     reloj.t = fin + 5                                      # salteó el primero

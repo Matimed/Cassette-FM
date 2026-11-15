@@ -388,3 +388,22 @@ def test_locutor_descarta_y_corta_las_normales(mundo):
     mundo.locutor.descartar_estacion("E")
     time.sleep(CFG.retraso_voz_segundos + 0.3)
     assert mundo.voz.cargas() == [] and mundo.registro.todas() == []
+
+
+def test_descartar_desde_un_instante_no_corta_la_voz_ni_quita_lo_anterior(mundo):
+    mundo.locutor.al_sintonizar("E")
+    hablando, futura = mundo.iv(T0 - 2), mundo.iv(T0 + 300)
+    mundo.locutor.registrar(hablando)
+    mundo.locutor.registrar(futura)
+    assert mundo.locutor.hablando
+    mundo.locutor.descartar_estacion("E", desde=T0 + 100)     # encolaron: el pedido empieza en T0 + 100
+    assert mundo.locutor.hablando and mundo.registro.todas() == [hablando]
+    assert not futura.audio.exists()
+
+
+def test_descartar_desde_un_instante_no_desancla_la_del_tema_actual(mundo):
+    mundo.locutor.al_sintonizar("E")
+    mundo.locutor.registrar(mundo.iv(T0 + 20))
+    mundo.locutor.pista_iniciada(Pista(Path("/m/t.mp3"), 200.0, "t"), "E")   # queda anclada
+    mundo.locutor.descartar_estacion("E", desde=T0 + 150)
+    assert esperar(lambda: mundo.voz.cargas())                              # igual habla

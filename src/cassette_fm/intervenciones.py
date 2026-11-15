@@ -83,12 +83,15 @@ class RegistroIntervenciones:
             self._guardar()
             return sorted(vencidas, key=lambda i: i.inicio)
 
-    def quitar_estacion(self, estacion: str, salvo_peticiones: bool = False) -> list[Intervencion]:
+    def quitar_estacion(self, estacion: str, salvo_peticiones: bool = False,
+                        desde: float | None = None) -> list[Intervencion]:
         """Quita las de una estación (la agenda cambió) y borra sus clips; persiste. Con `salvo_peticiones`,
-        las que anuncian una petición quedan (están ancladas a su tema, que sigue valiendo)."""
+        las que anuncian una petición quedan (están ancladas a su tema, que sigue valiendo). Con `desde`, solo
+        las que empiezan desde ese instante (lo anterior no cambió)."""
         with self._lock:
             quitadas = [i for i in self._items
-                        if i.estacion == estacion and not (salvo_peticiones and i.peticion)]
+                        if i.estacion == estacion and not (salvo_peticiones and i.peticion)
+                        and (desde is None or i.inicio >= desde)]
             if not quitadas:
                 return []
             self._items = [i for i in self._items if i not in quitadas]
@@ -96,6 +99,15 @@ class RegistroIntervenciones:
                 self._borrar_clip(i)
             self._guardar()
             return sorted(quitadas, key=lambda i: i.inicio)
+
+    def quitar(self, i: Intervencion) -> None:
+        """Quita una sola (un anuncio que ya no va a sonar) y borra su clip; persiste."""
+        with self._lock:
+            if i not in self._items:
+                return
+            self._items.remove(i)
+            self._borrar_clip(i)
+            self._guardar()
 
     def _borrar_clip(self, i: Intervencion) -> None:
         try:
