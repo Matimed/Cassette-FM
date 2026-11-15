@@ -1,6 +1,7 @@
 import math
 import os
 import shutil
+import subprocess
 import tempfile
 from types import SimpleNamespace
 from pathlib import Path
@@ -201,3 +202,27 @@ def servidor_http():
     yield s
     srv.shutdown()
     srv.server_close()
+
+
+@pytest.fixture(autouse=True)
+def _sin_bus_de_sesion(monkeypatch, tmp_path):
+    """Ningún test toca el bus de sesión real: la radio aparecería en el applet y le robaría las teclas al usuario."""
+    monkeypatch.setenv("DBUS_SESSION_BUS_ADDRESS", f"unix:path={tmp_path}/sin-bus")
+
+
+@pytest.fixture
+def bus_privado(dir_corto):
+    """Un dbus-daemon propio para el test; devuelve su dirección."""
+    config = dir_corto / "bus.conf"
+    config.write_text(
+        "<!DOCTYPE busconfig PUBLIC \"-//freedesktop//DTD D-Bus Bus Configuration 1.0//EN\" "
+        "\"http://www.freedesktop.org/standards/dbus/1.0/busconfig.dtd\">"
+        f"<busconfig><type>session</type><listen>unix:path={dir_corto}/bus</listen>"
+        "<policy context=\"default\"><allow send_destination=\"*\" eavesdrop=\"true\"/>"
+        "<allow eavesdrop=\"true\"/><allow own=\"*\"/></policy></busconfig>")
+    proceso = subprocess.Popen(["dbus-daemon", f"--config-file={config}", "--nofork", "--print-address"],
+                               stdout=subprocess.PIPE, text=True)
+    direccion = proceso.stdout.readline().strip()
+    yield direccion
+    proceso.terminate()
+    proceso.wait(5)
