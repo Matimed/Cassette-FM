@@ -184,3 +184,23 @@ def test_voz_de_piper_vale():
     d = pedido_valido()
     d["voz"] = "piper:es_AR-daniela-high"
     assert leer_pedido(d).voz == "piper:es_AR-daniela-high"
+
+
+def test_peticion_valida_y_opcional():
+    assert leer_pedido(pedido_valido()).peticion is None
+    for valor in ("antes", "despues"):
+        d = pedido_valido()
+        d["peticion"] = valor
+        assert leer_pedido(d).peticion == valor
+
+
+def test_peticion_invalida_da_error():
+    d = pedido_valido()
+    d["peticion"] = "x"
+    with pytest.raises(ValueError, match="campo 'peticion': tiene que ser antes o despues"):
+        leer_pedido(d)
+    d = pedido_valido()
+    d["peticion"] = "despues"
+    del d["anterior"]
+    with pytest.raises(ValueError, match=r"campo 'anterior': falta \(peticion despues\)"):
+        leer_pedido(d)

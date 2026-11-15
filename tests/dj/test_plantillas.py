@@ -498,3 +498,38 @@ def test_un_album_recopilatorio_no_es_ingrediente(album, recopilatorio):
     p = Pedido(id="x", estacion="E", idioma="es", voz="v", momento=a(12, 0), anterior=None,
                siguiente=Tema("A", "T", album))
     assert ("album" in ingredientes_disponibles(p)) is (not recopilatorio)
+
+
+# --- peticiones ---
+
+from dataclasses import replace as _replace
+
+_ANTES = {"es": ("Llega una petición especial del público.", "Tenemos una petición especial para ustedes."),
+          "en": ("Here comes a special request from a listener.", "We have a special request for you.")}
+
+
+@pytest.mark.parametrize("idioma", ["es", "en"])
+def test_plantilla_antes_empieza_con_la_peticion(idioma):
+    p = _replace(pedido(idioma=idioma), peticion="antes")
+    for semilla in range(20):
+        texto = MARCA.sub(lambda m: m.group(2), redactar(p, Lexico(), random.Random(semilla), 45, zona=ZONA).marcado)
+        assert texto.startswith(_ANTES[idioma]), texto
+
+
+@pytest.mark.parametrize("idioma,inicio", [("es", "Eso fue una petición especial: Is This Love de Whitesnake."),
+                                           ("en", "That was a special request: Is This Love by Whitesnake.")])
+def test_plantilla_despues_nombra_el_tema_pedido(idioma, inicio):
+    p = _replace(pedido(idioma=idioma), peticion="despues")
+    for semilla in range(20):
+        r = redactar(p, Lexico(), random.Random(semilla), 45, zona=ZONA)
+        texto = MARCA.sub(lambda m: m.group(2), r.marcado)
+        assert texto.startswith(inicio), texto
+        assert texto.count("Whitesnake") == 1 and "anterior" not in r.ingredientes
+        assert "Waiting for a Girl Like You" in texto
+
+
+def test_plantilla_peticion_entra_aunque_falten_palabras():
+    p = _replace(pedido(), peticion="antes")
+    for semilla in range(10):
+        texto = MARCA.sub(lambda m: m.group(2), redactar(p, Lexico(), random.Random(semilla), 12, zona=ZONA).marcado)
+        assert texto.startswith(_ANTES["es"]) and "Waiting for a Girl Like You" in texto

@@ -558,3 +558,27 @@ def test_el_momento_se_dice_como_dia_y_parte_del_dia():
 ])
 def test_corregir_momento_cambia_saludos_y_partes_del_dia_equivocadas(hora, texto, idioma, esperado):
     assert corregir_momento(texto, datetime(2026, 11, 14, hora, 0, tzinfo=ZONA), idioma) == esperado
+
+
+# --- peticiones ---
+
+from dataclasses import replace as _replace
+
+
+@pytest.mark.parametrize("idioma,valor,linea", [
+    ("es", "antes", "Este tema es una petición especial del público: presentalo como tal."),
+    ("en", "antes", "This song is a special request from a listener: introduce it as such."),
+    ("es", "despues", "El tema anterior fue una petición especial del público: mencionalo y presentá el siguiente."),
+    ("en", "despues", "The previous song was a special request from a listener: mention it and introduce the next one."),
+])
+def test_prompt_llm_marca_la_peticion(idioma, valor, linea):
+    p = _replace(pedido(idioma=idioma), peticion=valor)
+    pet = peticion(["cancion"], p=p)
+    assert linea in pet.usuario
+    if valor == "despues":
+        assert "Dale Don Dale" in pet.usuario       # el tema pedido va aunque "anterior" no se haya elegido
+
+
+def test_prompt_sin_peticion_no_la_menciona():
+    pet = peticion(["cancion"])
+    assert "petición" not in pet.usuario and "request" not in pet.usuario

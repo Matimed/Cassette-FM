@@ -93,6 +93,13 @@ _COLAS = {
     "en": [("anio", "titulo", "which came out in {anio}"), ("anio", "titulo", "from {anio}"),
            ("pais", "artista", "an artist from {pais}"), ("inicio", "artista", "a band that started in {inicio}")],
 }
+# la oración de una petición del público: va primero y nunca se descarta
+_PETICION = {
+    "es": {"antes": ["Llega una petición especial del público.", "Tenemos una petición especial para ustedes."],
+           "despues": ["Eso fue una petición especial: {titulo_ant} de {artista_ant}."]},
+    "en": {"antes": ["Here comes a special request from a listener.", "We have a special request for you."],
+           "despues": ["That was a special request: {titulo_ant} by {artista_ant}."]},
+}
 _DESCARTE = ("dato", "clima", "anterior", "album")        # lo primero que se saca si la frase no entra
 _SUELTOS = ("hora", "estacion", "momento", "anterior")
 
@@ -223,6 +230,9 @@ def redactar(pedido: Pedido, lexico: Lexico, azar: random.Random, palabras_maxim
         campos["artista_ant"] = (" y " if es else " and ").join(m(a) for a in _artistas(pedido.anterior.artista))
         campos["titulo_ant"] = m(titulo_hablado(pedido.anterior.titulo))
     disponibles = ingredientes_disponibles(pedido, hechos)
+    peticion = pedido.peticion if pedido.peticion != "despues" or pedido.anterior is not None else None
+    if peticion == "despues":
+        disponibles.discard("anterior")          # ya lo nombra la oración de la petición
     if "clima" in disponibles:
         c = hechos.clima
         campos["grados"] = _grados(c.temperatura, idioma)
@@ -253,7 +263,7 @@ def redactar(pedido: Pedido, lexico: Lexico, azar: random.Random, palabras_maxim
         if cola is not None and "dato" in usados:
             principal += f", {cola.format(**campos)}"
         partes = [sueltos[i] for i in _SUELTOS if i in sueltos] + [principal + "."]
-        return " ".join(partes)
+        return " ".join(([prefijo] if prefijo else []) + partes)
 
     def ajustar(marco: str, cola: str | None) -> Redaccion | None:
         usados = [i for i in elegidos if i != "cancion"]
@@ -269,8 +279,10 @@ def redactar(pedido: Pedido, lexico: Lexico, azar: random.Random, palabras_maxim
             if candidato == comienzo:
                 comienzo = None
 
+    prefijo = None
     for _ in range(10):
         # lo que se elige al azar una vez por intento: las oraciones sueltas, su fusión y los comienzos
+        prefijo = azar.choice(_PETICION[idioma][peticion]).format(**campos) if peticion else None
         azar_sueltos = {i: azar.choice(_EXTRAS[idioma][i]).format(**campos) for i in _SUELTOS
                         if i != "anterior" or pedido.anterior is not None}
         fusion = (azar.choice(_EXTRAS[idioma]["hora+estacion"]).format(**campos) if azar.random() < 0.5 else None)
@@ -285,7 +297,7 @@ def redactar(pedido: Pedido, lexico: Lexico, azar: random.Random, palabras_maxim
         if r is not None:
             return r
     marco = min((mc[0] for mc in _MARCOS[idioma]), key=lambda t: _palabras(t.format(**campos)))
-    return Redaccion(marco.format(**campos) + ".", ("cancion",))
+    return Redaccion(" ".join(([prefijo] if prefijo else []) + [marco.format(**campos) + "."]), ("cancion",))
 
 
 # --- piezas que usa también el redactor del LLM ---
