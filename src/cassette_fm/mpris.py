@@ -31,14 +31,15 @@ class _Foto:
 
     def __init__(self, sonando, estado: dict, trackid: str):
         self.sonando = sonando
-        self.prendida = bool(estado.get("encendida")) and sonando is not None
+        # prendida aunque el tema nuevo todavía no arrancó (al cambiar de emisora): si no, se vería "Stopped" en el medio
+        self.prendida = bool(estado.get("encendida"))
         self.volumen = estado.get("volumen", 0) / 100
         self.segundo = estado.get("segundo") or 0.0
         self.tomada = time.monotonic()
         self.trackid = trackid
 
     def metadata(self) -> dict:
-        if not self.prendida:
+        if self.sonando is None:
             return {"mpris:trackid": Variant("o", _SIN_TEMA)}
         emisora, pista = self.sonando
         meta = {"mpris:trackid": Variant("o", self.trackid),
@@ -51,7 +52,7 @@ class _Foto:
         return meta
 
     def posicion(self) -> int:
-        if not self.prendida:
+        if not self.prendida or self.sonando is None:
             return 0
         return int((self.segundo + time.monotonic() - self.tomada) * 1_000_000)
 

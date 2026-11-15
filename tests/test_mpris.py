@@ -68,7 +68,7 @@ class RadioFalsa:
         self._accion("apagar")
 
     def sonando(self):
-        return (self.emisora, self.pista) if self.encendida else None
+        return (self.emisora, self.pista) if self.encendida and self.pista else None
 
     def estado(self):
         return {"encendida": self.encendida, "volumen": 70, "segundo": 12.5 if self.encendida else None}
@@ -343,3 +343,16 @@ def test_cerrar_suelta_las_teclas(teclas, servicio):
     assert esperar(lambda: teclas.pedidos)
     s.cerrar()
     assert esperar(lambda: ("release", "cassette-fm") in teclas.pedidos)
+
+
+def test_prendida_sin_tema_todavia_sigue_playing(servicio, cliente, bucle):
+    """Al cambiar de emisora el tema nuevo tarda en arrancar: no tiene que verse "Stopped" en el medio."""
+    radio = RadioFalsa()
+    radio.encendida = True
+    radio.pista = None
+    servicio(radio)
+    p, _, _ = player(cliente, bucle)
+    assert bucle(p.get_playback_status()) == "Playing"
+    meta = {k: v.value for k, v in bucle(p.get_metadata()).items()}
+    assert meta == {"mpris:trackid": "/org/mpris/MediaPlayer2/TrackList/NoTrack"}
+    assert bucle(p.get_position()) == 0

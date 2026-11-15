@@ -35,7 +35,8 @@ Por eso anunciarse por MPRIS no alcanza: la radio además pide las teclas.
 
 - Siguiente (dos toques en el JBL) → siguiente emisora. Anterior → emisora anterior.
 - Play/pausa (un toque) → prende o apaga la radio; al volver entra con el tema en curso, como siempre.
-  Play → prender; Pause y Stop → apagar.
+  Por las teclas (`MediaPlayerKeyPressed`), Play y Pause alternan y Stop apaga. Por MPRIS (el applet), Play prende y
+  Pause y Stop apagan.
 - Mismas acciones que `cassette next`, `prev` y `toggle`, con el mismo aviso de escritorio.
 
 ## Diseño
