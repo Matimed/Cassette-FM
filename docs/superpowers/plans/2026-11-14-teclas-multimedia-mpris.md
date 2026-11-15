@@ -22,7 +22,11 @@ el loop. El servicio lo arma y lo cierra.
 - `PlaybackStatus`: `"Playing"` con la radio prendida, `"Stopped"` apagada.
 - `CanGoNext`, `CanGoPrevious`, `CanPlay`, `CanPause`, `CanControl` = true; `CanSeek`, `CanQuit`, `CanRaise`,
   `HasTrackList` = false. Seek/SetPosition/OpenUri/Raise/Quit no hacen nada.
-- Sin bus de sesión o sin el nombre: la radio anda igual y queda un warning en el log.
+- Teclas: `GrabMediaPlayerKeys("cassette-fm", 0)` en `org.gnome.SettingsDaemon` `/org/gnome/SettingsDaemon/MediaKeys`
+  (interfaz `org.gnome.SettingsDaemon.MediaKeys`) al arrancar y cada vez que ese nombre cambia de dueño; señal
+  `MediaPlayerKeyPressed(s aplicación, s tecla)` con aplicación `cassette-fm`: `Next` → siguiente, `Previous` →
+  anterior, `Play` y `Pause` → alternar, `Stop` → apagar; al cerrar `ReleaseMediaPlayerKeys("cassette-fm")`.
+- Sin bus de sesión, sin el nombre o sin `csd-media-keys`: la radio anda igual y queda un warning en el log.
 - Los tests nunca tocan el bus de sesión real del usuario (aparecería en su applet y le robaría las teclas).
 - Commits en español, imperativo llano, terminando en `Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>`.
 
@@ -48,6 +52,9 @@ el loop. El servicio lo arma y lo cierra.
 
 - [ ] **Step 1:** agregar `"dbus-fast>=2"` a `dependencies` e instalar: `.venv/bin/pip install -e .`
   Expected: `Successfully installed dbus-fast-…`.
+> Resultado (hecho): el reproductor MPRIS nuevo **no** recibió la tecla (fue a Opera, el primero anunciado);
+> `GrabMediaPlayerKeys` sí. El diseño se corrigió: la radio además pide las teclas (ver Global Constraints y Task 3).
+
 - [ ] **Step 2:** escribir en el scratchpad un reproductor mínimo con `dbus-fast` que toma
   `org.mpris.MediaPlayer2.prueba_cassette`, exporta las dos interfaces con `PlaybackStatus="Playing"`, emite
   `PropertiesChanged` al arrancar e imprime `Next recibido` al recibir Next y termina.
@@ -150,6 +157,16 @@ def test_capacidades(bus_privado): ...                            # CanGoNext…
                                                                  # Identity "cassette-fm"
 def test_sin_bus_iniciar_da_false_y_avisa(tmp_path, caplog): ...  # direccion inexistente → False + warning, sin lanzar
 def test_cerrar_termina_el_hilo(bus_privado): ...                 # ningún hilo "mpris" vivo al rato
+# con un SettingsDaemon falso en el bus privado (exporta GrabMediaPlayerKeys/ReleaseMediaPlayerKeys y emite la señal):
+def test_pide_las_teclas_al_iniciar(bus_privado): ...             # Grab("cassette-fm", 0) registrado
+def test_cada_tecla_llama_a_su_accion(bus_privado): ...           # Next/Previous/Play/Pause/Stop →
+                                                                 # siguiente/anterior/alternar/alternar/apagar
+def test_ignora_teclas_de_otra_aplicacion(bus_privado): ...       # MediaPlayerKeyPressed("otra", "Next") → nada
+def test_vuelve_a_pedirlas_si_settings_daemon_se_reinicia(bus_privado): ...  # el falso suelta y retoma el nombre →
+                                                                 # segundo Grab
+def test_sin_settings_daemon_igual_publica_mpris(bus_privado, caplog): ...   # iniciar() True, warning, Next por
+                                                                 # MPRIS anda
+def test_cerrar_suelta_las_teclas(bus_privado): ...              # Release("cassette-fm") registrado
 ```
 
 - [ ] **Step 3:** `.venv/bin/pytest tests/test_mpris.py -q` → Expected: FAIL (`ModuleNotFoundError: cassette_fm.mpris`).
