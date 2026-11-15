@@ -25,6 +25,9 @@ Los menores que quedaron pendientes de cada parte están en los mensajes de comm
 Además la radio se anuncia por MPRIS y pide las teclas multimedia a Cinnamon (`GrabMediaPlayerKeys`), así los
 botones de un parlante Bluetooth cambian de emisora:
 [`superpowers/specs/2026-11-14-teclas-multimedia-design.md`](superpowers/specs/2026-11-14-teclas-multimedia-design.md).
+Etapa 7a (adelantada): **peticiones por la cola de Spotify**: lo encolado desde la app suena como petición, el DJ
+la anuncia (antes o después) y la agenda de la emisora se corre sin perder temas:
+[`superpowers/specs/2026-11-15-peticiones-spotify-design.md`](superpowers/specs/2026-11-15-peticiones-spotify-design.md).
 
 ## Relevamiento previo (leer antes de diseñar)
 

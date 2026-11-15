@@ -172,6 +172,7 @@ servicio no responde, la música sigue igual: un único aviso en el log, reinten
 | `url` | `""` | dirección del servicio DJ; vacía = sin planificador |
 | `frecuencia.modo` / `min` / `max` | `temas` / 2 / 3 | cada cuánto habla (en `temas`, enteros ≥ 1) |
 | `margen_minutos` | 6 | antes de esto no se agenda nada |
+| `peticion_margen_segundos` | 30 | lo mínimo que tiene que quedar del tema actual para anunciar una petición antes |
 | `voz` / `idioma` / `personalidad` | `em_santa` / `es` / vacía | cómo habla la estación |
 | `timeout_http_segundos` | 10 | espera máxima por una respuesta del servicio |
 | `espera_reintento_segundos` / `espera_reintento_maxima_segundos` | 5 / 300 | espera tras un fallo y su tope (se duplica) |
@@ -353,13 +354,30 @@ usar una de esas, copiala a una playlist propia.
 - Al sintonizar una emisora de Spotify suena un segundo de estática hasta que arranca la música. Los temas siguen la
   misma agenda que una emisora local (orden mezclado, se entra con el tema empezado) y Spotify los encadena sin cortes.
   El DJ habla igual, con la música bajada.
-- La radio no usa tu cola de Spotify: si agregás un tema a la cola desde la app mientras suena una emisora de
-  Spotify, suena a continuación y después la emisora vuelve a su agenda.
+- Lo que agregás a la cola desde la app de Spotify es una **petición**: ver [Peticiones](#peticiones).
 - Si ponés Spotify en otro dispositivo (el celular), la radio se apaga y avisa. Si sintonizás una emisora de Spotify,
   la radio toma el control de tu cuenta.
 - `[spotify]` del `config.toml`: `activo` (false = ignorar las emisoras de Spotify), `ajuste_volumen_db` (para que
   suenen tan fuerte como las locales; lo propone `scripts/calibrar-spotify.py`), `nombre_dispositivo`, `soloist_ws`,
   `soloist_bin`, `uris_por_pedido`, `tolerancia_resync_segundos`, `client_id`, `puerto_login` y `timeout_segundos`.
+
+### Peticiones
+
+Mientras suena una emisora de Spotify, agregá un tema a la cola desde la app de Spotify (en la compu o el celular):
+cuando termina el tema actual suena el tuyo y el DJ lo anuncia como **petición especial**.
+
+- **Antes o después:** si quedan al menos `peticion_margen_segundos` (30 por defecto) del tema actual, el DJ lo
+  presenta al arrancar («y ahora, una petición especial…»); si no llega, lo anuncia al terminar («eso fue una
+  petición especial…»). Necesita que el tema tenga artista y título, y que el DJ esté activo.
+- **La agenda se corre:** la emisora no pierde temas: mientras suena el pedido su agenda se detiene y después sigue
+  con el tema que venía. Si lo salteás desde la app, se corre solo lo que sonó. Varios encolados seguidos se
+  encadenan, cada uno con su anuncio si entra.
+- Cuenta como petición todo lo que viene de la cola, aunque sea un tema de la playlist o justo el siguiente.
+- Si cambiás de emisora (o reiniciás la radio) a mitad de un pedido y volvés, sigue el pedido en el segundo que
+  corresponde. Los pedidos se guardan en `estado.json` (`agendas`).
+- Encolar mientras habla el DJ no lo corta: solo se descarta lo que estaba previsto desde el pedido en adelante.
+- Para ver qué manda Soloist al encolar: `.venv/bin/python scripts/capturar-cola-soloist.py SALIDA.jsonl` (solo
+  escucha; no cambia lo que suena).
 
 ### Emisoras
 
