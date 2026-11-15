@@ -75,6 +75,12 @@ class Reproductores:
     def asegurar(self) -> None:
         self._local.asegurar()
 
+    def actualizar(self, estacion: Estacion) -> None:
+        """El rescan: la emisora que suena con sus pistas nuevas (solo le importa a Spotify, que sigue los pedidos)."""
+        with self._lock:
+            if self._activo is self._spotify:
+                self._spotify.actualizar(estacion)
+
     def _sono_spotify(self) -> None:
         with self._lock:
             if self._activo is self._spotify and self._estatica is not None:

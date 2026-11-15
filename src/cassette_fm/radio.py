@@ -157,11 +157,14 @@ class Radio:
         with self._lock:
             nuevas = aplicar_agendas(nuevas, self._estado.agendas, self._reloj())
             self._estaciones = nuevas
-            if self.encendida and self._indice_actual() is None:
+            actual = self._indice_actual()
+            if self.encendida and actual is None:
                 if self._estaciones:
                     self._sintonizar(self._estaciones[0])
                 else:
                     self._apagar()
+            elif self.encendida:
+                self._reproductor.actualizar(self._estaciones[actual])   # sus pistas nuevas (Spotify)
         if self._planificador is not None:   # fuera del lock: no tiene por qué frenar a la radio
             self._planificador.al_rescan(nuevas)
 

@@ -12,6 +12,7 @@ from cassette_fm.radio import EstacionInexistente, Radio, SinEstaciones
 class ReproductorFalso:
     def __init__(self):
         self.llamadas = []
+        self.actualizadas = []
         self.pista_actual = None
         self.al_cambiar_pista = None
         self.al_fallar = None
@@ -32,6 +33,9 @@ class ReproductorFalso:
 
     def sintonizadas(self):
         return [l[1] for l in self.llamadas if l[0] == "sintonizar"]
+
+    def actualizar(self, estacion):
+        self.actualizadas.append(estacion)
 
 
 def est(nombre):
@@ -779,3 +783,12 @@ def test_reinicio_a_mitad_del_pedido_lo_retoma():
     radio, _, _, _ = crear(estado=estado, reloj=lambda: ahora)
     pista, desde = next(secuencia(_estacion(radio, "B"), ahora))
     assert pista == PEDIDO and desde == 42
+
+
+def test_rescan_le_pasa_al_reproductor_la_emisora_que_suena():
+    radio, rep, _, _ = crear()
+    radio.rescan()
+    assert rep.actualizadas == []                           # apagada: nada que actualizar
+    radio.sintonizar("B")
+    radio.rescan()
+    assert rep.actualizadas == [_estacion(radio, "B")]

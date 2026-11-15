@@ -2,17 +2,21 @@
 
 Misma interfaz que el `Reproductor` de mpv. La orden de reproducir (lista `uris` + posición) va por la Web API, en
 segundo plano: mientras tanto la radio pone la estática y la saca con `al_sonar`. Los eventos del WebSocket de Soloist
-(`manejar_evento`) dicen qué suena; los de una sintonía vieja se ignoran."""
+(`manejar_evento`) dicen qué suena; los de una sintonía vieja se ignoran.
+
+Peticiones: lo que el usuario encola desde la app de Spotify (`queue_changed` con `source == "queue"`) es un pedido
+cuando empieza a sonar; la agenda de la emisora se corre (`con_pedido`, `plegar`) en vez de re-sintonizar."""
 import json
 import logging
 import subprocess
 import threading
 import time
 from collections.abc import Callable
+from dataclasses import replace
 from itertools import islice
 
-from cassette_fm.agenda import desfase, secuencia
-from cassette_fm.biblioteca import Estacion, Pista
+from cassette_fm.agenda import con_pedido, desfase, plegar, secuencia
+from cassette_fm.biblioteca import Estacion, Pedido, Pista
 from cassette_fm.spotify.api import ErrorSpotify
 
 _log = logging.getLogger("cassette_fm")
@@ -41,6 +45,18 @@ def _en_hilo(funcion: Callable[[], None]) -> None:
     threading.Thread(target=funcion, daemon=True, name="spotify-sintonia").start()
 
 
+def _nombre(decoraciones) -> str | None:
+    identidad = decoraciones.get("identity") if isinstance(decoraciones, dict) else None
+    nombre = identidad.get("name") if isinstance(identidad, dict) else None
+    return nombre if isinstance(nombre, str) and nombre else None
+
+
+def _nombre_de_entidad(x) -> str | None:
+    """El nombre de `{"entity": {"decorations": ...}}` (artista o álbum de un ítem de Soloist)."""
+    entidad = x.get("entity") if isinstance(x, dict) else None
+    return _nombre(entidad.get("decorations")) if isinstance(entidad, dict) else None
+
+
 class ReproductorSpotify:
     PASO_RAMPA = 0.05
 
@@ -48,6 +64,8 @@ class ReproductorSpotify:
     al_cambiar_pista: Callable[[Pista, Estacion], None] | None = None
     al_fallar: Callable[..., None] | None = None      # (estacion, motivo)
     al_sonar: Callable[[], None] | None = None        # empezó a sonar lo pedido: la radio saca la estática
+    al_cambiar_agenda: Callable[[Estacion, Pedido | None], None] | None = None   # empezó un pedido o terminaron
+    al_encolado: Callable[[Pista, Estacion, float], None] | None = None          # (pista, emisora, fin del actual)
 
     def __init__(self, control, soloist, reloj: Callable[[], float] = time.time, uris_por_pedido: int = 100,
                  espera_sonido_segundos: float = 10.0, temporizador=_temporizar,
@@ -83,6 +101,8 @@ class ReproductorSpotify:
         self._enviados = 0            # cuántos temas tiene la lista que se le mandó a Spotify
         self._vistos = 0              # cuántos de esos ya empezaron
         self._primero_pendiente = False
+        self._encolados: dict[str, Pista] = {}   # la cola de la app según el último queue_changed, por URI
+        self._anunciado: str | None = None        # el encolado próximo que ya se avisó con al_encolado
 
     # --- sintonía ---
 
@@ -184,13 +204,15 @@ class ReproductorSpotify:
 
     def manejar_evento(self, evento: dict) -> None:
         tipo = evento.get("type")
-        avisar = sonar = perdido = None
+        avisar = sonar = perdido = agenda = encolado = None
         resintonizar = False
         with self._lock:
             estacion = self._estacion
-            if estacion is None:
+            if tipo == "queue_changed":       # la cola se sigue aunque no suene Spotify: puede sonar al volver
+                encolado = self._leer_cola(evento.get("upcoming"), estacion)
+            elif estacion is None:
                 return
-            if tipo == "track_changed":
+            elif tipo == "track_changed":
                 pista = self._pista_del_item(evento.get("item"))
                 if pista is None:
                     return
@@ -200,11 +222,28 @@ class ReproductorSpotify:
                     self._visto_esperado = True
                 repetido = (self._primero_pendiente and self.pista_actual is not None
                             and pista.clave == self.pista_actual.clave)   # la re-sintonía vuelve a empezarlo
+                # la (re)sintonía empezó por un pedido en curso: se retoma, no es un pedido nuevo ni un desfase
+                retomado = (self._primero_pendiente and pista.clave == self._esperado
+                            and any(p.pista.clave == pista.clave for p in estacion.pedidos))
+                pedida = None if retomado else self._encolados.pop(pista.clave, None)
+                if pedida is not None:
+                    pista, ahora = pedida, self._reloj()
+                    estacion = con_pedido(estacion, pedida, ahora)
+                    agenda = (estacion, Pedido(pedida, ahora))
+                    self._anunciado = None
+                elif not retomado and estacion.pedidos and pista.clave in self._por_clave:
+                    estacion = plegar(estacion, self._reloj())    # antes de medir el desfase
+                    agenda = (estacion, None)
+                self._estacion = estacion
                 self.pista_actual = pista
                 self._posicion = None
                 if not repetido:
                     avisar = (pista, estacion)
-                resintonizar = self._hay_que_resintonizar(pista, estacion)
+                if retomado:
+                    self._primero_pendiente = False
+                    self._vistos += 1
+                elif pedida is None:
+                    resintonizar = self._hay_que_resintonizar(pista, estacion)
             elif tipo in ("playback_changed", "playback_state"):
                 item = evento.get("item")
                 if isinstance(item, dict) and item.get("uri") == self._esperado:
@@ -228,8 +267,12 @@ class ReproductorSpotify:
                     pass
         if sonar and self.al_sonar is not None:
             self.al_sonar()
+        if agenda is not None and self.al_cambiar_agenda is not None:
+            self.al_cambiar_agenda(*agenda)       # antes que el cambio de tema: la radio mide con la agenda nueva
         if avisar is not None and self.al_cambiar_pista is not None:
             self.al_cambiar_pista(*avisar)
+        if encolado is not None and self.al_encolado is not None:
+            self.al_encolado(*encolado)
         if resintonizar:
             self._resintonizar()
         if perdido is not None:
@@ -251,16 +294,52 @@ class ReproductorSpotify:
             return True
         return self._enviados - self._vistos < 10
 
+    def _leer_cola(self, upcoming, estacion: Estacion | None) -> tuple[Pista, Estacion, float] | None:
+        """Con el lock tomado: recuerda lo encolado en la app (solo con duración: si no, no se puede correr la
+        agenda) y, si lo próximo en sonar es un encolado nuevo, da el aviso para `al_encolado`."""
+        entradas = [u for u in upcoming if isinstance(u, dict)] if isinstance(upcoming, list) else []
+        encolados = {}
+        for u in entradas:
+            if u.get("source") == "queue":
+                pista = self._pista_del_item(u.get("item"))
+                if pista is not None and pista.duracion > 0:
+                    encolados.setdefault(pista.clave, pista)
+        self._encolados = encolados
+        if not entradas or entradas[0].get("source") != "queue" or estacion is None:
+            return None
+        proxima = encolados.get((entradas[0].get("item") or {}).get("uri"))
+        posicion = self.posicion()
+        if proxima is None or proxima.clave == self._anunciado or posicion is None:
+            return None
+        self._anunciado = proxima.clave
+        return proxima, estacion, self._reloj() + max(0.0, self.pista_actual.duracion - posicion)
+
     def _pista_del_item(self, item) -> Pista | None:
+        """La pista de un ítem de Soloist: la de la emisora si es suya; si no, con lo que trae el ítem."""
         if not isinstance(item, dict) or not isinstance(item.get("uri"), str):
             return None
         uri = item["uri"]
         if uri in self._por_clave:
             return self._por_clave[uri]
-        deco = item.get("decorations") or {}
-        nombre = (deco.get("identity") or {}).get("name") or uri
-        ms = (deco.get("playback") or {}).get("duration_ms") or 0
-        return Pista(ruta=None, duracion=float(ms) / 1000, titulo=nombre, fuente="spotify", cancion=nombre, uri=uri)
+        deco = item.get("decorations") if isinstance(item.get("decorations"), dict) else {}
+        nombre = _nombre(deco) or uri
+        ms = (deco.get("playback") or {}).get("duration_ms") if isinstance(deco.get("playback"), dict) else None
+        duracion = ms / 1000 if isinstance(ms, (int, float)) and not isinstance(ms, bool) and ms > 0 else 0.0
+        creadores = deco.get("creators") if isinstance(deco.get("creators"), list) else []
+        artista = ", ".join(n for n in map(_nombre_de_entidad, creadores) if n) or None
+        return Pista(ruta=None, duracion=duracion, titulo=f"{artista} - {nombre}" if artista else nombre,
+                     fuente="spotify", artista=artista, cancion=nombre, album=_nombre_de_entidad(deco.get("parent")),
+                     uri=uri)
+
+    def actualizar(self, estacion: Estacion) -> None:
+        """El rescan de la radio: si `estacion` es la que suena, toma sus pistas. El corrimiento y los pedidos
+        siguen siendo los de acá (los ve empezar y terminar este reproductor)."""
+        with self._lock:
+            if self._estacion is None or self._estacion.nombre != estacion.nombre:
+                return
+            self._estacion = replace(estacion, corrimiento=self._estacion.corrimiento,
+                                     pedidos=self._estacion.pedidos)
+            self._por_clave = {p.clave: p for p in estacion.pistas}
 
     def soloist_desconectado(self) -> None:
         """El WebSocket se cortó: si en la espera no vuelve, la emisora falla (no queda colgada en silencio)."""

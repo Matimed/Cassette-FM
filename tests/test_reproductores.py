@@ -22,6 +22,7 @@ class Falso:
     def atenuar(self, f, s=0.0): self._r("atenuar", f, s)
     def posicion(self): return 1.0 if self.nombre == "mpv" else 2.0
     def asegurar(self): self._r("asegurar")
+    def actualizar(self, e): self._r("actualizar", e.nombre)
 
 
 def est(nombre, fuente):
@@ -142,3 +143,13 @@ def test_reenvia_al_cambiar_agenda_y_al_encolado():
     spotify.al_cambiar_agenda("E", "P")
     spotify.al_encolado("P", "E", 9.0)
     assert vistos == [("agenda", "E", "P"), ("encolado", "P", "E", 9.0)]
+
+
+def test_actualizar_llega_a_spotify_solo_si_esta_sonando():
+    r, mpv, spot, reg = armar()
+    r.actualizar(est("Sing", "spotify"))
+    assert reg == []                                        # suena mpv
+    r.sintonizar(est("Sing", "spotify"))
+    reg.clear()
+    r.actualizar(est("Sing", "spotify"))
+    assert reg == [("spotify", "actualizar", "Sing")]
