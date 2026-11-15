@@ -33,10 +33,19 @@ class Pista:
 
 
 @dataclass(frozen=True)
+class Pedido:
+    """Un tema pedido (una petición) que empezó a sonar en `inicio` (epoch) y todavía no se plegó a la agenda."""
+    pista: Pista
+    inicio: float
+
+
+@dataclass(frozen=True)
 class Estacion:
     nombre: str
     pistas: tuple[Pista, ...]
     fuente: str = "carpeta"   # "carpeta" o "spotify": define qué reproductor la hace sonar
+    corrimiento: float = 0.0  # segundos que la agenda va atrasada por los pedidos que ya sonaron
+    pedidos: tuple[Pedido, ...] = ()   # pedidos en curso, en orden (ver agenda.secuencia)
 
 
 def _tag(tags, clave: str) -> str | None:

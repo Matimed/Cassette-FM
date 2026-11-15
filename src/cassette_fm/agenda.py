@@ -2,8 +2,9 @@ import hashlib
 import math
 import random
 from collections.abc import Iterator
+from dataclasses import replace
 
-from cassette_fm.biblioteca import Estacion, Pista
+from cassette_fm.biblioteca import Estacion, Pedido, Pista
 
 # 2026-01-01T00:00:00Z
 EPOCA: float = 1767225600.0
@@ -28,6 +29,98 @@ def orden_ciclo(estacion: Estacion, k: int) -> list[Pista]:
 
 
 def secuencia(estacion: Estacion, instante: float) -> Iterator[tuple[Pista, float]]:
+    """(tema, segundo desde el que suena) en `instante`, y después los que siguen (desde 0), sin fin.
+
+    Con pedidos: durante un pedido suena el pedido; mientras tanto la agenda "se detiene" y después sigue donde
+    estaba. El corrimiento atrasa la agenda lo que ya duraron los pedidos plegados."""
+    if not estacion.pedidos:
+        return _base(estacion, instante - estacion.corrimiento)
+    return _con_pedidos(estacion, instante)
+
+
+def _duracion(p: Pedido) -> float:
+    return p.pista.duracion
+
+
+def _con_pedidos(estacion: Estacion, instante: float) -> Iterator[tuple[Pista, float]]:
+    linea = _linea(estacion, instante)
+    pista, inicio = next(linea)
+    for siguiente, inicio_sig in linea:
+        if inicio_sig > instante:
+            break
+        pista, inicio = siguiente, inicio_sig
+    else:                                  # la línea es infinita: no se llega acá
+        return
+    yield pista, max(0.0, instante - inicio)
+    yield siguiente, 0.0
+    for p, _ in linea:
+        yield p, 0.0
+
+
+def _linea(estacion: Estacion, instante: float) -> Iterator[tuple[Pista, float]]:
+    """La línea de tiempo real: (tema, epoch en que empieza), desde el tema que suena en `instante` o un poco antes.
+
+    Cada tema termina cuando empieza el siguiente. Un pedido se mete antes del tema de la agenda que empezaría
+    pasada menos de la mitad de ese tema desde el inicio del pedido (en la práctica empiezan en un borde)."""
+    pedidos = sorted(estacion.pedidos, key=lambda p: p.inicio)
+    dentro = next((p for p in pedidos if p.inicio <= instante < p.inicio + _duracion(p)), None)
+    desde = dentro.inicio if dentro is not None else instante
+    pasados = sum(_duracion(p) for p in pedidos if p.inicio + _duracion(p) <= desde)
+    pendientes = [p for p in pedidos if p.inicio + _duracion(p) > desde]
+    base = _base(estacion, desde - estacion.corrimiento - pasados)
+    primera, d0 = next(base)
+    cursor = desde - d0
+
+    def agenda():
+        yield primera
+        for p, _ in base:
+            yield p
+
+    for pista in agenda():
+        while pendientes and pendientes[0].inicio <= cursor + pista.duracion / 2:
+            p = pendientes.pop(0)
+            yield p.pista, p.inicio
+            cursor = p.inicio + _duracion(p)
+        yield pista, cursor
+        cursor += pista.duracion
+
+
+def corrimiento_total(estacion: Estacion) -> float:
+    """El atraso total de la agenda contando los pedidos en curso por su duración nominal."""
+    return estacion.corrimiento + sum(_duracion(p) for p in estacion.pedidos)
+
+
+def con_pedido(estacion: Estacion, pista: Pista, inicio: float) -> Estacion:
+    """Empezó un pedido en `inicio`: los que empezaron antes terminaron (se pliegan con lo que sonaron)."""
+    plegada = plegar(estacion, inicio)
+    return replace(plegada, pedidos=plegada.pedidos + (Pedido(pista, inicio),))
+
+
+def plegar(estacion: Estacion, hasta: float) -> Estacion:
+    """En `hasta` empezó otra cosa: los pedidos que empezaron antes se pliegan al corrimiento con su duración real
+    (hasta que empezó lo siguiente), con tope en la nominal."""
+    pedidos = sorted(estacion.pedidos, key=lambda p: p.inicio)
+    viejos = [p for p in pedidos if p.inicio < hasta]
+    if not viejos:
+        return estacion
+    fines = [q.inicio for q in viejos[1:]] + [hasta]
+    real = sum(max(0.0, min(_duracion(p), fin - p.inicio)) for p, fin in zip(viejos, fines))
+    return replace(estacion, corrimiento=estacion.corrimiento + real,
+                   pedidos=tuple(p for p in pedidos if p.inicio >= hasta))
+
+
+def plegar_vencidos(estacion: Estacion, ahora: float) -> Estacion:
+    """Los pedidos que ya terminaron por la agenda (sin que se viera el tema siguiente) se pliegan con su duración
+    nominal: la agenda da lo mismo que antes, pero la lista queda corta."""
+    vencidos = [p for p in estacion.pedidos if p.inicio + _duracion(p) <= ahora]
+    if not vencidos:
+        return estacion
+    return replace(estacion, corrimiento=estacion.corrimiento + sum(_duracion(p) for p in vencidos),
+                   pedidos=tuple(p for p in estacion.pedidos if p not in vencidos))
+
+
+def _base(estacion: Estacion, instante: float) -> Iterator[tuple[Pista, float]]:
+    """La agenda determinista sin pedidos ni corrimiento."""
     if not estacion.pistas:
         raise ValueError(f"la estación {estacion.nombre!r} no tiene pistas")
     ciclo = sum(p.duracion for p in estacion.pistas)
