@@ -1,3 +1,4 @@
+from dataclasses import replace
 import threading
 from pathlib import Path
 
@@ -668,3 +669,113 @@ def test_sonando_da_emisora_y_pista():
     assert radio.sonando() == ("B", est("B").pistas[0])
     radio.apagar()
     assert radio.sonando() is None
+
+
+# --- pedidos (etapa 7a) ---
+
+from cassette_fm.agenda import EPOCA, secuencia
+from cassette_fm.biblioteca import Pedido
+
+PEDIDO = Pista(None, 180.0, "Queen - Pedido", fuente="spotify", artista="Queen", cancion="Pedido",
+               uri="spotify:track:p")
+
+
+def _agenda(corrimiento=0.0, pedidos=()):
+    return {"corrimiento": corrimiento, "pedidos": [
+        {"inicio": inicio, "uri": p.uri, "ruta": None, "duracion": p.duracion, "titulo": p.titulo,
+         "artista": p.artista, "cancion": p.cancion, "album": p.album, "isrc": p.isrc} for p, inicio in pedidos]}
+
+
+class PlanificadorDePedidos:
+    def __init__(self):
+        self.agendas = []
+        self.encolados = []
+
+    def al_sintonizar(self, estacion):
+        pass
+
+    def al_apagar(self):
+        pass
+
+    def al_rescan(self, estaciones):
+        pass
+
+    def al_cambiar_agenda(self, estacion, nuevo):
+        self.agendas.append((estacion.nombre, nuevo))
+
+    def al_encolado(self, pista, estacion, fin_actual):
+        self.encolados.append((pista, estacion.nombre, fin_actual))
+
+
+def _estacion(radio, nombre):
+    return next(e for e in radio.estaciones() if e.nombre == nombre)
+
+
+def test_al_crear_aplica_las_agendas_guardadas():
+    ahora = EPOCA + 5000
+    estado = Estado(agendas={"B": _agenda(30.0, [(PEDIDO, ahora - 10)])})
+    radio, _, _, _ = crear(estado=estado, reloj=lambda: ahora)
+    b = _estacion(radio, "B")
+    assert b.corrimiento == 30.0 and b.pedidos == (Pedido(PEDIDO, ahora - 10),)
+    assert _estacion(radio, "A").pedidos == ()
+
+
+def test_pedidos_vencidos_se_pliegan_al_crear():
+    ahora = EPOCA + 5000
+    estado = Estado(agendas={"B": _agenda(0.0, [(PEDIDO, ahora - 500)])})
+    radio, _, _, _ = crear(estado=estado, reloj=lambda: ahora)
+    b = _estacion(radio, "B")
+    assert b.pedidos == () and b.corrimiento == 180.0
+
+
+def test_rescan_conserva_los_pedidos():
+    ahora = EPOCA + 5000
+    estado = Estado(agendas={"B": _agenda(0.0, [(PEDIDO, ahora - 10)])})
+    radio, _, _, _ = crear(estado=estado, reloj=lambda: ahora)
+    radio.rescan()
+    assert _estacion(radio, "B").pedidos == (Pedido(PEDIDO, ahora - 10),)
+
+
+def test_agendas_de_una_emisora_que_no_esta_no_rompen():
+    estado = Estado(agendas={"Vieja": _agenda(10.0)})
+    radio, _, _, estado = crear(estado=estado)
+    radio.rescan()
+    assert [e.corrimiento for e in radio.estaciones()] == [0.0, 0.0, 0.0]
+    assert "Vieja" in estado.agendas          # se conserva por si vuelve
+
+
+def test_al_cambiar_agenda_reemplaza_guarda_y_avisa():
+    plan = PlanificadorDePedidos()
+    radio, rep, guardados, estado = crear(planificador=plan)
+    nueva = replace(_estacion(radio, "B"), pedidos=(Pedido(PEDIDO, EPOCA + 100),))
+    rep.al_cambiar_agenda(nueva, nueva.pedidos[0])
+    assert _estacion(radio, "B") == nueva
+    assert estado.agendas["B"] == _agenda(0.0, [(PEDIDO, EPOCA + 100)])
+    assert guardados
+    assert plan.agendas == [("B", Pedido(PEDIDO, EPOCA + 100))]
+
+
+def test_al_encolado_pasa_al_planificador():
+    plan = PlanificadorDePedidos()
+    radio, rep, _, _ = crear(planificador=plan)
+    b = _estacion(radio, "B")
+    rep.al_encolado(PEDIDO, b, 1234.0)
+    assert plan.encolados == [(PEDIDO, "B", 1234.0)]
+
+
+def test_al_sintonizar_pliega_los_pedidos_vencidos():
+    t = [EPOCA + 5000]
+    estado = Estado(agendas={"B": _agenda(0.0, [(PEDIDO, EPOCA + 4990)])})
+    radio, rep, _, estado = crear(estado=estado, reloj=lambda: t[0])
+    t[0] = EPOCA + 5300
+    radio.sintonizar("B")
+    assert _estacion(radio, "B").pedidos == ()
+    assert estado.agendas["B"]["corrimiento"] == 180.0
+
+
+def test_reinicio_a_mitad_del_pedido_lo_retoma():
+    ahora = EPOCA + 5000
+    estado = Estado(estacion="B", agendas={"B": _agenda(0.0, [(PEDIDO, ahora - 42)])})
+    radio, _, _, _ = crear(estado=estado, reloj=lambda: ahora)
+    pista, desde = next(secuencia(_estacion(radio, "B"), ahora))
+    assert pista == PEDIDO and desde == 42

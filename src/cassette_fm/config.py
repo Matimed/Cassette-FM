@@ -83,6 +83,21 @@ def configuracion_dj(config: Config, estacion: str) -> ConfigDJ:
 class Estado:
     estacion: str | None = None
     volumen: int = 70
+    # por emisora: {"corrimiento": s, "pedidos": [{"inicio", "uri", "ruta", "duracion", "titulo", ...}]}
+    agendas: dict[str, dict] = field(default_factory=dict)
+
+
+def _es_numero(valor) -> bool:
+    return isinstance(valor, (int, float)) and not isinstance(valor, bool) and valor == valor
+
+
+def _agenda_valida(datos) -> bool:
+    if not isinstance(datos, dict) or not _es_numero(datos.get("corrimiento")):
+        return False
+    pedidos = datos.get("pedidos", [])
+    return isinstance(pedidos, list) and all(
+        isinstance(p, dict) and _es_numero(p.get("inicio")) and _es_numero(p.get("duracion")) and p["duracion"] > 0
+        and isinstance(p.get("titulo"), str) for p in pedidos)
 
 
 @dataclass(frozen=True)
@@ -334,7 +349,10 @@ def _leer_dj(archivo: Path, tabla) -> tuple[ConfigDJ, dict[str, ConfigDJ]]:
 def cargar_estado(archivo: Path) -> Estado:
     try:
         datos = json.loads(Path(archivo).read_text(encoding="utf-8"))
-        return Estado(estacion=datos.get("estacion"), volumen=int(datos.get("volumen", 70)))
+        agendas = datos.get("agendas")
+        agendas = {str(n): {"corrimiento": float(a["corrimiento"]), "pedidos": list(a.get("pedidos", []))}
+                   for n, a in (agendas.items() if isinstance(agendas, dict) else ()) if _agenda_valida(a)}
+        return Estado(estacion=datos.get("estacion"), volumen=int(datos.get("volumen", 70)), agendas=agendas)
     except (OSError, ValueError, AttributeError, TypeError):
         return Estado()
 

@@ -1,3 +1,4 @@
+import json
 import os
 
 import pytest
@@ -306,3 +307,24 @@ def test_spotify_campos_de_reproduccion_invalidos(tmp_path, texto, mensaje):
     archivo.write_text(f"[spotify]\n{texto}\n")
     with pytest.raises(ErrorConfig, match=mensaje):
         cargar_config(archivo)
+
+
+def test_estado_guarda_y_lee_agendas(tmp_path):
+    archivo = tmp_path / "estado.json"
+    agendas = {"Sing": {"corrimiento": 12.5, "pedidos": [
+        {"inicio": 1000.0, "uri": "spotify:track:x", "ruta": None, "duracion": 180.0, "titulo": "A - B",
+         "artista": "A", "cancion": "B", "album": None, "isrc": None}]}}
+    guardar_estado(archivo, Estado("Sing", 50, agendas=agendas))
+    assert cargar_estado(archivo).agendas == agendas
+
+
+def test_agendas_con_basura_se_ignoran(tmp_path):
+    archivo = tmp_path / "estado.json"
+    archivo.write_text(json.dumps({"estacion": "Sing", "volumen": 40, "agendas": {
+        "Buena": {"corrimiento": 3.0, "pedidos": []},
+        "Rota": {"corrimiento": "mucho"},
+        "Pedido roto": {"corrimiento": 0, "pedidos": [{"inicio": "ayer"}]},
+        "No es dict": 5}}))
+    e = cargar_estado(archivo)
+    assert e.estacion == "Sing" and e.volumen == 40
+    assert e.agendas == {"Buena": {"corrimiento": 3.0, "pedidos": []}}

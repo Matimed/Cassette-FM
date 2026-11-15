@@ -132,3 +132,13 @@ def test_el_reproductor_que_se_deja_vuelve_al_volumen_pleno():
     reg.clear()
     r.detener()
     assert ("spotify", "atenuar", 1.0, 0.0) in reg
+
+
+def test_reenvia_al_cambiar_agenda_y_al_encolado():
+    r, _, spotify, _ = armar()
+    vistos = []
+    r.al_cambiar_agenda = lambda e, nuevo: vistos.append(("agenda", e, nuevo))
+    r.al_encolado = lambda p, e, fin: vistos.append(("encolado", p, e, fin))
+    spotify.al_cambiar_agenda("E", "P")
+    spotify.al_encolado("P", "E", 9.0)
+    assert vistos == [("agenda", "E", "P"), ("encolado", "P", "E", 9.0)]

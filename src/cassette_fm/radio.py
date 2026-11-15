@@ -5,13 +5,14 @@ import time
 import unicodedata
 import uuid
 from collections.abc import Callable
+from dataclasses import replace
 from itertools import islice
 from pathlib import Path
 
 import mutagen
 
-from cassette_fm.agenda import desfase, transiciones
-from cassette_fm.biblioteca import Estacion, Pista
+from cassette_fm.agenda import desfase, plegar_vencidos, transiciones
+from cassette_fm.biblioteca import Estacion, Pedido, Pista
 from cassette_fm.clips import generar_clip_de_prueba
 from cassette_fm.config import ConfigDJ, Estado
 from cassette_fm.intervenciones import Intervencion
@@ -20,6 +21,38 @@ _log = logging.getLogger("cassette_fm")
 
 
 VOLUMEN_MINIMO = 10   # con el volumen en 0 la radio está apagada; al encender se parte de acá
+
+
+def agenda_de(estacion: Estacion) -> dict:
+    """Lo que se guarda en `Estado.agendas` de una emisora."""
+    return {"corrimiento": estacion.corrimiento, "pedidos": [
+        {"inicio": p.inicio, "uri": p.pista.uri, "ruta": str(p.pista.ruta) if p.pista.ruta else None,
+         "duracion": p.pista.duracion, "titulo": p.pista.titulo, "artista": p.pista.artista,
+         "cancion": p.pista.cancion, "album": p.pista.album, "isrc": p.pista.isrc} for p in estacion.pedidos]}
+
+
+def _pedido(d: dict, fuente: str) -> Pedido:
+    pista = Pista(ruta=Path(d["ruta"]) if d.get("ruta") else None, duracion=float(d["duracion"]),
+                  titulo=d["titulo"], fuente="spotify" if d.get("uri") else fuente, artista=d.get("artista"),
+                  cancion=d.get("cancion"), album=d.get("album"), isrc=d.get("isrc"), uri=d.get("uri"))
+    return Pedido(pista, float(d["inicio"]))
+
+
+def aplicar_agendas(estaciones: list[Estacion], agendas: dict, ahora: float) -> list[Estacion]:
+    """Pone a cada emisora el corrimiento y los pedidos guardados (por nombre) y pliega los que ya vencieron."""
+    resultado = []
+    for e in estaciones:
+        a = agendas.get(e.nombre)
+        if a is not None:
+            try:
+                e = replace(e, corrimiento=float(a["corrimiento"]),
+                            pedidos=tuple(sorted((_pedido(d, e.fuente) for d in a.get("pedidos", [])),
+                                                 key=lambda p: p.inicio)))
+            except (KeyError, TypeError, ValueError):
+                _log.warning("los pedidos guardados de %r no se pueden leer: se ignoran", e.nombre)
+            e = plegar_vencidos(e, ahora)
+        resultado.append(e)
+    return resultado
 
 
 def _normalizar(nombre: str) -> str:
@@ -57,8 +90,8 @@ class Radio:
         self._primera_pista = False       # el primer tema tras sintonizar se empieza a mitad de camino
         self._desfase: float | None = None
         self._reproductor = reproductor
-        self._estaciones = list(estaciones)
         self._estado = estado
+        self._estaciones = aplicar_agendas(list(estaciones), estado.agendas, reloj())
         self._guardar = guardar
         self._escanear = escanear
         self._avisar = avisar
@@ -68,6 +101,8 @@ class Radio:
         self.al_cambiar: Callable[[], None] | None = None
         reproductor.al_cambiar_pista = self._al_cambiar_pista
         reproductor.al_fallar = self._al_fallar
+        reproductor.al_cambiar_agenda = self._al_cambiar_agenda
+        reproductor.al_encolado = self._al_encolado
         self._poner_volumen(estado.volumen)
 
     def estaciones(self) -> list[Estacion]:
@@ -120,6 +155,7 @@ class Radio:
     def rescan(self) -> None:
         nuevas = list(self._escanear())   # fuera del lock: puede tardar con bibliotecas grandes
         with self._lock:
+            nuevas = aplicar_agendas(nuevas, self._estado.agendas, self._reloj())
             self._estaciones = nuevas
             if self.encendida and self._indice_actual() is None:
                 if self._estaciones:
@@ -197,6 +233,10 @@ class Radio:
     def _sintonizar(self, estacion: Estacion) -> None:
         if self._estado.volumen == 0:
             self._estado.volumen = self._poner_volumen(VOLUMEN_MINIMO)
+        plegada = plegar_vencidos(estacion, self._reloj())   # la lista que se manda empieza donde corresponde
+        if plegada is not estacion:
+            self._reemplazar(plegada)
+            estacion = plegada
         anterior = self._estado.estacion
         self._estado.estacion = estacion.nombre
         self._primera_pista = True
@@ -235,6 +275,27 @@ class Radio:
             self._dj.pista_iniciada(pista, estacion.nombre)
             self._medir_desfase(pista, estacion)
         self._avisar_cambio()
+
+    def _reemplazar(self, estacion: Estacion) -> None:
+        """Con el lock tomado: la agenda de la emisora cambió (pedidos): se reemplaza y se guarda."""
+        self._estaciones = [estacion if e.nombre == estacion.nombre else e for e in self._estaciones]
+        if estacion.corrimiento or estacion.pedidos:
+            self._estado.agendas[estacion.nombre] = agenda_de(estacion)
+        else:
+            self._estado.agendas.pop(estacion.nombre, None)
+        self._guardar(self._estado)
+
+    def _al_cambiar_agenda(self, estacion: Estacion, nuevo: Pedido | None) -> None:
+        """El reproductor vio empezar un pedido (`nuevo`) o terminar los que había."""
+        with self._lock:
+            self._reemplazar(estacion)
+        if self._planificador is not None:      # fuera del lock, como al_rescan
+            self._planificador.al_cambiar_agenda(estacion, nuevo)
+
+    def _al_encolado(self, pista: Pista, estacion: Estacion, fin_actual: float) -> None:
+        """Encolaron un tema que va a sonar cuando termine el actual (`fin_actual`, epoch)."""
+        if self._planificador is not None:
+            self._planificador.al_encolado(pista, estacion, fin_actual)
 
     def _medir_desfase(self, pista, estacion) -> None:
         with self._lock_dj:
