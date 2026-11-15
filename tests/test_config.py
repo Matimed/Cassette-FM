@@ -328,3 +328,13 @@ def test_agendas_con_basura_se_ignoran(tmp_path):
     e = cargar_estado(archivo)
     assert e.estacion == "Sing" and e.volumen == 40
     assert e.agendas == {"Buena": {"corrimiento": 3.0, "pedidos": []}}
+
+
+def test_peticion_margen_se_lee_del_toml(tmp_path):
+    archivo = tmp_path / "config.toml"
+    assert ConfigDJ().peticion_margen_segundos == 30.0
+    archivo.write_text('[dj]\npeticion_margen_segundos = 45\n')
+    assert cargar_config(archivo).dj.peticion_margen_segundos == 45.0
+    archivo.write_text('[dj]\npeticion_margen_segundos = 0\n')
+    with pytest.raises(ErrorConfig):
+        cargar_config(archivo)

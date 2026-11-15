@@ -1,4 +1,5 @@
 import json
+from dataclasses import replace
 from pathlib import Path
 
 import pytest
@@ -148,3 +149,26 @@ def test_quitar_estacion_sin_intervenciones_no_hace_nada(entorno):
     r.agregar(b)
     assert r.quitar_estacion("A") == []
     assert r.todas() == [b] and b.audio.exists()
+
+
+def test_intervencion_vieja_sin_peticion_carga(entorno):
+    nuevo, iv, _, archivo, _ = entorno
+    r = nuevo()
+    r.agregar(iv("E", 2000.0, 5.0))
+    datos = json.loads(archivo.read_text())
+    for d in datos:
+        d.pop("peticion", None)
+    archivo.write_text(json.dumps(datos))
+    assert [i.peticion for i in nuevo().todas()] == [None]
+
+
+def test_quitar_estacion_salvo_peticiones(entorno):
+    nuevo, iv, _, _, _ = entorno
+    r = nuevo()
+    normal = iv("E", 2000.0, 5.0)
+    pedida = replace(iv("E", 3000.0, 5.0), peticion="antes")
+    r.agregar(normal)
+    r.agregar(pedida)
+    assert r.quitar_estacion("E", salvo_peticiones=True) == [normal]
+    assert r.todas() == [pedida] and nuevo().todas() == [pedida]
+    assert not normal.audio.exists() and pedida.audio.exists()

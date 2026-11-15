@@ -65,7 +65,8 @@ def elegir_hueco(estacion: Estacion, ahora: float, cfg: ConfigDJ, ultima: Ultima
     return None
 
 
-def armar_pedido(id: str, estacion: str, hueco: Hueco, cfg: ConfigDJ, recientes: Sequence[str]) -> dict:
+def armar_pedido(id: str, estacion: str, hueco: Hueco, cfg: ConfigDJ, recientes: Sequence[str],
+                 peticion: str | None = None) -> dict:
     """El cuerpo del `POST /intervenciones` del servicio DJ."""
     siguiente = {"artista": hueco.pista.artista, "titulo": hueco.pista.cancion}
     if hueco.pista.album:
@@ -82,6 +83,8 @@ def armar_pedido(id: str, estacion: str, hueco: Hueco, cfg: ConfigDJ, recientes:
         pedido["velocidad"] = cfg.velocidad
     if cfg.personalidad:
         pedido["personalidad"] = cfg.personalidad
+    if peticion is not None:
+        pedido["peticion"] = peticion
     anterior = hueco.anterior
     if anterior is not None and _tiene_nombre(anterior):
         pedido["anterior"] = {"artista": anterior.artista, "titulo": anterior.cancion}

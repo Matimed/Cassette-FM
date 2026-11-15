@@ -19,6 +19,7 @@ class Intervencion:
     audio: Path
     texto: str
     pista_destino: str     # clave (Pista.clave) del tema que arranca justo antes de la voz
+    peticion: str | None = None   # "antes"/"despues" si anuncia una petición: no se descarta si cambia la agenda
 
     @property
     def fin(self) -> float:
@@ -82,13 +83,15 @@ class RegistroIntervenciones:
             self._guardar()
             return sorted(vencidas, key=lambda i: i.inicio)
 
-    def quitar_estacion(self, estacion: str) -> list[Intervencion]:
-        """Quita todas las de una estación (la agenda cambió) y borra sus clips; persiste."""
+    def quitar_estacion(self, estacion: str, salvo_peticiones: bool = False) -> list[Intervencion]:
+        """Quita las de una estación (la agenda cambió) y borra sus clips; persiste. Con `salvo_peticiones`,
+        las que anuncian una petición quedan (están ancladas a su tema, que sigue valiendo)."""
         with self._lock:
-            quitadas = [i for i in self._items if i.estacion == estacion]
+            quitadas = [i for i in self._items
+                        if i.estacion == estacion and not (salvo_peticiones and i.peticion)]
             if not quitadas:
                 return []
-            self._items = [i for i in self._items if i.estacion != estacion]
+            self._items = [i for i in self._items if i not in quitadas]
             for i in quitadas:
                 self._borrar_clip(i)
             self._guardar()
@@ -114,7 +117,8 @@ class RegistroIntervenciones:
             try:
                 i = Intervencion(id=str(d["id"]), estacion=d["estacion"], inicio=float(d["inicio"]),
                                  duracion=float(d["duracion"]), audio=Path(d["audio"]),
-                                 texto=d["texto"], pista_destino=d["pista_destino"])
+                                 texto=d["texto"], pista_destino=d["pista_destino"],
+                                 peticion=d.get("peticion") if d.get("peticion") in ("antes", "despues") else None)
             except (KeyError, TypeError, ValueError):
                 _log.warning("entrada inválida en el registro de intervenciones: se descarta")
                 continue

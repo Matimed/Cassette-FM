@@ -632,3 +632,170 @@ def test_modo_delega_en_el_cliente_y_convierte_errores(mundo):
         mundo.p.modo()
     with pytest.raises(ValueError, match="no responde"):
         mundo.p.modo("plantillas")
+
+
+# --- peticiones (etapa 7a) ---
+
+from cassette_fm.agenda import con_pedido, plegar, secuencia
+from cassette_fm.biblioteca import Pedido
+
+PEDIDO = Pista(None, 180.0, "Queen - Bohemian Rhapsody", fuente="spotify", artista="Queen",
+               cancion="Bohemian Rhapsody", uri="spotify:track:pedido")
+OTRO = Pista(None, 150.0, "ABBA - SOS", fuente="spotify", artista="ABBA", cancion="SOS", uri="spotify:track:otro")
+
+
+def _fin_del_tema(est, ahora):
+    p, desde = next(secuencia(est, ahora))
+    return ahora + p.duracion - desde
+
+
+@pytest.fixture
+def con_peticiones(mundo):
+    mundo.locutor.descartar_estacion = lambda nombre: (mundo.locutor.descartadas.append(nombre),
+                                                       mundo.registro.quitar_estacion(nombre, salvo_peticiones=True))
+    return mundo
+
+
+def _peticiones(m):
+    return [p for p in m.cliente.enviados if "peticion" in p]
+
+
+def test_encolado_con_tiempo_pide_la_antes(con_peticiones):
+    m = con_peticiones
+    est = estacion()
+    m.p.al_sintonizar(est)
+    fin = _fin_del_tema(est, T0)
+    m.p.al_encolado(PEDIDO, est, fin)
+    m.p.paso()
+    [p] = _peticiones(m)
+    assert p["peticion"] == "antes" and p["siguiente"]["titulo"] == "Bohemian Rhapsody"
+    assert datetime.fromisoformat(p["momento"]).timestamp() == pytest.approx(fin + CFG.retraso_voz_segundos, abs=1)
+    assert p["anterior"]["titulo"] == next(secuencia(est, T0))[0].cancion
+
+
+def test_encolado_sobre_el_final_va_despues(con_peticiones):
+    m = con_peticiones
+    est = estacion()
+    m.p.al_sintonizar(est)
+    fin = _fin_del_tema(est, T0)
+    m.reloj.t = fin - 10                         # quedan 10 s: menos que el margen (30)
+    m.p.al_encolado(PEDIDO, est, fin)
+    m.p.paso()
+    assert _peticiones(m) == []
+    m.reloj.t = fin
+    nueva = con_pedido(est, PEDIDO, fin)
+    m.p.al_cambiar_agenda(nueva, nueva.pedidos[0])
+    m.p.paso()
+    [p] = _peticiones(m)
+    assert p["peticion"] == "despues" and p["anterior"]["titulo"] == "Bohemian Rhapsody"
+    siguiente = next(secuencia(est, fin + 0.001))[0]
+    assert p["siguiente"]["titulo"] == siguiente.cancion
+    assert datetime.fromisoformat(p["momento"]).timestamp() == pytest.approx(
+        fin + PEDIDO.duracion + CFG.retraso_voz_segundos, abs=1)
+
+
+def test_antes_no_lista_al_empezar_pasa_a_despues(con_peticiones):
+    m = con_peticiones
+    est = estacion()
+    m.p.al_sintonizar(est)
+    fin = _fin_del_tema(est, T0)
+    m.p.al_encolado(PEDIDO, est, fin)
+    m.p.paso()
+    [antes] = _peticiones(m)
+    m.reloj.t = fin
+    nueva = con_pedido(est, PEDIDO, fin)
+    m.p.al_cambiar_agenda(nueva, nueva.pedidos[0])
+    m.p.paso()
+    assert antes["id"] in m.cliente.cancelados
+    assert [p["peticion"] for p in _peticiones(m)] == ["antes", "despues"]
+
+
+def test_peticion_desplaza_un_trabajo_normal_en_curso(con_peticiones):
+    m = con_peticiones
+    est, normal = sintonizar_y_pedir(m)
+    m.p.al_encolado(PEDIDO, est, _fin_del_tema(est, T0))
+    m.p.paso()
+    assert normal["id"] in m.cliente.cancelados
+    assert [p["peticion"] for p in _peticiones(m)] == ["antes"]
+
+
+def _registrar_antes(m, est, pista=PEDIDO, fin=None):
+    fin = fin if fin is not None else _fin_del_tema(est, m.reloj.t)
+    m.p.al_encolado(pista, est, fin)
+    m.p.paso()
+    pedido = _peticiones(m)[-1]
+    m.listo(pedido["id"])
+    m.p.paso()
+    return fin, pedido
+
+
+def test_empezar_un_pedido_descarta_las_normales_y_no_la_peticion(con_peticiones):
+    m = con_peticiones
+    est = estacion()
+    m.p.al_sintonizar(est)
+    fin, antes = _registrar_antes(m, est)
+    assert [i.peticion for i in m.registro.todas()] == ["antes"]
+    m.reloj.t = fin
+    nueva = con_pedido(est, PEDIDO, fin)
+    m.p.al_cambiar_agenda(nueva, nueva.pedidos[0])
+    m.p.paso()
+    assert [i.id for i in m.registro.todas()] == [antes["id"]]
+    assert [p["peticion"] for p in _peticiones(m)] == ["antes"]          # no pide la después
+
+
+def test_dos_pedidos_seguidos_cada_uno_con_su_anuncio(con_peticiones):
+    m = con_peticiones
+    est = estacion()
+    m.p.al_sintonizar(est)
+    fin, _ = _registrar_antes(m, est)
+    m.reloj.t = fin + 5
+    nueva = con_pedido(est, PEDIDO, fin)
+    m.p.al_cambiar_agenda(nueva, nueva.pedidos[0])
+    _registrar_antes(m, nueva, OTRO, fin + PEDIDO.duracion)
+    assert [(i.peticion, i.pista_destino) for i in m.registro.todas()] == [
+        ("antes", PEDIDO.clave), ("antes", OTRO.clave)]
+
+
+def test_peticion_no_borra_la_ultima(con_peticiones):
+    m = con_peticiones
+    est = estacion()
+    m.p.al_sintonizar(est)
+    fin, _ = _registrar_antes(m, est)
+    assert "E" in m.p._ultima
+    nueva = con_pedido(est, PEDIDO, fin)
+    m.p.al_cambiar_agenda(nueva, nueva.pedidos[0])
+    assert "E" in m.p._ultima
+
+
+def test_firma_tolera_dos_segundos_de_corrimiento(con_peticiones):
+    m = con_peticiones
+    est = estacion()
+    fin = _fin_del_tema(est, T0)
+    con = con_pedido(est, PEDIDO, fin)
+    m.p.al_sintonizar(con)
+    m.p.al_cambiar_agenda(plegar(con, fin + PEDIDO.duracion - 1), None)   # duró 1 s menos: igual
+    assert m.locutor.descartadas == []
+    otra = con_pedido(est, PEDIDO, fin)
+    m.p.al_cambiar_agenda(otra, None)
+    m.p.al_cambiar_agenda(plegar(otra, fin + 20), None)                  # salteado a los 20 s
+    assert m.locutor.descartadas == ["E"]
+
+
+def test_encolado_en_otra_emisora_no_hace_nada(con_peticiones):
+    m = con_peticiones
+    est = estacion()
+    m.p.al_encolado(PEDIDO, est, T0 + 100)              # nada sintonizado
+    m.p.al_sintonizar(estacion("OTRA"))
+    m.p.al_encolado(PEDIDO, est, T0 + 100)              # otra emisora
+    m.p.paso()
+    assert _peticiones(m) == []
+
+
+def test_pedido_sin_artista_no_se_anuncia(con_peticiones):
+    m = con_peticiones
+    est = estacion()
+    m.p.al_sintonizar(est)
+    sin_nombre = Pista(None, 100.0, "algo", fuente="spotify", uri="spotify:track:x")
+    m.p.al_encolado(sin_nombre, est, _fin_del_tema(est, T0))
+    m.p.paso()
+    assert _peticiones(m) == []

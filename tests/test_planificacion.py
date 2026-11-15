@@ -215,3 +215,10 @@ def test_el_pedido_lleva_la_velocidad_solo_si_esta_configurada():
     h = hueco_de(estacion())
     assert "velocidad" not in armar_pedido("x", "E", h, cfg(), [])
     assert armar_pedido("x", "E", h, cfg(velocidad=1.2), [])["velocidad"] == 1.2
+
+
+def test_armar_pedido_con_peticion():
+    est = estacion()
+    h = hueco_de(est)
+    assert "peticion" not in armar_pedido("a", "E", h, cfg(), [])
+    assert armar_pedido("a", "E", h, cfg(), [], peticion="antes")["peticion"] == "antes"

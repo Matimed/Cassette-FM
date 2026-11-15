@@ -35,6 +35,8 @@ class Locutor:
         self._cfg_actual: ConfigDJ | None = None
         self._estacion_voz: str | None = None    # estación de la intervención que suena
         self._estacion_anclaje: str | None = None
+        self._anclada: Intervencion | None = None   # la que espera el retraso para hablar
+        self._en_voz: Intervencion | None = None    # la que está sonando
         self._voz_id = 0
         self._t_seguridad: threading.Timer | None = None
         self._t_anclaje: threading.Timer | None = None
@@ -78,12 +80,13 @@ class Locutor:
                     self._reproducidas.add(i.id)
 
     def descartar_estacion(self, estacion: str) -> None:
-        """La agenda de la estación cambió: sus intervenciones ya no valen (y la voz en curso tampoco)."""
+        """La agenda de la estación cambió: sus intervenciones ya no valen (y la voz en curso tampoco), salvo las
+        que anuncian una petición: están ancladas a su tema, que sigue valiendo."""
         with self._lock:
-            self._registro.quitar_estacion(estacion)
-            if self._estacion_anclaje == estacion:
+            self._registro.quitar_estacion(estacion, salvo_peticiones=True)
+            if self._estacion_anclaje == estacion and not (self._anclada and self._anclada.peticion):
                 self._cancelar_anclaje()
-            if self._hablando and self._estacion_voz == estacion:
+            if self._hablando and self._estacion_voz == estacion and not (self._en_voz and self._en_voz.peticion):
                 self._cortar()
 
     def pista_iniciada(self, pista: Pista, estacion: str) -> None:
@@ -99,6 +102,7 @@ class Locutor:
                     sesion = self._sesion
                     self._cancelar_anclaje()
                     self._estacion_anclaje = estacion
+                    self._anclada = i
                     self._t_anclaje = threading.Timer(cfg.retraso_voz_segundos, self._hablar_anclada, (i, sesion))
                     self._t_anclaje.daemon = True
                     self._t_anclaje.start()
@@ -151,6 +155,7 @@ class Locutor:
         self._hablando = True
         self._cfg_actual = cfg
         self._estacion_voz = i.estacion
+        self._en_voz = i
         try:
             self._musica.atenuar(cfg.nivel_musica_con_voz, cfg.rampa_bajada_segundos)
             self._poner_volumen_de_la_voz()

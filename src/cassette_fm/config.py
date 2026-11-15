@@ -45,6 +45,7 @@ class ConfigDJ:
     velocidad: float | None = None   # velocidad de la voz de la estación (0,5 a 2); None = la del servicio
     ganancia_voz_db: float = 10.0   # sube y comprime la voz de Kokoro (sale mucho más baja que la música); 0 = sin filtro
     recientes_cantidad: int = 6   # cuántos ingredientes recordar por estación
+    peticion_margen_segundos: float = 30.0   # con menos que esto hasta el pedido, se anuncia después (no antes)
 
 
 @dataclass(frozen=True)
@@ -226,7 +227,7 @@ def _leer_spotify(archivo: Path, tabla) -> "ConfigSpotify":
 
 _CAMPOS_NUMERICOS_DJ = {c.name for c in fields(ConfigDJ)
                         if c.type in (float, "float") and c.name != "frecuencia"}
-_POSITIVOS = {"duracion_maxima_segundos", "tolerancia_desfase_segundos", "desfase_aviso_segundos",
+_POSITIVOS = {"peticion_margen_segundos", "duracion_maxima_segundos", "tolerancia_desfase_segundos", "desfase_aviso_segundos",
               "timeout_http_segundos", "espera_reintento_segundos", "espera_reintento_maxima_segundos",
               "espera_trabajo_maxima_segundos"}
 _IDIOMAS = ("es", "en", "en-us", "en-gb")

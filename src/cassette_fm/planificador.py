@@ -12,15 +12,17 @@ from collections.abc import Callable, Sequence
 from dataclasses import dataclass, replace
 from pathlib import Path
 
-from cassette_fm.biblioteca import Estacion
+from cassette_fm.agenda import corrimiento_total, secuencia, transiciones
+from cassette_fm.biblioteca import Estacion, Pedido, Pista
 from cassette_fm.cliente_dj import ClienteDJ, ErrorDJ
 from cassette_fm.config import ConfigDJ, Frecuencia
 from cassette_fm.intervenciones import Intervencion, RegistroIntervenciones
-from cassette_fm.planificacion import Ultima, armar_pedido, elegir_hueco
+from cassette_fm.planificacion import Hueco, Ultima, armar_pedido, elegir_hueco
 
 _log = logging.getLogger("cassette_fm")
 
 _ID = re.compile(r"[A-Za-z0-9_-]{1,64}")
+_TOLERANCIA_CORRIMIENTO = 2.0     # un pedido que duró casi lo que debía no cambia la agenda
 
 
 @dataclass
@@ -34,12 +36,35 @@ class _Trabajo:
     enviado_en: float
     duracion_maxima: float
     estado: str = "enviado"      # lo último que contó el servicio
+    peticion: str | None = None  # "antes"/"despues": anuncia una petición (no se cancela si cambia la agenda)
+    pedido: str | None = None    # clave del tema pedido que anuncia
+
+
+@dataclass(frozen=True)
+class _Peticion:
+    """Un anuncio de petición por pedir (tiene prioridad sobre las intervenciones normales)."""
+    estacion: str
+    modo: str                    # "antes": sobre el comienzo del pedido; "despues": sobre el tema que lo sigue
+    pista: Pista                 # el tema destino
+    inicio_tema: float
+    anterior: Pista | None
+    pedido: str                  # clave del tema pedido
 
 
 def _firma(estacion: Estacion) -> str:
-    """Resume la agenda de la estación: si cambia, las intervenciones reservadas ya no caen donde deben."""
+    """Resume la línea de tiempo futura de la estación (pistas y corrimiento total, con los pedidos en curso por su
+    duración nominal): si cambia, las intervenciones reservadas ya no caen donde deben."""
     texto = json.dumps([(p.clave, p.duracion) for p in estacion.pistas], ensure_ascii=False)
-    return hashlib.sha1(texto.encode("utf-8")).hexdigest()
+    return f"{hashlib.sha1(texto.encode('utf-8')).hexdigest()}|{corrimiento_total(estacion):.3f}"
+
+
+def _misma_agenda(a: str, b: str) -> bool:
+    (sha_a, _, total_a), (sha_b, _, total_b) = a.partition("|"), b.partition("|")
+    return sha_a == sha_b and abs(float(total_a or 0) - float(total_b or 0)) <= _TOLERANCIA_CORRIMIENTO
+
+
+def _con_nombre(pista: Pista | None) -> bool:
+    return pista is not None and bool(pista.artista and pista.cancion)
 
 
 class Planificador:
@@ -71,6 +96,9 @@ class Planificador:
         self._firmas: dict[str, str] = {}
         self._epoca: dict[str, int] = {}        # sube cuando la agenda de la estación cambia: lo calculado antes ya no vale
         self._trabajo: _Trabajo | None = None
+        self._pendientes: list[_Peticion] = []
+        self._encolados: set[str] = set()      # claves de pedidos ya avisados por la cola
+        self._ultima_peticion: set[str] = set()  # estaciones cuya última intervención fue una petición
         self._a_cancelar: list[str] = []
         self._servicio_caido = False
         self._error: str | None = None
@@ -107,6 +135,53 @@ class Planificador:
                 self._estacion = next((e for e in estaciones if e.nombre == self._estacion.nombre), None)
         for nombre in cambiadas:
             self._descartar(nombre)
+
+    # --- peticiones (la cola de Spotify) ---
+
+    def al_encolado(self, pista: Pista, estacion: Estacion, fin_actual: float) -> None:
+        """Encolaron `pista`, que va a sonar cuando termine el tema actual (`fin_actual`): si hay tiempo, se pide el
+        anuncio "antes"; si no, va "después" cuando empiece."""
+        with self._lock:
+            if self._estacion is None or self._estacion.nombre != estacion.nombre or pista.clave in self._encolados:
+                return
+            self._encolados.add(pista.clave)
+            if not _con_nombre(pista):
+                return
+            ahora = self._reloj()
+            if fin_actual - ahora < self._configuracion(estacion.nombre).peticion_margen_segundos:
+                return
+            anterior = next(secuencia(estacion, ahora))[0]
+            self._pendientes.append(_Peticion(estacion.nombre, "antes", pista, fin_actual,
+                                              anterior if _con_nombre(anterior) else None, pista.clave))
+
+    def al_cambiar_agenda(self, estacion: Estacion, nuevo: Pedido | None) -> None:
+        """La agenda cambió por pedidos (`nuevo`: el que acaba de empezar). Si su anuncio "antes" no está listo,
+        se pide el "después"."""
+        with self._lock:
+            if self._estacion is not None and self._estacion.nombre == estacion.nombre:
+                self._estacion = estacion
+            cambiada = self._cambio_la_agenda(estacion)
+        for nombre in cambiada:
+            self._descartar(nombre)
+        if nuevo is None:
+            return
+        clave = nuevo.pista.clave
+        with self._lock:
+            self._encolados.discard(clave)
+            self._pendientes = [p for p in self._pendientes if not (p.modo == "antes" and p.pedido == clave)]
+            if any(i.estacion == estacion.nombre and i.peticion == "antes" and i.pista_destino == clave
+                   for i in self._registro.todas()):
+                return                         # el "antes" ya está reservado: va a sonar
+            t = self._trabajo
+            if t is not None and t.peticion == "antes" and t.pedido == clave:
+                self._a_cancelar.append(t.id)
+                self._trabajo = None
+                self._guardar()
+            if self._estacion is None or self._estacion.nombre != estacion.nombre or not _con_nombre(nuevo.pista):
+                return
+            siguiente, inicio = next(transiciones(estacion, nuevo.inicio + 0.001))
+            if _con_nombre(siguiente):
+                self._pendientes.append(_Peticion(estacion.nombre, "despues", siguiente, inicio, nuevo.pista, clave))
 
     # --- pedido manual ---
 
@@ -162,7 +237,10 @@ class Planificador:
                 return
             with self._lock:
                 trabajo = self._trabajo
-            if trabajo is not None:
+                pendiente = self._pendientes[0] if self._pendientes else None
+            if pendiente is not None and (trabajo is None or not trabajo.peticion):
+                self._iniciar_peticion(pendiente)
+            elif trabajo is not None:
                 self._avanzar(trabajo)
             else:
                 self._iniciar()
@@ -209,17 +287,19 @@ class Planificador:
         previa = self._firmas.get(estacion.nombre)
         self._firmas[estacion.nombre] = firma
         self._guardar()
-        return [estacion.nombre] if previa is not None and previa != firma else []
+        return [estacion.nombre] if previa is not None and not _misma_agenda(previa, firma) else []
 
-    def _descartar(self, nombre: str) -> None:
-        """La agenda de `nombre` cambió: sus reservas, su última intervención y su trabajo en curso ya no valen."""
-        _log.info("la agenda de %r cambió: se descartan sus intervenciones reservadas", nombre)
+    def _descartar(self, nombre: str, motivo: str = "la agenda de %r cambió") -> None:
+        """La agenda de `nombre` cambió: sus reservas, su última intervención y su trabajo en curso ya no valen
+        (salvo los anuncios de peticiones, anclados a su tema)."""
+        _log.info(motivo + ": se descartan sus intervenciones reservadas", nombre)
         with self._lock:
             self._epoca[nombre] = self._epoca.get(nombre, 0) + 1
         self._locutor.descartar_estacion(nombre)
         with self._lock:
-            self._ultima.pop(nombre, None)
-            if self._trabajo is not None and self._trabajo.estacion == nombre:
+            if nombre not in self._ultima_peticion:
+                self._ultima.pop(nombre, None)
+            if self._trabajo is not None and self._trabajo.estacion == nombre and not self._trabajo.peticion:
                 self._a_cancelar.append(self._trabajo.id)
                 self._trabajo = None
             self._guardar()
@@ -297,7 +377,7 @@ class Planificador:
                 return
             try:
                 intervencion = Intervencion(t.id, t.estacion, t.inicio_voz, float(duracion), audio,
-                                            str(estado.get("texto") or ""), t.pista_destino)
+                                            str(estado.get("texto") or ""), t.pista_destino, t.peticion)
                 self._locutor.registrar(intervencion)
             except ValueError as e:
                 audio.unlink(missing_ok=True)
@@ -308,6 +388,10 @@ class Planificador:
                 self._no_antes_de = max(self._no_antes_de, self._reloj() + self._espera_trabajo)
                 return
             self._ultima[t.estacion] = Ultima(t.inicio_tema, t.inicio_voz + float(duracion))
+            if t.peticion:
+                self._ultima_peticion.add(t.estacion)
+            else:
+                self._ultima_peticion.discard(t.estacion)
             ingredientes = [x for x in (estado.get("ingredientes") or []) if isinstance(x, str)]
             recientes = self._recientes.get(t.estacion, []) + ingredientes
             self._recientes[t.estacion] = recientes[-cfg.recientes_cantidad:] if cfg.recientes_cantidad else []
@@ -344,6 +428,37 @@ class Planificador:
                 return
             self._trabajo = _Trabajo(id_, estacion.nombre, hueco.inicio_tema, hueco.inicio_voz,
                                      hueco.pista.clave, ahora, cfg.duracion_maxima_segundos)
+            self._guardar()
+
+    def _iniciar_peticion(self, p: _Peticion) -> None:
+        cfg = self._configuracion(p.estacion)
+        ahora = self._reloj()
+        inicio_voz = p.inicio_tema + cfg.retraso_voz_segundos
+        with self._lock:
+            if p in self._pendientes:
+                self._pendientes.remove(p)
+        if inicio_voz <= ahora:
+            _log.info("el anuncio de la petición de %r ya no llega a tiempo: se saltea", p.estacion)
+            return
+        # lo normal planificado para esta emisora ya no va a caer donde debía (el pedido corre la agenda)
+        self._descartar(p.estacion, "llegó una petición en %r")
+        self._cancelaciones_pendientes()
+        id_ = uuid.uuid4().hex
+        with self._lock:
+            pedido = armar_pedido(id_, p.estacion, Hueco(p.pista, p.inicio_tema, inicio_voz, p.anterior), cfg,
+                                  self._recientes.get(p.estacion, []), peticion=p.modo)
+        try:
+            devuelto = self._cliente.enviar(pedido)
+            if devuelto != id_:
+                raise ErrorDJ(f"el servicio DJ contestó otro id ({devuelto!r}) al pedido {id_}")
+        except ErrorDJ as e:
+            with self._lock:
+                self._pendientes.insert(0, p)      # se reintenta mientras llegue a tiempo
+            return self._fallo(e, cfg)
+        self._ok()
+        with self._lock:
+            self._trabajo = _Trabajo(id_, p.estacion, p.inicio_tema, inicio_voz, p.pista.clave, ahora,
+                                     cfg.duracion_maxima_segundos, peticion=p.modo, pedido=p.pedido)
             self._guardar()
 
     # --- fallos y esperas ---
@@ -419,7 +534,9 @@ class Planificador:
             if isinstance(d, dict):
                 t = _Trabajo(id=str(d["id"]), estacion=str(d["estacion"]), inicio_tema=float(d["inicio_tema"]),
                              inicio_voz=float(d["inicio_voz"]), pista_destino=str(d["pista_destino"]),
-                             enviado_en=float(d["enviado_en"]), duracion_maxima=float(d["duracion_maxima"]))
+                             enviado_en=float(d["enviado_en"]), duracion_maxima=float(d["duracion_maxima"]),
+                             peticion=d.get("peticion") if d.get("peticion") in ("antes", "despues") else None,
+                             pedido=str(d["pedido"]) if d.get("pedido") else None)
                 if _ID.fullmatch(t.id):
                     self._trabajo = t
         except (KeyError, TypeError, ValueError):

@@ -366,3 +366,25 @@ def test_registrar_rechaza_duraciones_que_no_son_un_numero_finito_positivo(mundo
     with pytest.raises(ValueError):
         mundo.locutor.registrar(malo)
     assert mundo.registro.todas() == []
+
+
+def test_locutor_no_corta_ni_desancla_una_peticion_al_descartar(mundo):
+    from dataclasses import replace
+    mundo.locutor.al_sintonizar("E")
+    pedida = replace(mundo.iv(T0 + 20), peticion="antes")
+    mundo.locutor.registrar(pedida)
+    mundo.locutor.pista_iniciada(Pista(Path("/m/t.mp3"), 200.0, "t"), "E")   # queda anclada
+    mundo.locutor.descartar_estacion("E")
+    assert esperar(lambda: mundo.voz.cargas())                               # igual habla
+    assert mundo.registro.todas() == [pedida]
+    mundo.locutor.descartar_estacion("E")                                    # hablando: no la corta
+    assert mundo.locutor.hablando
+
+
+def test_locutor_descarta_y_corta_las_normales(mundo):
+    mundo.locutor.al_sintonizar("E")
+    mundo.locutor.registrar(mundo.iv(T0 + 20))
+    mundo.locutor.pista_iniciada(Pista(Path("/m/t.mp3"), 200.0, "t"), "E")
+    mundo.locutor.descartar_estacion("E")
+    time.sleep(CFG.retraso_voz_segundos + 0.3)
+    assert mundo.voz.cargas() == [] and mundo.registro.todas() == []
