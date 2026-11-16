@@ -225,13 +225,20 @@ class DialogoEmisora {
         caja.set_style("width: 30em; spacing: 8px;");
 
         caja.add_child(new St.Label({ text: "Emisora nueva", style: "font-weight: bold; font-size: 1.2em;" }));
-        this._nombre = new St.Entry({ hint_text: "Nombre", can_focus: true });
-        this._link = new St.Entry({ hint_text: "https://open.spotify.com/playlist/…", can_focus: true });
-        caja.add_child(this._nombre);
-        caja.add_child(this._link);
+        const fila = (titulo, ...hijos) => {
+            const caja = new St.BoxLayout({ style: "spacing: 6px;" });
+            caja.add_child(new St.Label({ text: titulo, y_align: Clutter.ActorAlign.CENTER, style: "width: 4em;" }));
+            for (const hijo of hijos) caja.add_child(hijo);
+            return caja;
+        };
+        const campo = (pista) => new St.Entry({ style_class: "run-dialog-entry", hint_text: pista, can_focus: true,
+                                               x_expand: true });
+        this._nombre = campo("Synthwave F.M.");
+        this._link = campo("https://open.spotify.com/playlist/…");
+        caja.add_child(fila("Nombre", this._nombre));
+        caja.add_child(fila("Playlist", this._link));
 
-        const filaIdioma = new St.BoxLayout({ style: "spacing: 6px;" });
-        filaIdioma.add_child(new St.Label({ text: "Idioma", y_align: Clutter.ActorAlign.CENTER, style: "width: 4em;" }));
+        const filaIdioma = fila("Idioma");
         this._botonesIdioma = [["", "Cualquiera"], ["es", "Español"], ["en", "Inglés"]].map(([idioma, texto]) => {
             const boton = new St.Button({ label: texto, style_class: "dialog-button", can_focus: true });
             boton.connect("clicked", () => this._alElegirIdioma(idioma));
@@ -242,12 +249,9 @@ class DialogoEmisora {
         });
         caja.add_child(filaIdioma);
 
-        const filaVoz = new St.BoxLayout({ style: "spacing: 6px;" });
-        filaVoz.add_child(new St.Label({ text: "Voz", y_align: Clutter.ActorAlign.CENTER, style: "width: 4em;" }));
         this._botonVoz = new St.Button({ style_class: "dialog-button", can_focus: true, x_expand: true });
         this._botonVoz.connect("clicked", () => this._desplegar(!this._lista.visible));
-        filaVoz.add_child(this._botonVoz);
-        caja.add_child(filaVoz);
+        caja.add_child(fila("Voz", this._botonVoz));
 
         // El desplegable: una lista con scroll dentro del diálogo (el combo de Cinnamon solo anda dentro de un menú).
         this._opciones = new St.BoxLayout({ vertical: true });
