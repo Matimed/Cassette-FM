@@ -28,8 +28,9 @@ botones de un parlante Bluetooth cambian de emisora:
 Etapa 7a (adelantada): **peticiones por la cola de Spotify**: lo encolado desde la app suena como petición, el DJ
 la anuncia (antes o después) y la agenda de la emisora se corre sin perder temas:
 [`superpowers/specs/2026-11-15-peticiones-spotify-design.md`](superpowers/specs/2026-11-15-peticiones-spotify-design.md).
-Probada con el usuario el 2026-11-15. Pendientes en Beans: anuncio combinado de dos pedidos seguidos, casos menores
-de la cola, y que la sintonía de Spotify arranca atrasada lo que tarda Soloist en sonar (bug anterior a 7a).
+Probada con el usuario el 2026-11-15. Pendientes en Beans: anuncio combinado de dos pedidos seguidos y casos menores
+de la cola. (De paso se arregló que la sintonía de Spotify arrancaba 2–8 s atrasada: la posición ahora se calcula
+justo antes del play.)
 
 ## Relevamiento previo (leer antes de diseñar)
 
