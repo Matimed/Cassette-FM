@@ -127,10 +127,30 @@ function mensajeDeError(codigo, stdout, stderr) {
     return "cassette nueva terminó con error (código " + codigo + ")";
 }
 
+// --- Muestra de voz: ▶ al lado de la voz corre `cassette-dj muestra` y reproduce el WAV ---
+
+function argumentosMuestra(voz, nombre) {
+    return ["muestra", "--voz", voz.alias, "--idioma", voz.idioma, "--radio", nombre.trim()];
+}
+
+// fase: "quieto" | "generando" | "sonando"; sin voz elegida (al azar) no hay muestra.
+function botonMuestra(voz, fase) {
+    if (!voz) return { texto: "▶", activo: false };
+    if (fase === "generando") return { texto: "…", activo: false };
+    if (fase === "sonando") return { texto: "■", activo: true };
+    return { texto: "▶", activo: true };
+}
+
+function rutaDeMuestra(stdout) {
+    const lineas = (stdout || "").split("\n").map((l) => l.trim()).filter((l) => l);
+    const ultima = lineas.length ? lineas[lineas.length - 1] : "";
+    return ultima.endsWith(".wav") ? ultima : null;
+}
+
 if (typeof module !== "undefined") {
     module.exports = {
         etiqueta, tooltip, accionDeRueda, crearLimitador, pedidoHttp, parsearRespuesta,
         parsearVoces, idiomaBase, vocesDelIdioma, etiquetaDeVoz, elegirVoz, elegirIdioma, faltante, argumentosNueva,
-        mensajeDeError,
+        mensajeDeError, argumentosMuestra, botonMuestra, rutaDeMuestra,
     };
 }

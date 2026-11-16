@@ -149,3 +149,21 @@ test("mensajeDeError", () => {
   assert.equal(L.mensajeDeError(1, "✓ Sing (3 temas)\nLa emisora quedó guardada…\n\n", ""), "La emisora quedó guardada…");
   assert.equal(L.mensajeDeError(2, "", ""), "cassette nueva terminó con error (código 2)");
 });
+
+test("argumentosMuestra: voz, su idioma y el nombre escrito", () => {
+  assert.deepEqual(L.argumentosMuestra(VOCES[1], "  Sing 2 "),
+                   ["muestra", "--voz", "emma", "--idioma", "en-gb", "--radio", "Sing 2"]);
+});
+
+test("botonMuestra", () => {
+  assert.deepEqual(L.botonMuestra(null, "quieto"), { texto: "▶", activo: false });
+  assert.deepEqual(L.botonMuestra(VOCES[2], "quieto"), { texto: "▶", activo: true });
+  assert.deepEqual(L.botonMuestra(VOCES[2], "generando"), { texto: "…", activo: false });
+  assert.deepEqual(L.botonMuestra(VOCES[2], "sonando"), { texto: "■", activo: true });
+});
+
+test("rutaDeMuestra", () => {
+  assert.equal(L.rutaDeMuestra("/home/x/.cache/cassette-dj/muestras/ab.wav\n"), "/home/x/.cache/cassette-dj/muestras/ab.wav");
+  assert.equal(L.rutaDeMuestra("algo raro"), null);
+  assert.equal(L.rutaDeMuestra(""), null);
+});
