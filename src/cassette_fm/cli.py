@@ -82,6 +82,9 @@ def _armar_parser() -> argparse.ArgumentParser:
     nueva.add_argument("playlist", help="el link o la URI de la playlist")
     nueva.add_argument("--voz", help="un alias de [voces] de cassette-dj (por defecto, uno libre al azar)")
     nueva.add_argument("--idioma", choices=["es", "en"], help="el idioma del DJ (por defecto, el de la voz)")
+    borrar = sub.add_parser("borrar", parents=[comun], help="saca una emisora de estaciones.json (pregunta antes)")
+    borrar.add_argument("nombre", help="el nombre de la emisora (sin importar mayúsculas)")
+    borrar.add_argument("--si", action="store_true", help="no preguntar")
     voces = sub.add_parser("voces", help="las voces con alias que puede usar una emisora nueva")
     voces.add_argument("--json", action="store_true", help="en JSON (para el applet)")
     spotify = sub.add_parser("spotify", help="Spotify como fuente de emisoras: sesión y estado")
@@ -356,6 +359,42 @@ def _nueva(args, cfg, rutas, puerto: int) -> int:
     return 0
 
 
+_SI = ("s", "si", "sí", "y", "yes")
+
+
+def _borrar(args, rutas, puerto: int) -> int:
+    """Saca una emisora de `estaciones.json` (preguntando antes, salvo con --si) y le pide a la radio que relea."""
+    from cassette_fm import emisora_nueva
+    try:
+        emisoras = emisora_nueva.leer_crudo(rutas.emisoras)
+        i = emisora_nueva.buscar(emisoras, args.nombre)
+    except config.ErrorConfig as e:
+        print(e, file=sys.stderr)
+        return 1
+    nombre = emisoras[i]["nombre"].strip()
+    if not args.si:
+        if not sys.stdin.isatty():
+            print(f"para borrar «{nombre}» sin preguntar, agregá --si", file=sys.stderr)
+            return 1
+        try:
+            respuesta = input(f"¿Borro «{nombre}» ({emisora_nueva.describir(emisoras[i])})? (s/N) ")
+        except EOFError:
+            respuesta = ""
+        if respuesta.strip().casefold() not in _SI:
+            print("No se borró nada.")
+            return 1
+    emisora_nueva.escribir(rutas.emisoras, emisoras[:i] + emisoras[i + 1:])
+    print(f"✗ {nombre} · ya no está en estaciones.json")
+    try:
+        print(_linea_estado(_llamar(puerto, "POST", "/rescan", timeout=120)))
+    except _ServicioCaido:
+        print("La radio no está corriendo: el cambio se ve al prenderla.")
+    except _ErrorCli as e:
+        print(f"La emisora quedó borrada, pero la radio no pudo releer las emisoras: {e}", file=sys.stderr)
+        return 1
+    return 0
+
+
 def _voces(args, rutas) -> int:
     from cassette_fm import emisora_nueva
     from cassette_fm.dj.config import cargar_config_dj, rutas_dj
@@ -413,6 +452,8 @@ def main(argv: list[str] | None = None) -> int:
         return _nueva(args, cfg, rutas, getattr(args, "puerto", cfg.puerto))
     if args.comando == "voces":
         return _voces(args, rutas)
+    if args.comando == "borrar":
+        return _borrar(args, rutas, getattr(args, "puerto", cfg.puerto))
     try:
         _ejecutar(args, getattr(args, "puerto", cfg.puerto))
     except _ErrorCli as e:

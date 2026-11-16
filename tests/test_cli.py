@@ -639,3 +639,67 @@ def test_nueva_con_un_nombre_que_empieza_con_guion_despues_de_doble_guion(tmp_pa
     r, _ = _nueva(monkeypatch, tmp_path, servidor_http)
     assert main(["nueva", "--voz", "sarah", "--", "-80s-", PLAYLIST_NUEVA]) == 0      # como lo llama el applet
     assert _json.loads(r.emisoras.read_text())[-1]["nombre"] == "-80s-"
+
+
+SING = {"nombre": "Sing", "fuente": {"spotify": "x"}, "dj": {"idioma": "es", "voz": "dora"}}
+
+
+def _borrar(monkeypatch, tmp_path, servidor_http, respuesta="s", terminal=True):
+    import json as _json
+    r, rutas = _nueva(monkeypatch, tmp_path, servidor_http)
+    r.emisoras.write_text(_json.dumps(HAPPY + [SING], ensure_ascii=False))
+    monkeypatch.setattr("sys.stdin.isatty", lambda: terminal)
+    monkeypatch.setattr("builtins.input", lambda texto: print(texto, end="") or respuesta)
+    return r, rutas
+
+
+def test_borrar_pregunta_borra_y_rescanea(tmp_path, monkeypatch, capsys, servidor_http):
+    import json as _json
+    r, rutas = _borrar(monkeypatch, tmp_path, servidor_http, respuesta="S")
+    assert main(["borrar", "  sing "]) == 0
+    assert _json.loads(r.emisoras.read_text()) == HAPPY
+    salida = capsys.readouterr().out
+    assert "¿Borro «Sing» (Spotify)? (s/N)" in salida and "✗ Sing · ya no está en estaciones.json" in salida
+    assert [ruta for ruta, _ in rutas] == ["/rescan"]
+
+
+def test_borrar_con_otra_respuesta_no_borra(tmp_path, monkeypatch, capsys, servidor_http):
+    r, rutas = _borrar(monkeypatch, tmp_path, servidor_http, respuesta="n")
+    antes = r.emisoras.read_text()
+    assert main(["borrar", "Sing"]) == 1
+    assert r.emisoras.read_text() == antes and "No se borró nada." in capsys.readouterr().out and rutas == []
+
+
+def test_borrar_sin_terminal_pide_si(tmp_path, monkeypatch, capsys, servidor_http):
+    r, rutas = _borrar(monkeypatch, tmp_path, servidor_http, terminal=False)
+    antes = r.emisoras.read_text()
+    assert main(["borrar", "Sing"]) == 1
+    assert "--si" in capsys.readouterr().err and r.emisoras.read_text() == antes and rutas == []
+
+
+def test_borrar_con_si_no_pregunta_y_puede_dejar_la_lista_vacia(tmp_path, monkeypatch, capsys, servidor_http):
+    import json as _json
+    r, _ = _borrar(monkeypatch, tmp_path, servidor_http)
+
+    def no_preguntes(texto):
+        raise AssertionError("no tenía que preguntar")
+    monkeypatch.setattr("builtins.input", no_preguntes)
+    assert main(["borrar", "--si", "Sing"]) == 0 and main(["borrar", "--si", "happy eighties"]) == 0
+    assert _json.loads(r.emisoras.read_text()) == []
+
+
+def test_borrar_una_que_no_existe_lista_las_que_hay(tmp_path, monkeypatch, capsys, servidor_http):
+    _borrar(monkeypatch, tmp_path, servidor_http)
+    assert main(["borrar", "Nada"]) == 1
+    assert "Happy Eighties" in capsys.readouterr().err
+
+
+def test_borrar_con_la_radio_apagada_lo_dice(tmp_path, monkeypatch, capsys, servidor_http):
+    from cassette_fm import cli
+    _borrar(monkeypatch, tmp_path, servidor_http)
+
+    def caido(*a, **k):
+        raise cli._ServicioCaido("cassette-fm no está corriendo")
+    monkeypatch.setattr(cli, "_llamar", caido)
+    assert main(["borrar", "--si", "Sing"]) == 0
+    assert "La radio no está corriendo: el cambio se ve al prenderla." in capsys.readouterr().out
