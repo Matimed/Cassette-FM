@@ -448,8 +448,9 @@ class Planificador:
             _log.info("el anuncio de la petición de %r ya no llega a tiempo: se saltea", p.estacion)
             return
         # lo normal planificado desde el pedido ya no va a caer donde debía (el pedido corre la agenda); lo del
-        # tema actual (la voz que suena, la anclada) sigue valiendo
-        self._descartar(p.estacion, "llegó una petición en %r", desde=p.inicio_tema)
+        # tema actual (la voz que suena, la anclada) sigue valiendo. El borde del pedido es el real de Spotify, que
+        # puede ir corrido del reloj (hasta la tolerancia): la normal del tema que iba ahí queda un poco antes
+        self._descartar(p.estacion, "llegó una petición en %r", desde=p.inicio_tema - cfg.tolerancia_desfase_segundos)
         self._cancelaciones_pendientes()
         id_ = uuid.uuid4().hex
         with self._lock:

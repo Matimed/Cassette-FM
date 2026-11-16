@@ -812,7 +812,22 @@ def test_encolar_no_descarta_lo_del_tema_actual(con_peticiones):
     m.p._ultima["E"] = Ultima(T0 - 10, T0 + 5)          # la del tema actual: puede estar sonando
     m.p.al_encolado(PEDIDO, est, fin)
     m.p.paso()
-    assert m.locutor.desde == [fin] and "E" in m.p._ultima
+    assert m.locutor.desde == [fin - CFG.tolerancia_desfase_segundos] and "E" in m.p._ultima
+
+
+def test_encolar_descarta_la_normal_del_borde_aunque_spotify_venga_atrasado(con_peticiones):
+    m = con_peticiones
+    est = estacion()
+    m.p.al_sintonizar(est)
+    m.p.paso()
+    [normal] = m.cliente.enviados
+    m.listo(normal["id"])
+    m.p.paso()
+    borde = _fin_del_tema(est, T0)
+    [reservada] = m.registro.todas()
+    assert reservada.inicio == pytest.approx(borde + CFG.retraso_voz_segundos)
+    _, antes = _registrar_antes(m, est, fin=borde + 2)    # Spotify viene 2 s atrás del reloj
+    assert [i.id for i in m.registro.todas()] == [antes["id"]]
 
 
 def test_saltear_hasta_el_pedido_descarta_el_antes_y_pide_el_despues(con_peticiones):
