@@ -15,7 +15,7 @@ from cassette_fm.config import Config, ConfigDJ, ErrorConfig, Rutas, campos_dj
 
 _log = logging.getLogger("cassette_fm")
 
-_CAMPOS = {"nombre", "fuente", "dj"}
+_CAMPOS = {"nombre", "fuente", "dj", "icono"}
 _PLAYLIST = re.compile(r"^(?:https?://open\.spotify\.com/(?:intl-[a-z-]+/)?playlist/|spotify:playlist:)"
                        r"([A-Za-z0-9]{22})(?:[?#].*)?$")
 
@@ -32,6 +32,7 @@ class DefEmisora:
     fuente: Fuente
     dj: ConfigDJ                                    # ya fusionado con el [dj] general
     dj_crudo: dict = field(default_factory=dict)   # la tabla "dj" tal como está en el archivo
+    icono: Path | None = None                       # el logo (ruta absoluta; puede no existir)
 
 
 def playlist_de(texto: str) -> str | None:
@@ -69,6 +70,16 @@ def _fuente(archivo: Path, nombre: str, valor) -> Fuente:
     raise ErrorConfig(f'{donde}: la fuente "{tipo}" no existe (tiene que ser "carpeta" o "spotify")')
 
 
+def _icono(archivo: Path, nombre: str, valor) -> Path | None:
+    """La ruta del logo: absoluta, o relativa a la carpeta de `estaciones.json` (ahí está `iconos/`)."""
+    if valor is None:
+        return None
+    if not isinstance(valor, str) or not valor.strip():
+        raise ErrorConfig(f'{archivo}: "{nombre}": "icono" tiene que ser la ruta de una imagen')
+    ruta = Path(valor.strip()).expanduser()
+    return ruta if ruta.is_absolute() else Path(archivo).parent / ruta
+
+
 def leer_emisoras(archivo: Path, general: ConfigDJ) -> list[DefEmisora]:
     """Lee y valida `estaciones.json`; cualquier problema es un ErrorConfig que nombra el archivo."""
     archivo = Path(archivo)
@@ -101,7 +112,7 @@ def leer_emisoras(archivo: Path, general: ConfigDJ) -> list[DefEmisora]:
         if not isinstance(crudo, dict):
             raise ErrorConfig(f'{archivo}: "{nombre}": "dj" tiene que ser un objeto con ajustes del DJ')
         dj = replace(general, **campos_dj(archivo, crudo, f'"{nombre}".dj.', general))
-        emisoras.append(DefEmisora(nombre, fuente, dj, crudo))
+        emisoras.append(DefEmisora(nombre, fuente, dj, crudo, _icono(archivo, nombre, item.get("icono"))))
     return emisoras
 
 
@@ -151,6 +162,8 @@ class Catalogo:
         self._spotify = spotify                    # CatalogoSpotify (o None: las emisoras de Spotify se omiten)
         self._reproduce_spotify = reproduce_spotify   # hasta la parte 4c no hay reproductor de Spotify
         self._dj: dict[str, ConfigDJ] = {}
+        self._iconos: dict[str, Path] = {}
+        self._iconos_avisados: set[Path] = set()
         self._lock = threading.Lock()
         self._avisado_toml = False
 
@@ -183,7 +196,22 @@ class Catalogo:
                           e.nombre, len(estacion.pistas))
         with self._lock:
             self._dj = {e.nombre: e.dj for e in emisoras}
+            self._iconos = {e.nombre: e.icono for e in emisoras if e.icono is not None}
         return estaciones
+
+    def iconos(self) -> dict[str, str]:
+        """El logo de cada emisora que tiene uno que existe (las demás usan el genérico); avisa una vez por archivo
+        que falta."""
+        with self._lock:
+            iconos = dict(self._iconos)
+        existentes = {}
+        for nombre, ruta in iconos.items():
+            if ruta.is_file():
+                existentes[nombre] = str(ruta)
+            elif ruta not in self._iconos_avisados:
+                self._iconos_avisados.add(ruta)
+                _log.warning("el logo de %r no existe (%s): se usa el genérico", nombre, ruta)
+        return existentes
 
     def _de_spotify(self, e: DefEmisora) -> Estacion | None:
         from cassette_fm.spotify.api import ErrorSpotify

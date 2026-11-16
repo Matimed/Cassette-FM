@@ -109,7 +109,7 @@ def servir(config: Config, rutas: Rutas, avisar: Callable[[str, str], None] | No
             extra_radio["planificador"] = planificador
     radio = Radio(reproductor, estaciones, estado,
                   guardar=lambda e: guardar_estado(rutas.estado, e),
-                  escanear=escanear, avisar=avisar, **extra_radio)
+                  escanear=escanear, avisar=avisar, iconos=catalogo.iconos, **extra_radio)
     # teclas multimedia y botones del parlante; sin bus de sesión la radio anda igual
     mpris = ServicioMpris(radio, direccion=bus_mpris)
     radio.al_cambiar = mpris.cambio

@@ -80,7 +80,9 @@ class Radio:
                  guardar: Callable[[Estado], None], escanear: Callable[[], list[Estacion]],
                  avisar: Callable[[str, str], None] | None = None, dj=None,
                  configuracion_dj: Callable[[str], ConfigDJ] | None = None, dir_clips: Path | None = None,
-                 reloj: Callable[[], float] = time.time, planificador=None):
+                 reloj: Callable[[], float] = time.time, planificador=None,
+                 iconos: Callable[[], dict[str, str]] | None = None):
+        self._iconos = iconos
         self._dj = dj
         self._planificador = planificador
         self._configuracion_dj = configuracion_dj or (lambda nombre: ConfigDJ())
@@ -181,6 +183,7 @@ class Radio:
                 "estaciones": [e.nombre for e in self._estaciones],
                 "fuente": self._fuente_actual() if self.encendida else None,
                 "segundo": round(segundo, 1) if segundo is not None else None,
+                "iconos": self._iconos() if self._iconos is not None else {},
             }
 
     def sonando(self) -> tuple[str, Pista] | None:

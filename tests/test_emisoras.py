@@ -1,4 +1,5 @@
 import json
+from pathlib import Path
 
 import pytest
 
@@ -331,3 +332,34 @@ def test_un_error_inesperado_de_spotify_no_tumba_a_las_locales(tmp_path, crear_m
     with caplog.at_level(logging.ERROR, logger="cassette_fm"):
         assert [e.nombre for e in cat.escanear()] == ["A", "Ajena"]
     assert "Sing" in caplog.text
+
+
+# --- logos ---
+
+def test_icono_relativo_se_resuelve_contra_la_carpeta(tmp_path):
+    a = escribir(tmp_path, [{"nombre": "A", "fuente": {"carpeta": "/m"}, "icono": "iconos/p.png"},
+                            {"nombre": "B", "fuente": {"carpeta": "/m"}, "icono": "/abs/b.svg"},
+                            {"nombre": "C", "fuente": {"carpeta": "/m"}}])
+    assert [e.icono for e in leer_emisoras(a, ConfigDJ())] == [tmp_path / "iconos" / "p.png", Path("/abs/b.svg"), None]
+
+
+@pytest.mark.parametrize("icono", [3, "", "   "])
+def test_icono_que_no_es_texto_es_error(tmp_path, icono):
+    a = escribir(tmp_path, [{"nombre": "A", "fuente": {"carpeta": "/m"}, "icono": icono}])
+    with pytest.raises(ErrorConfig, match="icono"):
+        leer_emisoras(a, ConfigDJ())
+
+
+def test_iconos_solo_los_que_existen(tmp_path, crear_mp3, caplog):
+    cat, rutas, musica = montar(tmp_path, crear_mp3)
+    (rutas.emisoras.parent / "iconos").mkdir()
+    (rutas.emisoras.parent / "iconos" / "a.png").write_bytes(b"png")
+    rutas.emisoras.write_text(json.dumps([
+        {"nombre": "A", "fuente": {"carpeta": str(musica / "A")}, "icono": "iconos/a.png"},
+        {"nombre": "B", "fuente": {"carpeta": str(musica / "B")}, "icono": "iconos/falta.png"}]))
+    with caplog.at_level(logging.WARNING, logger="cassette_fm"):
+        cat.escanear()
+        cat.escanear()
+    assert cat.iconos() == {"A": str(rutas.emisoras.parent / "iconos" / "a.png")}
+    avisos = [r for r in caplog.records if "falta.png" in r.getMessage()]
+    assert len(avisos) == 1

@@ -177,7 +177,7 @@ def test_estado_dict():
     radio, rep, _, _ = crear(estado=Estado(estacion="A", volumen=60))
     assert radio.estado() == {"encendida": False, "estacion": "A", "pista": None,
                               "volumen": 60, "estaciones": ["A", "B", "Regueton 2000"],
-                              "segundo": None, "fuente": None}
+                              "segundo": None, "fuente": None, "iconos": {}}
     radio.encender()
     rep.pista_actual = est("A").pistas[0]
     assert radio.estado()["pista"] == "tema de A"
@@ -820,3 +820,10 @@ def test_rescan_le_pasa_al_reproductor_la_emisora_que_suena():
     radio.sintonizar("B")
     radio.rescan()
     assert rep.actualizadas == [_estacion(radio, "B")]
+
+
+def test_estado_trae_los_iconos():
+    radio, _, _, _ = crear(iconos=lambda: {"A": "/x.png"})
+    assert radio.estado()["iconos"] == {"A": "/x.png"}
+    sin, _, _, _ = crear()
+    assert sin.estado()["iconos"] == {}
