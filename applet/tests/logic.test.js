@@ -184,3 +184,60 @@ test("argumentosExaminar y rutaElegida", () => {
   assert.equal(L.rutaElegida(1, ""), null);
   assert.equal(L.rutaElegida(0, "\n"), null);
 });
+
+// --- el dial ---
+
+const fila = (f) => f.map(e => e.nombre + ":" + e.desplazamiento).join(" ");
+
+test("filaDial: con pocas, todas, la actual en 0 y la que sobra a la derecha", () => {
+  assert.equal(fila(L.filaDial(["A", "B", "C"], "B")), "A:-1 B:0 C:1");
+  assert.equal(fila(L.filaDial(["A", "B", "C", "D"], "A")), "D:-1 A:0 B:1 C:2");
+  assert.equal(fila(L.filaDial(["A"], "A")), "A:0");
+  assert.deepEqual(L.filaDial([], null), []);
+});
+
+test("filaDial: con más de 7, 3 a cada lado, circular", () => {
+  const ocho = ["A", "B", "C", "D", "E", "F", "G", "H"];
+  assert.equal(fila(L.filaDial(ocho, "A")), "F:-3 G:-2 H:-1 A:0 B:1 C:2 D:3");
+  assert.equal(fila(L.filaDial(ocho, "H")), "E:-3 F:-2 G:-1 H:0 A:1 B:2 C:3");
+});
+
+test("filaDial: sin actual, la primera en el centro", () => {
+  assert.equal(fila(L.filaDial(["A", "B", "C"], null)), "C:-1 A:0 B:1");
+  assert.equal(fila(L.filaDial(["A", "B", "C"], "Borrada")), "C:-1 A:0 B:1");
+});
+
+test("teclaDial", () => {
+  assert.equal(L.teclaDial("Left"), "anterior");
+  assert.equal(L.teclaDial("Right"), "siguiente");
+  assert.equal(L.teclaDial("Up"), "subir");
+  assert.equal(L.teclaDial("Down"), "bajar");
+  assert.equal(L.teclaDial("Escape"), "cerrar");
+  assert.equal(L.teclaDial("a"), null);
+});
+
+test("crearCola: uno a la vez, y al terminar solo el último que se pidió", () => {
+  const enviados = [];
+  const cola = L.crearCola((d) => enviados.push(d));
+  cola.pedir(1); cola.pedir(2); cola.pedir(3);
+  assert.deepEqual(enviados, [1]);
+  cola.listo();
+  assert.deepEqual(enviados, [1, 3]);
+  cola.listo();
+  assert.deepEqual(enviados, [1, 3]);
+  cola.pedir(4);
+  assert.deepEqual(enviados, [1, 3, 4]);
+});
+
+test("barraVolumen", () => {
+  assert.equal(L.barraVolumen(60), "▮▮▮▮▮▮▱▱▱▱ 60");
+  assert.equal(L.barraVolumen(5), "▮▱▱▱▱▱▱▱▱▱ 5");
+  assert.equal(L.barraVolumen(100), "▮▮▮▮▮▮▮▮▮▮ 100");
+  assert.equal(L.barraVolumen(0), "Apagada");
+});
+
+test("iconoDe", () => {
+  assert.equal(L.iconoDe("Sing", { "Power F.M.": "/p.png" }, "/g.png"), "/g.png");
+  assert.equal(L.iconoDe("Power F.M.", { "Power F.M.": "/p.png" }, "/g.png"), "/p.png");
+  assert.equal(L.iconoDe("X", undefined, "/g.png"), "/g.png");
+});

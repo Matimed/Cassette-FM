@@ -162,10 +162,68 @@ function rutaDeMuestra(stdout) {
     return ultima.endsWith(".wav") ? ultima : null;
 }
 
+// --- El dial: la tira de logos que se abre con su atajo ---
+
+// Los logos que se ven, de izquierda a derecha: {nombre, desplazamiento} con la actual en 0. La fila es circular
+// (como ◀ ▶); con más de 2*lado+1 emisoras se ven `lado` a cada lado; con menos, todas (la que sobra, a la derecha).
+function filaDial(estaciones, actual, lado = 3) {
+    const n = estaciones.length;
+    if (n === 0) return [];
+    const i = Math.max(0, estaciones.indexOf(actual));
+    const izquierda = n > 2 * lado + 1 ? lado : Math.floor((n - 1) / 2);
+    const derecha = n > 2 * lado + 1 ? lado : n - 1 - izquierda;
+    const fila = [];
+    for (let d = -izquierda; d <= derecha; d++)
+        fila.push({ nombre: estaciones[((i + d) % n + n) % n], desplazamiento: d });
+    return fila;
+}
+
+const _TECLAS_DIAL = { Left: "anterior", Right: "siguiente", Up: "subir", Down: "bajar", Escape: "cerrar" };
+
+function teclaDial(nombreTecla) {
+    return _TECLAS_DIAL[nombreTecla] || null;
+}
+
+// Pedidos a la radio de a uno: si llega otro mientras uno está en curso, al terminar se manda solo el último
+// (cinco ▶ seguidos no encolan cinco cambios). `listo()` se llama cuando vuelve la respuesta.
+function crearCola(enviar) {
+    let enCurso = false;
+    let pendiente;
+    let hayPendiente = false;
+    return {
+        pedir(destino) {
+            if (enCurso) {
+                pendiente = destino;
+                hayPendiente = true;
+                return;
+            }
+            enCurso = true;
+            enviar(destino);
+        },
+        listo() {
+            enCurso = false;
+            if (!hayPendiente) return;
+            hayPendiente = false;
+            this.pedir(pendiente);
+        },
+    };
+}
+
+function barraVolumen(v) {
+    if (v === 0) return "Apagada";
+    const llenas = Math.round(v / 10);
+    return "▮".repeat(llenas) + "▱".repeat(10 - llenas) + " " + v;
+}
+
+function iconoDe(nombre, iconos, generico) {
+    return (iconos && iconos[nombre]) || generico;
+}
+
 if (typeof module !== "undefined") {
     module.exports = {
         etiqueta, tooltip, accionDeRueda, crearLimitador, pedidoHttp, parsearRespuesta,
         parsearVoces, idiomaBase, vocesDelIdioma, etiquetaDeVoz, elegirVoz, elegirIdioma, faltante, argumentosNueva,
         mensajeDeError, argumentosMuestra, botonMuestra, rutaDeMuestra, argumentosExaminar, rutaElegida,
+        filaDial, teclaDial, crearCola, barraVolumen, iconoDe,
     };
 }
