@@ -166,8 +166,8 @@ def test_desfase_estacion_de_un_tema_elige_el_menor():
 
 from dataclasses import replace as _replace
 
-from cassette_fm.agenda import (con_pedido, corrimiento_total, desfase, plegar, plegar_vencidos,
-                                transiciones)
+from cassette_fm.agenda import (HOLGURA_PEDIDO_SEGUNDOS, con_pedido, corrimiento_total, desfase, plegar,
+                                plegar_vencidos, transiciones)
 from cassette_fm.biblioteca import Pedido
 
 PEDIDO = Pista(None, 180.0, "Pedido", fuente="spotify", uri="spotify:track:pedido")
@@ -254,10 +254,12 @@ def test_plegar_usa_la_duracion_real():
     assert pista == siguiente and desde == pytest.approx(0.0, abs=0.01)
 
 
-def test_plegar_tiene_tope_en_la_duracion_nominal():
+def test_plegar_absorbe_la_demora_de_spotify_hasta_una_holgura():
     b = _borde(E, T0)
-    e = plegar(con_pedido(E, PEDIDO, b), b + PEDIDO.duracion + 5)
-    assert e.corrimiento == pytest.approx(PEDIDO.duracion)
+    e = plegar(con_pedido(E, PEDIDO, b), b + PEDIDO.duracion + 5)    # cargar el tema siguiente tardó
+    assert e.corrimiento == pytest.approx(PEDIDO.duracion + 5)
+    e = plegar(con_pedido(E, PEDIDO, b), b + PEDIDO.duracion + 600)  # una pausa larga no corre toda la agenda
+    assert e.corrimiento == pytest.approx(PEDIDO.duracion + HOLGURA_PEDIDO_SEGUNDOS)
 
 
 def test_plegar_vencidos_usa_la_nominal():

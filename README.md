@@ -374,8 +374,11 @@ cuando termina el tema actual suena el tuyo y el DJ lo anuncia como **petición 
   presenta al arrancar («y ahora, una petición especial…»); si no llega, lo anuncia al terminar («eso fue una
   petición especial…»). Necesita que el tema tenga artista y título, y que el DJ esté activo.
 - **La agenda se corre:** la emisora no pierde temas: mientras suena el pedido su agenda se detiene y después sigue
-  con el tema que venía. Si lo salteás desde la app, se corre solo lo que sonó. Varios encolados seguidos se
-  encadenan, cada uno con su anuncio si entra.
+  con el tema que venía. Se corre lo que sonó de verdad: menos si lo salteás desde la app, y hasta 15 s más si
+  Spotify tarda en pasar al siguiente (más que eso es una pausa, y la radio sigue siendo un reloj). Varios encolados
+  seguidos se encadenan, cada uno con su anuncio si entra; si dos pedidos van pegados, el anuncio «antes» del
+  segundo le gana al «después» del primero (el DJ lo recibe como tema anterior).
+- Si sacás un tema de la cola y encolás otro, el anuncio es para el nuevo.
 - Cuenta como petición todo lo que viene de la cola, aunque sea un tema de la playlist o justo el siguiente.
 - Si cambiás de emisora (o reiniciás la radio) a mitad de un pedido y volvés, sigue el pedido en el segundo que
   corresponde. Los pedidos se guardan en `estado.json` (`agendas`).

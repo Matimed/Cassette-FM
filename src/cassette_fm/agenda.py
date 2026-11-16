@@ -8,6 +8,9 @@ from cassette_fm.biblioteca import Estacion, Pedido, Pista
 
 # 2026-01-01T00:00:00Z
 EPOCA: float = 1767225600.0
+# lo que un pedido puede durar de más al plegarlo: Spotify tarda en cargar el tema siguiente (o en saltar a la posición
+# al retomarlo); más que esto es una pausa, y la radio sigue siendo un reloj
+HOLGURA_PEDIDO_SEGUNDOS: float = 15.0
 
 
 def _mezcla(base: list[Pista], nombre: str, k: int) -> list[Pista]:
@@ -98,13 +101,14 @@ def con_pedido(estacion: Estacion, pista: Pista, inicio: float) -> Estacion:
 
 def plegar(estacion: Estacion, hasta: float) -> Estacion:
     """En `hasta` empezó otra cosa: los pedidos que empezaron antes se pliegan al corrimiento con su duración real
-    (hasta que empezó lo siguiente), con tope en la nominal."""
+    (hasta que empezó lo siguiente), con tope en la nominal más la holgura."""
     pedidos = sorted(estacion.pedidos, key=lambda p: p.inicio)
     viejos = [p for p in pedidos if p.inicio < hasta]
     if not viejos:
         return estacion
     fines = [q.inicio for q in viejos[1:]] + [hasta]
-    real = sum(max(0.0, min(_duracion(p), fin - p.inicio)) for p, fin in zip(viejos, fines))
+    real = sum(max(0.0, min(_duracion(p) + HOLGURA_PEDIDO_SEGUNDOS, fin - p.inicio))
+               for p, fin in zip(viejos, fines))
     return replace(estacion, corrimiento=estacion.corrimiento + real,
                    pedidos=tuple(p for p in pedidos if p.inicio >= hasta))
 
