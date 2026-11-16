@@ -223,6 +223,9 @@ class ReproductorSpotify:
 
     def manejar_evento(self, evento: dict) -> None:
         tipo = evento.get("type")
+        if tipo == "error":          # p. ej. no reconoce una orden (set_shuffle…): sin esto el fallo sería mudo
+            _log.warning("Soloist rechazó una orden: %s", evento.get("message") or "sin detalle")
+            return
         avisar = sonar = perdido = agenda = encolado = desencolado = None
         resintonizar = False
         with self._lock:

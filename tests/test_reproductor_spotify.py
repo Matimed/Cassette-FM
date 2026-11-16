@@ -324,6 +324,14 @@ def test_sintonizar_apaga_shuffle_y_repeat_en_soloist_antes_del_play():
     assert _ordenes(soloist) == APAGAR + [("PLAY", {})]
 
 
+def test_un_error_de_soloist_queda_en_el_log(caplog):
+    r, _, _, _, _ = armar()
+    r.sintonizar(estacion())
+    with caplog.at_level("WARNING", logger="cassette_fm"):
+        r.manejar_evento({"type": "error", "message": "unknown command: set_shuffle"})
+    assert "Soloist rechazó una orden: unknown command: set_shuffle" in caplog.text
+
+
 def test_resintonizar_tambien_apaga_shuffle_y_repeat():
     r, control, soloist, reloj, _ = armar()
     control.antes = lambda: soloist.comandos.append(("PLAY", {}))
