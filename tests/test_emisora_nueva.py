@@ -4,8 +4,8 @@ import random
 import pytest
 
 from cassette_fm.config import ErrorConfig
-from cassette_fm.emisora_nueva import (Eleccion, chequear_nombre, elegir_voz, guardar, idioma_de_voz, leer_crudo,
-                                       voces_disponibles, voces_en_uso)
+from cassette_fm.emisora_nueva import (Eleccion, buscar, chequear_nombre, describir, elegir_voz, escribir, guardar,
+                                       idioma_de_voz, leer_crudo, voces_disponibles, voces_en_uso)
 
 ALIAS = {"puck": "am_puck", "sarah": "af_sarah", "dora": "ef_dora", "daniela": "piper:es_AR-daniela-high",
          "alex_santa": "em_alex+em_santa", "emma": "bf_emma", "siwis": "ff_siwis"}
@@ -108,3 +108,22 @@ def test_guardar_agrega_al_final_y_es_json_legible(tmp_path):
     texto = archivo.read_text(encoding="utf-8")
     assert json.loads(texto) == viejas + [nueva] and "Más" in texto and texto.endswith("\n")
     assert not list(tmp_path.glob("*.tmp"))
+
+
+def test_buscar_sin_mayusculas_ni_espacios():
+    emisoras = [{"nombre": "Happy Eighties"}, {"nombre": " Más Gasolina F.M. "}]
+    assert buscar(emisoras, "  más gasolina f.m.") == 1
+    with pytest.raises(ErrorConfig, match="Happy Eighties"):
+        buscar(emisoras, "Sing")
+
+
+def test_describir():
+    assert describir({"fuente": {"spotify": "x"}}) == "Spotify"
+    assert describir({"fuente": {"carpeta": "/m/Rock"}}) == "carpeta /m/Rock"
+    assert describir({}) == "fuente desconocida"
+
+
+def test_escribir_la_lista_tal_cual(tmp_path):
+    archivo = tmp_path / "estaciones.json"
+    escribir(archivo, [{"nombre": "Más"}])
+    assert json.loads(archivo.read_text(encoding="utf-8")) == [{"nombre": "Más"}] and "Más" in archivo.read_text()

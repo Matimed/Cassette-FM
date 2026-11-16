@@ -119,9 +119,37 @@ def voces_disponibles(alias: Mapping[str, str], emisoras: list[dict]) -> list[di
             for a, v in alias.items() if (i := idioma_de_voz(v)) is not None]
 
 
-def guardar(archivo: Path, emisoras: list[dict], nueva: dict) -> None:
-    """Reescribe `estaciones.json` con la emisora nueva al final (escritura atómica: nunca queda a medias)."""
+def buscar(emisoras: list[dict], nombre: str) -> int:
+    """El índice de la emisora que se llama `nombre` (sin distinguir mayúsculas ni espacios alrededor)."""
+    buscado = _normalizar(nombre.strip())
+    nombres = []
+    for i, e in enumerate(emisoras):
+        otro = e.get("nombre") if isinstance(e, dict) else None
+        if isinstance(otro, str):
+            if _normalizar(otro.strip()) == buscado:
+                return i
+            nombres.append(otro.strip())
+    raise ErrorConfig(f"no hay ninguna emisora que se llame «{nombre.strip()}» (hay: {', '.join(nombres) or 'ninguna'})")
+
+
+def describir(emisora: dict) -> str:
+    """De dónde sale la música de la emisora, para preguntar antes de borrarla."""
+    fuente = emisora.get("fuente") if isinstance(emisora, dict) else None
+    if isinstance(fuente, dict) and "spotify" in fuente:
+        return "Spotify"
+    if isinstance(fuente, dict) and isinstance(fuente.get("carpeta"), str):
+        return f"carpeta {fuente['carpeta']}"
+    return "fuente desconocida"
+
+
+def escribir(archivo: Path, emisoras: list[dict]) -> None:
+    """Reescribe `estaciones.json` con `emisoras` (escritura atómica: nunca queda a medias)."""
     archivo = Path(archivo)
     tmp = archivo.with_name(archivo.name + ".tmp")
-    tmp.write_text(json.dumps([*emisoras, nueva], ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    tmp.write_text(json.dumps(emisoras, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
     os.replace(tmp, archivo)
+
+
+def guardar(archivo: Path, emisoras: list[dict], nueva: dict) -> None:
+    """Reescribe `estaciones.json` con la emisora nueva al final."""
+    escribir(archivo, [*emisoras, nueva])
