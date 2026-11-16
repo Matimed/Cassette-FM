@@ -39,7 +39,9 @@ probado en real: [`superpowers/specs/2026-11-16-soloist-saltea-temas-design.md`]
 La clave de Soloist sigue en la línea de comando (decisión de CASSETTE-FM-q2ry): nunca mostrar los argumentos del
 proceso (`systemctl status`, `ps` con argumentos). `cassette nueva NOMBRE LINK` crea una emisora de Spotify con un DJ
 de voz propia y la sintoniza ([`superpowers/specs/2026-11-16-emisora-nueva-design.md`](superpowers/specs/2026-11-16-emisora-nueva-design.md));
-próximo paso: un botón en el listado de emisoras del applet que abra un modal con esas opciones.
+el applet tiene "Nueva emisora…", un modal que corre `cassette voces --json` y `cassette nueva`
+([`superpowers/specs/2026-11-16-modal-emisora-nueva-design.md`](superpowers/specs/2026-11-16-modal-emisora-nueva-design.md)).
+Ojo al tocar el applet: `ReloadXlet` recarga `applet.js` pero no `logic.js` (queda en caché hasta reiniciar Cinnamon).
 
 ## Relevamiento previo (leer antes de diseñar)
 
