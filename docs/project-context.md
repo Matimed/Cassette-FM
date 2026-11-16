@@ -43,6 +43,8 @@ el applet tiene "Nueva emisora…", un modal que corre `cassette voces --json` y
 ([`superpowers/specs/2026-11-16-modal-emisora-nueva-design.md`](superpowers/specs/2026-11-16-modal-emisora-nueva-design.md)),
 con ▶ para escuchar la voz elegida ("Hola, soy dora y estás escuchando…": `POST /muestra` del servicio DJ y
 `cassette-dj muestra`; [`superpowers/specs/2026-11-16-muestra-de-voz-design.md`](superpowers/specs/2026-11-16-muestra-de-voz-design.md)).
+`cassette borrar "nombre"` la saca, preguntando antes
+([`superpowers/specs/2026-11-16-borrar-emisora-design.md`](superpowers/specs/2026-11-16-borrar-emisora-design.md)).
 Ojo al tocar el applet: `ReloadXlet` recarga `applet.js` pero no `logic.js` (queda en caché hasta reiniciar Cinnamon).
 
 ## Relevamiento previo (leer antes de diseñar)
