@@ -513,6 +513,7 @@ const DIAL_ANIMACION_MS = 150;
 const DIAL_CIERRE_MS = 3000;        // sin tocar nada, se cierra solo
 const DIAL_AVISO_MS = 2000;         // lo que dura el aviso de "no responde"
 const DIAL_PASO_VOLUMEN = 5;
+const DIAL_ESCALA = 0.85;           // tamaño de todo el dial (logos, textos y recuadro); 1 = el diseño original
 const DIAL_ALTURA = 0.08;           // el borde de arriba de la tira, en fracción del alto del monitor
 const DIAL_ANCHO_TEXTOS = 560;      // ancho fijo del recuadro de los textos (centrado bajo la fila)
 
@@ -583,6 +584,8 @@ class Dial {
         for (const hijo of [this._nombre, this._pista, this._ayuda]) this._textos.add_child(hijo);
         this._tira.add_child(this._fila);
         this._tira.add_child(this._textos);
+        this._tira.set_pivot_point(0.5, 0);       // achica hacia el centro, sin mover el borde de arriba
+        this._tira.set_scale(DIAL_ESCALA, DIAL_ESCALA);
         this._fondo.add_child(this._tira);
         this._fondo.opacity = 0;
         Main.uiGroup.add_child(this._fondo);
@@ -681,7 +684,7 @@ class Dial {
         this._nombre.text = this._actual || "";
         const pista = this._estado.encendida && this._estado.estacion === this._actual ? this._estado.pista : null;
         this._pista.text = pista || " ";
-        this._ayuda.text = "◀ ▶ emisora · ▲ ▼ volumen " + AppletDir.logic.barraVolumen(this._volumen) + " · Esc";
+        this._ayuda.text = AppletDir.logic.barraVolumen(this._volumen);
         this._centrar();
     }
 

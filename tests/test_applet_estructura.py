@@ -160,3 +160,9 @@ def test_el_dial_se_cierra_solo_a_los_3_s_y_con_enter():
     js = _js()
     assert "const DIAL_CIERRE_MS = 3000;" in js
     assert "Clutter.KEY_Return" in js and "Clutter.KEY_KP_Enter" in js
+
+
+def test_el_dial_tiene_una_escala_y_muestra_solo_el_volumen():
+    js = _js()
+    assert "const DIAL_ESCALA = 0.85;" in js and "this._tira.set_scale(DIAL_ESCALA, DIAL_ESCALA)" in js
+    assert "◀ ▶ emisora" not in js       # sin la línea de ayuda: en ese renglón, solo el volumen
