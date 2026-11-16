@@ -892,6 +892,33 @@ def test_encolar_descarta_la_normal_del_borde_aunque_spotify_venga_atrasado(con_
     assert [i.id for i in m.registro.todas()] == [antes["id"]]
 
 
+def test_sacar_de_la_cola_y_encolar_otro_reemplaza_el_antes(con_peticiones):
+    m = con_peticiones
+    est = estacion()
+    m.p.al_sintonizar(est)
+    fin, antes = _registrar_antes(m, est)
+    m.reloj.t += 10                                      # lo sacaron de la cola y encolaron otro
+    _, otro = _registrar_antes(m, est, OTRO, fin=fin)
+    assert [(i.id, i.pista_destino) for i in m.registro.todas()] == [(otro["id"], OTRO.clave)]
+
+
+def test_encolar_otro_cancela_el_antes_en_preparacion(con_peticiones):
+    m = con_peticiones
+    est = estacion()
+    m.p.al_sintonizar(est)
+    fin = _fin_del_tema(est, T0)
+    m.p.al_encolado(PEDIDO, est, fin)
+    m.p.paso()
+    [antes] = _peticiones(m)
+    m.p.al_encolado(OTRO, est, fin)
+    m.p.paso()
+    assert antes["id"] in m.cliente.cancelados
+    assert [p["siguiente"]["titulo"] for p in _peticiones(m)] == ["Bohemian Rhapsody", "SOS"]
+    m.p.al_encolado(PEDIDO, est, fin)                    # vuelve a ser el próximo: se pide de nuevo
+    m.p.paso()
+    assert [p["siguiente"]["titulo"] for p in _peticiones(m)][-1] == "Bohemian Rhapsody"
+
+
 def test_saltear_hasta_el_pedido_descarta_el_antes_y_pide_el_despues(con_peticiones):
     m = con_peticiones
     est = estacion()

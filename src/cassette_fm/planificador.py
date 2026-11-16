@@ -146,7 +146,8 @@ class Planificador:
             if self._apagado or self._estacion is None or self._estacion.nombre != estacion.nombre \
                     or pista.clave in self._encolados:
                 return
-            self._encolados.add(pista.clave)
+            self._olvidar_encolados(self._encolados)    # el próximo es otro: lo encolado antes lo sacaron de la cola
+            self._encolados = {pista.clave}
             if not _con_nombre(pista):
                 return
             ahora = self._reloj()
@@ -189,6 +190,21 @@ class Planificador:
             siguiente, inicio = next(transiciones(estacion, nuevo.inicio + 0.001))
             if _con_nombre(siguiente):
                 self._pendientes.append(_Peticion(estacion.nombre, "despues", siguiente, inicio, nuevo.pista, clave))
+
+    def _olvidar_encolados(self, claves: set[str]) -> None:
+        """Con el lock tomado: los anuncios "antes" de esos pedidos (pendientes, en preparación o reservados) ya no
+        van a sonar."""
+        if not claves:
+            return
+        self._pendientes = [p for p in self._pendientes if not (p.modo == "antes" and p.pedido in claves)]
+        for i in self._registro.todas():
+            if i.peticion == "antes" and i.pista_destino in claves:
+                self._registro.quitar(i)
+        t = self._trabajo
+        if t is not None and t.peticion == "antes" and t.pedido in claves:
+            self._a_cancelar.append(t.id)
+            self._trabajo = None
+            self._guardar()
 
     # --- pedido manual ---
 
