@@ -44,7 +44,7 @@ class Estacion:
     nombre: str
     pistas: tuple[Pista, ...]
     fuente: str = "carpeta"   # "carpeta" o "spotify": define qué reproductor la hace sonar
-    corrimiento: float = 0.0  # segundos que la agenda va atrasada por los pedidos que ya sonaron
+    corrimiento: float = 0.0  # segundos que se corrió la agenda: + por los pedidos que sonaron, − por los salteos
     pedidos: tuple[Pedido, ...] = ()   # pedidos en curso, en orden (ver agenda.secuencia)
 
 

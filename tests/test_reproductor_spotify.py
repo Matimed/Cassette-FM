@@ -1,9 +1,13 @@
+import json
+import time as _time
+from dataclasses import replace
 from itertools import islice
+from pathlib import Path
 
 import pytest
 
-from cassette_fm.agenda import EPOCA, secuencia
-from cassette_fm.biblioteca import Estacion, Pista
+from cassette_fm.agenda import EPOCA, con_pedido, desfase, secuencia, transiciones
+from cassette_fm.biblioteca import Estacion, Pedido, Pista
 from cassette_fm.reproductor_spotify import ReproductorSpotify
 from cassette_fm.spotify.api import ErrorSpotify
 
@@ -219,11 +223,6 @@ def test_si_se_corta_soloist_y_vuelve_sigue():
 
 
 # --- volumen, rampas, desfase y control de la cuenta (tarea 5) ---
-
-import time as _time
-
-from cassette_fm.agenda import transiciones
-
 
 def armar_vol(ajuste_db=0.0, **kw):
     subidas = []
@@ -521,14 +520,6 @@ def test_soloist_caido_dice_tambien_que_puede_haber_vencido():
 
 # --- peticiones por la cola de la app (etapa 7a) ---
 
-import json
-from dataclasses import replace
-from pathlib import Path
-
-from cassette_fm.agenda import con_pedido
-from cassette_fm.biblioteca import Pedido
-
-
 def _items_capturados() -> dict:
     """Los ítems tal como los manda Soloist (captura real de `scripts/capturar-cola-soloist.py`)."""
     items = {}
@@ -671,9 +662,6 @@ def test_item_sin_nombre_es_pedido_sin_cancion():
 
 # --- temas que Soloist saltea o cambia por otra versión ---
 
-from cassette_fm.agenda import desfase  # noqa: E402
-
-
 def _x_y_z(e, reloj):
     x, borde = proximo(e, reloj())
     y, despues = next(transiciones(e, borde + 0.001))
@@ -711,6 +699,31 @@ def test_un_salto_lento_a_un_tema_adelantado_resintoniza():
     reloj.t = borde + 10
     r.manejar_evento(cambio(y.uri))
     assert len(control.llamadas) == 2
+
+
+def test_un_cambio_rapido_con_un_pedido_en_curso_lo_pliega():
+    r, control, reloj, e = en_marcha()
+    x, borde = proximo(e, reloj())
+    r.manejar_evento(cola(item(AJENO)))
+    reloj.t = borde
+    r.manejar_evento(cambio(AJENO, "Encolado", 150000))
+    reloj.t = borde + 0.5                                  # el pedido se corta enseguida y vuelve la agenda
+    r.manejar_evento(cambio(x.uri))
+    nueva, nuevo = r.eventos["agendas"][-1]
+    assert nueva.pedidos == () and nuevo is None and r.pista_actual == x
+
+
+def test_un_cambio_rapido_tras_una_resintonia_no_es_salteo():
+    r, control, reloj, e = en_marcha()
+    borde, x, y, z = _x_y_z(e, reloj)
+    reloj.t = borde
+    r.manejar_evento(cambio(x.uri))
+    reloj.t = borde + 10
+    r.manejar_evento(cambio(y.uri))                        # salto lento: re-sintoniza
+    assert len(control.llamadas) == 2
+    reloj.t += 0.5
+    r.manejar_evento(cambio(z.uri))                        # lo primero tras la re-sintonía no corre la agenda
+    assert r.eventos["agendas"] == []
 
 
 def test_otra_version_del_tema_esperado_cuenta_como_ese():
