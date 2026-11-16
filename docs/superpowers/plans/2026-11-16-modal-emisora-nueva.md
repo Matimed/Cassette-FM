@@ -41,7 +41,7 @@ probada con Node; `applet.js` solo arma widgets y lanza procesos.
 
 ---
 
-### Tarea 1: `cassette voces [--json]`
+### Task 1: `cassette voces [--json]`
 
 **Files:**
 - Modify: `src/cassette_fm/emisora_nueva.py` (función nueva al final de la sección de voces)
@@ -115,7 +115,7 @@ def test_voces_sin_alias_dice_donde_se_definen(tmp_path, monkeypatch, capsys, se
 - [ ] **Paso 5: commit** `cassette voces: los alias que puede usar una emisora nueva, con su idioma`
   (`git commit -- src/cassette_fm/emisora_nueva.py src/cassette_fm/cli.py README.md tests/test_emisora_nueva.py tests/test_cli.py`).
 
-### Tarea 2: lógica del modal en `logic.js`
+### Task 2: lógica del modal en `logic.js`
 
 **Files:**
 - Modify: `applet/cassette-fm@cassette-fm/logic.js` (funciones nuevas, sumadas a `module.exports`)
@@ -207,7 +207,7 @@ test("mensajeDeError", () => {
 - [ ] **Paso 5: commit** `applet: lógica del modal de emisora nueva (voces por idioma, argumentos, errores)`
   (`git commit -- applet/cassette-fm@cassette-fm/logic.js applet/tests/logic.test.js`).
 
-### Tarea 3: el modal en `applet.js`
+### Task 3: el modal en `applet.js`
 
 **Files:**
 - Modify: `applet/cassette-fm@cassette-fm/applet.js`
@@ -266,7 +266,7 @@ def test_el_modal_no_usa_el_combo_de_cinnamon():
 - [ ] **Paso 5: commit** `applet: botón Nueva emisora… con un modal que corre cassette nueva`
   (`git commit -- applet/cassette-fm@cassette-fm/applet.js tests/test_applet_estructura.py`).
 
-### Tarea 4: prueba real en Cinnamon y contexto
+### Task 4: prueba real en Cinnamon y contexto
 
 - [ ] **Paso 1:** recargar el applet:
   `dbus-send --session --dest=org.Cinnamon --type=method_call /org/Cinnamon org.Cinnamon.ReloadXlet string:cassette-fm@cassette-fm string:APPLET`
