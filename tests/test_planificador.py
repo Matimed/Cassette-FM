@@ -948,7 +948,7 @@ def test_otro_pedido_en_el_borde_del_despues_lo_reemplaza_con_su_antes(con_petic
     m.p.paso()
     assert [i.peticion for i in m.registro.todas()] == ["despues"]
     _, antes = _registrar_antes(m, nueva, OTRO, fin=fin + PEDIDO.duracion)   # el segundo es el próximo
-    assert antes["peticion"] == "antes" and antes["anterior"]["titulo"] == "Bohemian Rhapsody"
+    assert antes["peticion"] == "seguidas" and antes["anterior"]["titulo"] == "Bohemian Rhapsody"
     assert [i.id for i in m.registro.todas()] == [antes["id"]]
 
 
@@ -967,7 +967,100 @@ def test_otro_pedido_en_el_borde_cancela_el_despues_en_preparacion(con_peticione
     m.p.al_encolado(OTRO, nueva, fin + PEDIDO.duracion)
     m.p.paso()
     assert despues["id"] in m.cliente.cancelados
-    assert [p["peticion"] for p in _peticiones(m)] == ["despues", "antes"]
+    assert [p["peticion"] for p in _peticiones(m)] == ["despues", "seguidas"]
+
+
+def test_encolar_mientras_suena_un_pedido_pide_seguidas(con_peticiones):
+    m = con_peticiones
+    est = estacion()
+    m.p.al_sintonizar(est)
+    borde = _fin_del_tema(est, T0)
+    nueva = con_pedido(est, PEDIDO, borde)
+    m.reloj.t = borde + 10
+    m.p.al_cambiar_agenda(nueva, nueva.pedidos[0])
+    m.p.al_encolado(OTRO, nueva, borde + PEDIDO.duracion)
+    m.p.paso()
+    [p] = _peticiones(m)
+    assert p["peticion"] == "seguidas" and p["anterior"]["titulo"] == "Bohemian Rhapsody"
+    assert p["siguiente"]["titulo"] == "SOS"
+    m.listo(p["id"])
+    m.p.paso()
+    assert [(i.peticion, i.pista_destino) for i in m.registro.todas()] == [("antes", OTRO.clave)]
+
+
+def test_sacar_el_encolado_sin_poner_otro_descarta_su_antes(con_peticiones):
+    m = con_peticiones
+    est = estacion()
+    m.p.al_sintonizar(est)
+    fin, _ = _registrar_antes(m, est)
+    m.p.al_desencolado(PEDIDO.clave)
+    assert m.registro.todas() == []
+    m.p.al_encolado(PEDIDO, est, fin)                    # lo vuelven a encolar: se avisa de nuevo
+    m.p.paso()
+    assert [p["peticion"] for p in _peticiones(m)] == ["antes", "antes"]
+
+
+def test_desencolar_cancela_el_antes_en_preparacion(con_peticiones):
+    m = con_peticiones
+    est = estacion()
+    m.p.al_sintonizar(est)
+    m.p.al_encolado(PEDIDO, est, _fin_del_tema(est, T0))
+    m.p.paso()
+    [antes] = _peticiones(m)
+    m.p.al_desencolado(PEDIDO.clave)
+    m.p.paso()
+    assert antes["id"] in m.cliente.cancelados
+
+
+def _despues_reservado(m, est):
+    """Un pedido encolado tarde empieza en el borde y su "después" queda reservado para el tema siguiente."""
+    fin = _fin_del_tema(est, T0)
+    m.reloj.t = fin - 10
+    m.p.al_encolado(PEDIDO, est, fin)
+    m.reloj.t = fin
+    nueva = con_pedido(est, PEDIDO, fin)
+    m.p.al_cambiar_agenda(nueva, nueva.pedidos[0])
+    m.p.paso()
+    [despues] = _peticiones(m)
+    m.listo(despues["id"])
+    m.p.paso()
+    assert [i.peticion for i in m.registro.todas()] == ["despues"]
+    return fin, nueva
+
+
+def test_saltear_el_pedido_descarta_su_despues(con_peticiones):
+    m = con_peticiones
+    est = estacion()
+    m.p.al_sintonizar(est)
+    fin, nueva = _despues_reservado(m, est)
+    m.reloj.t = fin + 10                                 # lo saltearon desde la app
+    m.p.al_cambiar_agenda(plegar(nueva, fin + 10), None)
+    m.p.paso()
+    assert m.registro.todas() == []
+
+
+def test_el_despues_de_un_pedido_que_termino_bien_se_queda(con_peticiones):
+    m = con_peticiones
+    est = estacion()
+    m.p.al_sintonizar(est)
+    fin, nueva = _despues_reservado(m, est)
+    termino = fin + PEDIDO.duracion + 1.5                # Spotify un poco atrasado
+    m.reloj.t = termino
+    m.p.al_cambiar_agenda(plegar(nueva, termino), None)
+    m.p.paso()
+    assert [i.peticion for i in m.registro.todas()] == ["despues"]
+
+
+def test_un_pedido_cancela_el_trabajo_normal_de_otra_emisora(con_peticiones):
+    from cassette_fm.planificador import _Trabajo
+    m = con_peticiones
+    est = estacion()
+    m.p.al_sintonizar(est)
+    m.p._trabajo = _Trabajo("normal-de-otra", "OTRA", T0 + 100, T0 + 101, "x", T0, 30.0)
+    m.p.al_encolado(PEDIDO, est, _fin_del_tema(est, T0))
+    m.p.paso()
+    m.p.paso()
+    assert "normal-de-otra" in m.cliente.cancelados
 
 
 def test_saltear_hasta_el_pedido_descarta_el_antes_y_pide_el_despues(con_peticiones):

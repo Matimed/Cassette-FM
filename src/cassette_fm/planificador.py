@@ -49,6 +49,7 @@ class _Peticion:
     inicio_tema: float
     anterior: Pista | None
     pedido: str                  # clave del tema pedido
+    seguidas: bool = False       # un "antes" cuyo anterior también es un pedido: el DJ cierra uno y abre el otro
 
 
 def _firma(estacion: Estacion) -> str:
@@ -61,6 +62,16 @@ def _firma(estacion: Estacion) -> str:
 def _misma_agenda(a: str, b: str) -> bool:
     (sha_a, _, total_a), (sha_b, _, total_b) = a.partition("|"), b.partition("|")
     return sha_a == sha_b and abs(float(total_a or 0) - float(total_b or 0)) <= _TOLERANCIA_CORRIMIENTO
+
+
+def _empieza_cerca(estacion: Estacion, clave: str, inicio: float, tolerancia: float) -> bool:
+    """¿El tema `clave` empieza en la agenda de `estacion` a menos de `tolerancia` de `inicio`?"""
+    for pista, cuando in transiciones(estacion, inicio - tolerancia):
+        if cuando > inicio + tolerancia:
+            return False
+        if pista.clave == clave:
+            return True
+    return False
 
 
 def _con_nombre(pista: Pista | None) -> bool:
@@ -159,8 +170,19 @@ class Planificador:
             if fin_actual - ahora < self._configuracion(estacion.nombre).peticion_margen_segundos:
                 return
             anterior = next(secuencia(estacion, ahora))[0]
-            self._pendientes.append(_Peticion(estacion.nombre, "antes", pista, fin_actual,
-                                              anterior if _con_nombre(anterior) else None, pista.clave))
+            nombrado = anterior if _con_nombre(anterior) else None
+            seguidas = nombrado is not None and any(p.pista.clave == anterior.clave and p.inicio <= ahora
+                                                    for p in estacion.pedidos)
+            self._pendientes.append(_Peticion(estacion.nombre, "antes", pista, fin_actual, nombrado, pista.clave,
+                                              seguidas))
+
+    def al_desencolado(self, clave: str) -> None:
+        """Sacaron de la cola el encolado ya avisado sin que empezara: su "antes" ya no va a sonar."""
+        with self._lock:
+            if clave not in self._encolados:
+                return
+            self._encolados.discard(clave)
+            self._olvidar_anuncios("antes", lambda _, destino, __: destino == clave)
 
     def al_cambiar_agenda(self, estacion: Estacion, nuevo: Pedido | None) -> None:
         """La agenda cambió por pedidos (`nuevo`: el que acaba de empezar). Si su anuncio "antes" no está listo,
@@ -172,6 +194,11 @@ class Planificador:
         for nombre in cambiada:
             self._descartar(nombre)
         if nuevo is None:
+            # terminaron pedidos: el "después" de uno salteado apunta a un tema que ya no empieza donde se reservó
+            tolerancia = self._configuracion(estacion.nombre).tolerancia_desfase_segundos
+            with self._lock:
+                self._olvidar_anuncios("despues", lambda nombre, destino, inicio: nombre == estacion.nombre
+                                       and not _empieza_cerca(estacion, destino, inicio, tolerancia))
             return
         clave = nuevo.pista.clave
         with self._lock:
@@ -523,7 +550,7 @@ class Planificador:
         id_ = uuid.uuid4().hex
         with self._lock:
             pedido = armar_pedido(id_, p.estacion, Hueco(p.pista, p.inicio_tema, inicio_voz, p.anterior), cfg,
-                                  self._recientes.get(p.estacion, []), peticion=p.modo)
+                                  self._recientes.get(p.estacion, []), peticion="seguidas" if p.seguidas else p.modo)
         try:
             devuelto = self._cliente.enviar(pedido)
             if devuelto != id_:
@@ -534,6 +561,8 @@ class Planificador:
             return self._fallo(e, cfg)
         self._ok()
         with self._lock:
+            if self._trabajo is not None and not self._trabajo.peticion:
+                self._a_cancelar.append(self._trabajo.id)    # el normal de otra emisora: si no, queda en el servicio
             self._trabajo = _Trabajo(id_, p.estacion, p.inicio_tema, inicio_voz, p.pista.clave, ahora,
                                      cfg.duracion_maxima_segundos, peticion=p.modo, pedido=p.pedido)
             self._guardar()
