@@ -177,7 +177,7 @@ servicio no responde, la música sigue igual: un único aviso en el log, reinten
 | `frecuencia.modo` / `min` / `max` | `temas` / 2 / 3 | cada cuánto habla (en `temas`, enteros ≥ 1) |
 | `margen_minutos` | 6 | antes de esto no se agenda nada |
 | `peticion_margen_segundos` | 30 | lo mínimo que tiene que quedar del tema actual para anunciar una petición antes |
-| `voz` / `idioma` / `personalidad` | `em_santa` / `es` / vacía | cómo habla la estación |
+| `voz` / `idioma` / `personalidad` | `af_heart` / `en` / vacía | cómo habla la estación (`voz`: mejor un [alias](#voces-con-nombre-alias)) |
 | `timeout_http_segundos` | 10 | espera máxima por una respuesta del servicio |
 | `espera_reintento_segundos` / `espera_reintento_maxima_segundos` | 5 / 300 | espera tras un fallo y su tope (se duplica) |
 | `espera_trabajo_maxima_segundos` | 600 | un pedido que tarda más que esto se cancela |
@@ -233,6 +233,44 @@ configura en `~/.config/cassette-dj/lexico.toml`:
 ```
 
 La velocidad de la voz de cada emisora se pone con `velocidad` (0,5 a 2) en su `"dj"` de `estaciones.json`; si falta, vale la del servicio (`velocidad` de `cassette-dj`, 1,05).
+
+### Voces con nombre (alias)
+
+Cada emisora dice con qué voz habla su DJ. En lugar de poner el nombre crudo del modelo (`am_puck`,
+`piper:es_AR-daniela-high`) conviene darle un **alias** una sola vez y usar el alias en las emisoras: se lee mejor,
+para cambiar la voz de varias emisoras alcanza con tocar una línea y el DJ comparte lo que aprendió de esa voz (cuántas
+palabras dice por segundo, para no pasarse de `duracion_maxima_segundos`) entre el alias y el nombre crudo.
+
+**1. Definir los alias** en la tabla `[voces]` de `~/.config/cassette-dj/config.toml` (el del servicio DJ):
+
+```toml
+[voces]
+puck = "am_puck"                         # una voz de Kokoro
+daniela = "piper:es_AR-daniela-high"     # una voz de Piper: "piper:" + el nombre del modelo
+alex_santa = "em_alex+em_santa"          # una mezcla de voces de Kokoro (promedio), con "+"
+```
+
+- El alias solo puede tener letras, números, `_`, `.` y `-`.
+- `cassette-dj voces` lista todo lo que se puede usar: las voces de Kokoro, los modelos de Piper que haya en
+  `~/.local/share/cassette-dj/modelos/piper/` y los alias. Para escuchar una antes de elegirla:
+  `cassette-dj voz-prueba --voz daniela` vuelve a decir los últimos guiones con esa voz.
+- Para sumar una voz de Piper, bajá su modelo a esa carpeta (las voces están en
+  [rhasspy/piper-voices](https://huggingface.co/rhasspy/piper-voices)):
+  `.venv/bin/python -m piper.download_voices --download-dir ~/.local/share/cassette-dj/modelos/piper es_MX-claude-high`.
+- Después de tocar `[voces]`: `systemctl --user restart cassette-dj` (el servicio lee los alias al arrancar).
+
+**2. Usarlos en las emisoras**, en el `"dj"` de cada una en `~/.config/cassette-fm/estaciones.json` (ver
+[Emisoras](#emisoras)); la `velocidad` es opcional:
+
+```json
+{"nombre": "Más Gasolina F.M.", "fuente": {"spotify": "…"}, "dj": {"idioma": "es", "voz": "daniela", "velocidad": 0.9}}
+```
+
+Y, si querés, la voz de las emisoras que no tengan una propia, en `[dj]` del `config.toml` de la radio:
+`voz = "heart"`. Después de tocar `estaciones.json` alcanza con `cassette rescan` (sin cortar la música).
+
+Si una emisora usa un alias que no existe, sus intervenciones fallan (queda en `cassette-dj guiones` y en el log del
+servicio) y la música sigue sin voz: revisá que el alias esté escrito igual en los dos archivos.
 
 ### Hechos reales en las frases
 
