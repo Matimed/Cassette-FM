@@ -59,6 +59,7 @@ def _nombre_de_entidad(x) -> str | None:
 
 class ReproductorSpotify:
     PASO_RAMPA = 0.05
+    AVISO_REPETIDO_SEGUNDOS = 5.0     # Soloist a veces avisa dos veces el mismo comienzo, con milisegundos de diferencia
 
     pista_actual: Pista | None = None
     al_cambiar_pista: Callable[[Pista, Estacion], None] | None = None
@@ -101,6 +102,7 @@ class ReproductorSpotify:
         self._enviados = 0            # cuántos temas tiene la lista que se le mandó a Spotify
         self._vistos = 0              # cuántos de esos ya empezaron
         self._primero_pendiente = False
+        self._cambio_en = float("-inf")           # cuándo llegó el último track_changed que se tomó
         self._encolados: dict[str, Pista] = {}   # la cola de la app según el último queue_changed, por URI
         self._anunciado: str | None = None        # el encolado próximo que ya se avisó con al_encolado
         self._por_anunciar: Pista | None = None   # el próximo encolado, esperando la posición para avisarlo
@@ -221,7 +223,12 @@ class ReproductorSpotify:
                     return        # lo que sonaba antes en la cuenta o un evento de la sintonía anterior
                 if pista.clave == self._esperado:
                     self._visto_esperado = True
-                repetido = (self._primero_pendiente and self.pista_actual is not None
+                if (not self._primero_pendiente and self.pista_actual is not None
+                        and pista.clave == self.pista_actual.clave
+                        and self._reloj() - self._cambio_en < self.AVISO_REPETIDO_SEGUNDOS):
+                    return        # el mismo comienzo avisado otra vez: plegaría el pedido recién empezado
+                self._cambio_en = self._reloj()
+                repetido =(self._primero_pendiente and self.pista_actual is not None
                             and pista.clave == self.pista_actual.clave)   # la re-sintonía vuelve a empezarlo
                 # la (re)sintonía empezó por un pedido en curso: se retoma, no es un pedido nuevo ni un desfase
                 retomado = (self._primero_pendiente and pista.clave == self._esperado

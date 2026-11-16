@@ -558,6 +558,19 @@ def test_encolado_que_es_de_la_playlist_igual_es_pedido():
     assert len(control.llamadas) == 1
 
 
+def test_el_comienzo_del_pedido_avisado_dos_veces_no_lo_pliega():
+    r, control, reloj, e = en_marcha()
+    siguiente, fin = proximo(e, reloj())
+    r.manejar_evento(cola(de_la_agenda(siguiente)))
+    reloj.t = fin + 4.3                                    # Spotify viene atrasado respecto del reloj
+    r.manejar_evento(cambio(siguiente.uri))
+    reloj.t += 0.018                                       # Soloist avisó el mismo comienzo otra vez
+    r.manejar_evento(cambio(siguiente.uri))
+    ((nueva, pedido),) = r.eventos["agendas"]
+    assert pedido == Pedido(siguiente, fin + 4.3) and r._estacion.pedidos == (pedido,)
+    assert len(control.llamadas) == 1 and [x[0] for x in r.eventos["linea"]].count("pista") == 2
+
+
 def test_tema_de_la_agenda_tras_el_pedido_pliega_y_no_resintoniza():
     r, control, reloj, e = en_marcha()
     siguiente, fin = proximo(e, reloj())
