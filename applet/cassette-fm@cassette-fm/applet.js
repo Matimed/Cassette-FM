@@ -23,10 +23,12 @@ const LIMITE_VOCES_SEGUNDOS = 30;
 const LIMITE_NUEVA_SEGUNDOS = 180;
 const LIMITE_MUESTRA_SEGUNDOS = 60;         // la primera muestra espera que el servicio DJ cargue el modelo
 const LIMITE_SONANDO_SEGUNDOS = 120;
+const LIMITE_EXAMINAR_SEGUNDOS = 600;       // lo que tarda la persona en elegir la imagen
 
 class CassetteApplet extends Applet.TextIconApplet {
     constructor(metadata, orientation, panelHeight, instanceId) {
         super(orientation, panelHeight, instanceId);
+        this.generico = metadata.path + "/generico.png";     // el logo de las emisoras que no tienen uno
         this.estado = null;
         this._firmaMenu = null;
         this._limitador = AppletDir.logic.crearLimitador(ESPERA_RUEDA_MS);
@@ -274,6 +276,17 @@ class DialogoEmisora {
         this._lista.hide();
         caja.add_child(this._lista);
 
+        this._icono = null;             // la imagen elegida para el logo (null: el genérico)
+        this._miniatura = new St.Icon({ icon_size: 48 });
+        this._botonExaminar = new St.Button({ label: "Examinar…", style_class: "dialog-button", can_focus: true });
+        this._botonExaminar.connect("clicked", () => this._alExaminar());
+        this._botonQuitarLogo = new St.Button({ label: "Quitar", style_class: "dialog-button", can_focus: true });
+        this._botonQuitarLogo.connect("clicked", () => {
+            this._icono = null;
+            this._refrescar();
+        });
+        caja.add_child(fila("Logo", this._miniatura, this._botonExaminar, this._botonQuitarLogo));
+
         this._error = new St.Label({ style: "color: #e66;" });
         this._error.clutter_text.line_wrap = true;
         this._error.hide();
@@ -347,6 +360,8 @@ class DialogoEmisora {
             opcion.connect("clicked", () => this._alElegirVoz(voz));
             this._opciones.add_child(opcion);
         }
+        this._miniatura.gicon = Gio.FileIcon.new(Gio.File.new_for_path(this._icono || this._applet.generico));
+        this._botonQuitarLogo.reactive = this._icono !== null;
         const muestra = AppletDir.logic.botonMuestra(this._seleccion.voz, this._fase);
         this._botonMuestra.label = muestra.texto;
         this._botonMuestra.reactive = muestra.activo;
@@ -390,6 +405,23 @@ class DialogoEmisora {
         });
     }
 
+    // "Examinar…": zenity elige la imagen. Mientras está abierto, el modal suelta el teclado y el mouse y se esconde
+    // (si no, la ventana de zenity queda tapada e inalcanzable); al cerrarse, vuelve.
+    _alExaminar() {
+        this._cortarMuestra();
+        this._dialogo.popModal();
+        this._dialogo.hide();
+        this._applet._correr("zenity", AppletDir.logic.argumentosExaminar(), LIMITE_EXAMINAR_SEGUNDOS, (r) => {
+            if (this._cerrado) return;
+            this._dialogo.show();
+            this._dialogo.pushModal();
+            const ruta = r.error ? null : AppletDir.logic.rutaElegida(r.codigo, r.stdout);
+            if (ruta) this._icono = ruta;
+            else if (r.error) this._mostrarError("No pude abrir el selector de imágenes: " + r.error);
+            this._refrescar();
+        });
+    }
+
     _cortarMuestra() {
         this._muestra++;
         if (this._proceso) this._proceso.force_exit();
@@ -416,8 +448,8 @@ class DialogoEmisora {
             campo.reactive = !si;
             campo.clutter_text.editable = !si;
         }
-        for (const boton of [this._botonVoz, this._botonMuestra, ...this._botonesIdioma,
-                             ...this._opciones.get_children()])
+        for (const boton of [this._botonVoz, this._botonMuestra, this._botonExaminar, this._botonQuitarLogo,
+                             ...this._botonesIdioma, ...this._opciones.get_children()])
             boton.reactive = !si;
         if (!si) this._refrescar();     // el ▶ vuelve a depender de la voz elegida
     }
@@ -437,7 +469,7 @@ class DialogoEmisora {
         }
         this._error.hide();
         this._ocupado(true);
-        const argumentos = AppletDir.logic.argumentosNueva(nombre, link, this._seleccion);
+        const argumentos = AppletDir.logic.argumentosNueva(nombre, link, this._seleccion, this._icono);
         this._applet._correr("cassette", argumentos, LIMITE_NUEVA_SEGUNDOS, (r) => {
             if (!r.error && r.codigo === 0) {
                 this._cerrar();

@@ -112,11 +112,25 @@ function faltante(nombre, link) {
 
 // Los argumentos de `cassette nueva`, uno por elemento: el proceso se lanza sin shell. Las opciones van antes de
 // "--" para que un nombre que empieza con "-" no se tome como opción.
-function argumentosNueva(nombre, link, seleccion) {
+function argumentosNueva(nombre, link, seleccion, icono) {
     const args = ["nueva"];
     if (seleccion.voz) args.push("--voz", seleccion.voz.alias);
     if (seleccion.idioma !== "") args.push("--idioma", seleccion.idioma);
+    if (icono) args.push("--icono=" + icono);
     return args.concat(["--", nombre, link]);
+}
+
+// "Examinar…" del logo: zenity elige la imagen (el filtro distingue mayúsculas).
+function argumentosExaminar() {
+    return ["--file-selection", "--title=Logo de la emisora",
+            "--file-filter=Imágenes | *.png *.jpg *.jpeg *.svg *.PNG *.JPG *.JPEG *.SVG"];
+}
+
+// La ruta que eligió zenity, o null si se canceló (sale con 1) o no dijo nada.
+function rutaElegida(codigo, stdout) {
+    if (codigo !== 0) return null;
+    const ruta = (stdout || "").replace(/\n+$/, "");
+    return ruta.trim() ? ruta : null;
 }
 
 function mensajeDeError(codigo, stdout, stderr) {
@@ -152,6 +166,6 @@ if (typeof module !== "undefined") {
     module.exports = {
         etiqueta, tooltip, accionDeRueda, crearLimitador, pedidoHttp, parsearRespuesta,
         parsearVoces, idiomaBase, vocesDelIdioma, etiquetaDeVoz, elegirVoz, elegirIdioma, faltante, argumentosNueva,
-        mensajeDeError, argumentosMuestra, botonMuestra, rutaDeMuestra,
+        mensajeDeError, argumentosMuestra, botonMuestra, rutaDeMuestra, argumentosExaminar, rutaElegida,
     };
 }

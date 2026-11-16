@@ -169,3 +169,18 @@ test("rutaDeMuestra", () => {
   assert.equal(L.rutaDeMuestra("algo raro"), null);
   assert.equal(L.rutaDeMuestra(""), null);
 });
+
+test("argumentosNueva con logo: --icono pegado, antes del --", () => {
+  const link = "https://open.spotify.com/playlist/4iH?si=b5";
+  assert.deepEqual(L.argumentosNueva("S", link, { idioma: "es", voz: VOCES[2] }, "/home/x/Mis imágenes/á.png"),
+                   ["nueva", "--voz", "dora", "--idioma", "es", "--icono=/home/x/Mis imágenes/á.png", "--", "S", link]);
+  assert.deepEqual(L.argumentosNueva("S", link, { idioma: "", voz: null }, null), ["nueva", "--", "S", link]);
+});
+
+test("argumentosExaminar y rutaElegida", () => {
+  assert.deepEqual(L.argumentosExaminar(), ["--file-selection", "--title=Logo de la emisora",
+                                            "--file-filter=Imágenes | *.png *.jpg *.jpeg *.svg *.PNG *.JPG *.JPEG *.SVG"]);
+  assert.equal(L.rutaElegida(0, "/a/b c.png\n"), "/a/b c.png");
+  assert.equal(L.rutaElegida(1, ""), null);
+  assert.equal(L.rutaElegida(0, "\n"), null);
+});

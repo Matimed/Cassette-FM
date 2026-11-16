@@ -99,3 +99,11 @@ def test_el_modal_tiene_muestra_de_voz_y_la_corta():
     for donde in ("_cerrar()", "_alElegirVoz(voz)", "_alElegirIdioma(idioma)", "_ocupado(si)"):
         cuerpo = js[js.index("    " + donde + " {"):]
         assert "this._cortarMuestra()" in cuerpo[:cuerpo.index("\n    }\n")], donde
+
+
+def test_el_modal_elige_el_logo_con_zenity_y_lo_bloquea_al_crear():
+    js = _js()
+    assert '"zenity"' in js and "argumentosExaminar" in js and "rutaElegida" in js
+    cuerpo = js[js.index("    _ocupado(si) {"):]
+    cuerpo = cuerpo[:cuerpo.index("\n    }\n")]
+    assert "this._botonExaminar" in cuerpo and "this._botonQuitarLogo" in cuerpo
