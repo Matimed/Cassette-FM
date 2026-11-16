@@ -21,6 +21,10 @@ class _ErrorCli(Exception):
     pass
 
 
+class _ServicioCaido(_ErrorCli):
+    """El servicio no está corriendo (nadie escucha en el puerto)."""
+
+
 def _linea_estado(estado: dict) -> str:
     vol = f"(vol {estado['volumen']})"
     if not estado["encendida"]:
@@ -46,8 +50,8 @@ def _llamar(puerto: int, metodo: str, ruta: str, cuerpo: dict | None = None, tim
         raise _ErrorCli(mensaje)
     except urllib.error.URLError as e:
         if isinstance(e.reason, (ConnectionRefusedError, FileNotFoundError)):
-            raise _ErrorCli("cassette-fm no está corriendo. Arrancalo con: "
-                            "systemctl --user start cassette-fm (o cassette serve)")
+            raise _ServicioCaido("cassette-fm no está corriendo. Arrancalo con: "
+                                 "systemctl --user start cassette-fm (o cassette serve)")
         raise _ErrorCli(f"no se pudo hablar con cassette-fm: {e.reason}")
     except (ConnectionError, TimeoutError, http.client.HTTPException):
         raise _ErrorCli("el servicio cortó la conexión sin responder "
@@ -313,6 +317,7 @@ def _nueva(args, cfg, rutas, puerto: int) -> int:
     from cassette_fm.spotify.api import ErrorSpotify
     try:
         definidas = emisora_nueva.leer_crudo(rutas.emisoras)
+        emisoras.leer_emisoras(rutas.emisoras, cfg.dj)     # si ya está roto, la radio no la vería: no se toca
         nombre = emisora_nueva.chequear_nombre(definidas, args.nombre)
         playlist = emisoras.playlist_de(args.playlist)
         if playlist is None:
@@ -320,6 +325,8 @@ def _nueva(args, cfg, rutas, puerto: int) -> int:
         archivo_dj = rutas_dj().config
         alias = cargar_config_dj(archivo_dj).voces if archivo_dj.exists() else {}
         eleccion = emisora_nueva.elegir_voz(alias, emisora_nueva.voces_en_uso(definidas), args.idioma, args.voz)
+        dj = {"idioma": eleccion.idioma, "voz": eleccion.voz}
+        config.campos_dj(rutas.emisoras, dj, f'"{nombre}".dj.', cfg.dj)   # lo que la radio aceptará al leerla
         pistas = servicio.catalogo_spotify(cfg, rutas).pistas(playlist)
         if not pistas:
             raise config.ErrorConfig("la playlist está vacía (o no tiene temas que se puedan reproducir)")
@@ -328,14 +335,17 @@ def _nueva(args, cfg, rutas, puerto: int) -> int:
         return 1
     emisora_nueva.guardar(rutas.emisoras, definidas, {
         "nombre": nombre, "fuente": {"spotify": args.playlist.strip()},
-        "dj": {"idioma": eleccion.idioma, "voz": eleccion.voz}})
+        "dj": dj})
     repetida = " (otra emisora ya usa esta voz: no quedaban libres)" if eleccion.repetida else ""
     print(f"✓ {nombre} ({len(pistas)} temas) · DJ: {eleccion.voz} ({eleccion.idioma}){repetida}")
     try:
         _llamar(puerto, "POST", "/rescan", timeout=120)
-    except _ErrorCli as e:
+    except _ServicioCaido as e:
         print(f"La emisora quedó guardada y aparece cuando arranque la radio ({e})")
         return 0
+    except _ErrorCli as e:
+        print(f"La emisora quedó guardada, pero la radio no pudo releer las emisoras: {e}", file=sys.stderr)
+        return 1
     try:
         print(_linea_estado(_llamar(puerto, "POST", "/sintonizar", {"estacion": nombre})))
     except _ErrorCli as e:

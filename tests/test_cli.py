@@ -553,7 +553,7 @@ def test_nueva_con_el_servicio_caido_queda_guardada(tmp_path, monkeypatch, capsy
     from cassette_fm import cli
 
     def caido(*a, **kw):
-        raise cli._ErrorCli("cassette-fm no está corriendo. Arrancalo con: systemctl --user start cassette-fm")
+        raise cli._ServicioCaido("cassette-fm no está corriendo. Arrancalo con: systemctl --user start cassette-fm")
     r, _ = _nueva(monkeypatch, tmp_path, servidor_http, llamar=caido)
     assert main(["nueva", "Synthwave F.M.", PLAYLIST_NUEVA]) == 0
     assert _json.loads(r.emisoras.read_text())[-1]["nombre"] == "Synthwave F.M."
@@ -571,3 +571,32 @@ def test_nueva_que_la_radio_no_puede_sintonizar_lo_dice(tmp_path, monkeypatch, c
     assert main(["nueva", "Synthwave F.M.", PLAYLIST_NUEVA]) == 1
     salida = capsys.readouterr()
     assert "no existe la estación" in salida.err and "cuando arranque" not in salida.out + salida.err
+
+
+def test_nueva_con_una_voz_cruda_mal_escrita_no_guarda(tmp_path, monkeypatch, capsys, servidor_http):
+    r, rutas = _nueva(monkeypatch, tmp_path, servidor_http)
+    antes = r.emisoras.read_text()
+    assert main(["nueva", "X", PLAYLIST_NUEVA, "--voz", "af_sarah "]) == 1     # la radio no arrancaría con esto
+    assert "voz" in capsys.readouterr().err
+    assert servidor_http.pedidos == [] and rutas == [] and r.emisoras.read_text() == antes
+
+
+def test_nueva_con_otra_emisora_invalida_no_baja_ni_guarda(tmp_path, monkeypatch, capsys, servidor_http):
+    import json as _json
+    r, rutas = _nueva(monkeypatch, tmp_path, servidor_http)
+    r.emisoras.write_text(_json.dumps([{**HAPPY[0], "dj": {"idioma": "fr", "voz": "puck"}}]))
+    antes = r.emisoras.read_text()
+    assert main(["nueva", "X", PLAYLIST_NUEVA]) == 1
+    assert "idioma" in capsys.readouterr().err
+    assert servidor_http.pedidos == [] and rutas == [] and r.emisoras.read_text() == antes
+
+
+def test_nueva_con_un_rescan_que_falla_lo_dice(tmp_path, monkeypatch, capsys, servidor_http):
+    from cassette_fm import cli
+
+    def rescan_roto(puerto, metodo, ruta, cuerpo=None, timeout=10):
+        raise cli._ErrorCli("estaciones.json: algo anda mal")
+    _nueva(monkeypatch, tmp_path, servidor_http, llamar=rescan_roto)
+    assert main(["nueva", "Synthwave F.M.", PLAYLIST_NUEVA]) == 1
+    salida = capsys.readouterr()
+    assert "algo anda mal" in salida.err and "cuando arranque" not in salida.out + salida.err
