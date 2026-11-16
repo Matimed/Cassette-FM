@@ -5,7 +5,7 @@ import pytest
 
 from cassette_fm.config import ErrorConfig
 from cassette_fm.emisora_nueva import (Eleccion, chequear_nombre, elegir_voz, guardar, idioma_de_voz, leer_crudo,
-                                       voces_en_uso)
+                                       voces_disponibles, voces_en_uso)
 
 ALIAS = {"puck": "am_puck", "sarah": "af_sarah", "dora": "ef_dora", "daniela": "piper:es_AR-daniela-high",
          "alex_santa": "em_alex+em_santa", "emma": "bf_emma", "siwis": "ff_siwis"}
@@ -85,6 +85,18 @@ def test_chequear_nombre_repetido_sin_mayusculas_ni_espacios():
 def test_voces_en_uso():
     emisoras = [{"nombre": "A", "dj": {"voz": "puck"}}, {"nombre": "B"}, {"nombre": "C", "dj": {"idioma": "es"}}]
     assert voces_en_uso(emisoras) == ["puck"]
+
+
+def test_voces_disponibles_con_idioma_y_emisoras_que_las_usan():
+    emisoras = [{"nombre": " Sing ", "dj": {"voz": "dora"}}, {"nombre": "Otra", "dj": {"voz": "dora"}},
+                {"nombre": "Sin DJ"}]
+    assert voces_disponibles(ALIAS, emisoras) == [
+        {"alias": "puck", "voz": "am_puck", "idioma": "en", "emisoras": []},
+        {"alias": "sarah", "voz": "af_sarah", "idioma": "en", "emisoras": []},
+        {"alias": "dora", "voz": "ef_dora", "idioma": "es", "emisoras": ["Sing", "Otra"]},
+        {"alias": "daniela", "voz": "piper:es_AR-daniela-high", "idioma": "es", "emisoras": []},
+        {"alias": "alex_santa", "voz": "em_alex+em_santa", "idioma": "es", "emisoras": []},
+        {"alias": "emma", "voz": "bf_emma", "idioma": "en-gb", "emisoras": []}]     # siwis (francés) no sirve
 
 
 def test_guardar_agrega_al_final_y_es_json_legible(tmp_path):

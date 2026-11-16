@@ -600,3 +600,27 @@ def test_nueva_con_un_rescan_que_falla_lo_dice(tmp_path, monkeypatch, capsys, se
     assert main(["nueva", "Synthwave F.M.", PLAYLIST_NUEVA]) == 1
     salida = capsys.readouterr()
     assert "algo anda mal" in salida.err and "cuando arranque" not in salida.out + salida.err
+
+
+def test_voces_json_para_el_applet(tmp_path, monkeypatch, capsys, servidor_http):
+    import json as _json
+    _nueva(monkeypatch, tmp_path, servidor_http)
+    assert main(["voces", "--json"]) == 0
+    assert _json.loads(capsys.readouterr().out) == [
+        {"alias": "puck", "voz": "am_puck", "idioma": "en", "emisoras": ["Happy Eighties"]},
+        {"alias": "sarah", "voz": "af_sarah", "idioma": "en", "emisoras": []}]
+
+
+def test_voces_sin_estaciones_json_lista_igual(tmp_path, monkeypatch, capsys, servidor_http):
+    r, _ = _nueva(monkeypatch, tmp_path, servidor_http)
+    r.emisoras.unlink()
+    assert main(["voces"]) == 0
+    salida = capsys.readouterr().out
+    assert "puck" in salida and "am_puck" in salida and "sarah" in salida
+
+
+def test_voces_sin_alias_dice_donde_se_definen(tmp_path, monkeypatch, capsys, servidor_http):
+    _nueva(monkeypatch, tmp_path, servidor_http)
+    (tmp_path / "xdg" / "cassette-dj" / "config.toml").write_text("")
+    assert main(["voces"]) == 0
+    assert "[voces]" in capsys.readouterr().out

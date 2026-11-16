@@ -107,6 +107,18 @@ def elegir_voz(alias: Mapping[str, str], en_uso: list[str], idioma: str | None =
     return Eleccion(elegido, utiles[elegido], menos > 0)
 
 
+def voces_disponibles(alias: Mapping[str, str], emisoras: list[dict]) -> list[dict]:
+    """Los alias que sirven para una emisora (hablan inglés o español), con su voz, su idioma y las emisoras que ya
+    los usan; en el orden del config (para `cassette voces` y el modal del applet)."""
+    usos: dict[str, list[str]] = {}
+    for e in emisoras:
+        dj = e.get("dj") if isinstance(e, dict) else None
+        if isinstance(dj, dict) and isinstance(dj.get("voz"), str) and isinstance(e.get("nombre"), str):
+            usos.setdefault(dj["voz"], []).append(e["nombre"].strip())
+    return [{"alias": a, "voz": v, "idioma": i, "emisoras": usos.get(a, [])}
+            for a, v in alias.items() if (i := idioma_de_voz(v)) is not None]
+
+
 def guardar(archivo: Path, emisoras: list[dict], nueva: dict) -> None:
     """Reescribe `estaciones.json` con la emisora nueva al final (escritura atómica: nunca queda a medias)."""
     archivo = Path(archivo)

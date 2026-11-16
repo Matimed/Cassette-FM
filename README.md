@@ -391,7 +391,9 @@ usar una de esas, copiala a una playlist propia.
 - `cassette nueva "Synthwave F.M." <link de la playlist>` crea la emisora y la sintoniza: la agrega a
   `estaciones.json` con un DJ de voz propia (un alias de `[voces]` de cassette-dj que no use otra emisora, al azar;
   el idioma sale de la voz). `--voz sarah` la elige, `--idioma es` pide una en español. Si la playlist no es tuya
-  o está vacía, no se guarda nada.
+  o está vacía, no se guarda nada. Dos emisoras pueden usar la misma playlist: cada una va por otro tema.
+- `cassette voces` lista los alias que puede usar una emisora nueva, con su idioma y las emisoras que ya los usan
+  (`--json`, para el applet).
 - Los temas se guardan en `~/.cache/cassette-fm/spotify.json`: el rescan solo los vuelve a bajar si la playlist cambió,
   y si Spotify no responde usa los guardados.
 - Suenan con **Spotify Soloist** (cliente oficial de Spotify sin ventana, ~45 MB de RAM), que corre como servicio de

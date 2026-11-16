@@ -82,6 +82,8 @@ def _armar_parser() -> argparse.ArgumentParser:
     nueva.add_argument("playlist", help="el link o la URI de la playlist")
     nueva.add_argument("--voz", help="un alias de [voces] de cassette-dj (por defecto, uno libre al azar)")
     nueva.add_argument("--idioma", choices=["es", "en"], help="el idioma del DJ (por defecto, el de la voz)")
+    voces = sub.add_parser("voces", help="las voces con alias que puede usar una emisora nueva")
+    voces.add_argument("--json", action="store_true", help="en JSON (para el applet)")
     spotify = sub.add_parser("spotify", help="Spotify como fuente de emisoras: sesión y estado")
     spotify_sub = spotify.add_subparsers(dest="accion", required=True)
     spotify_sub.add_parser("login", help="abre el navegador para darle permiso a cassette-fm en tu cuenta")
@@ -354,6 +356,27 @@ def _nueva(args, cfg, rutas, puerto: int) -> int:
     return 0
 
 
+def _voces(args, rutas) -> int:
+    from cassette_fm import emisora_nueva
+    from cassette_fm.dj.config import cargar_config_dj, rutas_dj
+    try:
+        definidas = emisora_nueva.leer_crudo(rutas.emisoras) if rutas.emisoras.exists() else []
+    except config.ErrorConfig as e:
+        print(e, file=sys.stderr)
+        return 1
+    archivo_dj = rutas_dj().config
+    alias = cargar_config_dj(archivo_dj).voces if archivo_dj.exists() else {}
+    voces = emisora_nueva.voces_disponibles(alias, definidas)
+    if args.json:
+        print(json.dumps(voces, ensure_ascii=False))
+        return 0
+    if not voces:
+        print("no hay voces con alias: se definen en [voces] del config de cassette-dj (cassette-dj voces las lista)")
+    for v in voces:
+        print(f"{v['alias']:<12} {v['voz']:<28} {v['idioma']:<6} {', '.join(v['emisoras'])}".rstrip())
+    return 0
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = _armar_parser()
     args = parser.parse_args(argv)
@@ -388,6 +411,8 @@ def main(argv: list[str] | None = None) -> int:
         return 0
     if args.comando == "nueva":
         return _nueva(args, cfg, rutas, getattr(args, "puerto", cfg.puerto))
+    if args.comando == "voces":
+        return _voces(args, rutas)
     try:
         _ejecutar(args, getattr(args, "puerto", cfg.puerto))
     except _ErrorCli as e:
