@@ -154,7 +154,12 @@ class CassetteApplet extends Applet.TextIconApplet {
             if (terminado) return;
             terminado = true;
             if (!vencio) Mainloop.source_remove(vencimiento);
-            callback(AppletDir.logic.parsearRespuesta(texto));
+            try {
+                callback(AppletDir.logic.parsearRespuesta(texto));
+            } catch (e) {
+                // si no, el catch de afuera se la traga sin rastro
+                global.logError("cassette-fm: " + e + "\n" + e.stack);
+            }
         };
         const vencimiento = Mainloop.timeout_add(TIMEOUT_MS, () => {
             cancelable.cancel();
@@ -525,6 +530,19 @@ function _centroDial(d) {
     return Math.sign(d) * (primero + (Math.abs(d) - 1) * DIAL_PASO);
 }
 
+// La fila se desvanece hacia los dos costados (un degradado del alfa, de 0 en los bordes a entero en el centro).
+function _difuminado() {
+    const efecto = new Clutter.ShaderEffect({ shader_type: Clutter.ShaderType.FRAGMENT_SHADER });
+    efecto.set_shader_source("uniform sampler2D tex;"
+        + " void main() {"
+        + "   vec4 c = texture2D(tex, cogl_tex_coord_in[0].st);"
+        + "   float x = cogl_tex_coord_in[0].s;"
+        + "   cogl_color_out = c * smoothstep(0.0, 0.38, x) * smoothstep(1.0, 0.62, x);"
+        + " }");
+    efecto.set_uniform_value("tex", 0);
+    return efecto;
+}
+
 // Compone actores de St sobre Main.uiGroup: un fondo transparente que ocupa la pantalla (toma el teclado y cierra
 // con un clic afuera) y la tira centrada a un tercio de alto del monitor principal.
 class Dial {
@@ -538,18 +556,18 @@ class Dial {
         this._lugares = new Map();      // nombre → desplazamiento visible (undefined: no se ve)
         this._vencimiento = 0;
         this._colaEmisora = AppletDir.logic.crearCola((nombre) =>
-            applet._pedir("POST", "/sintonizar", { estacion: nombre }, (r) => this._alResponder(r, this._colaEmisora)));
+            applet._pedir("POST", "/sintonizar", { estacion: nombre }, (r) => this._alResponder(r, this._colaEmisora, true)));
         this._colaVolumen = AppletDir.logic.crearCola((valor) =>
-            applet._pedir("POST", "/volumen", { valor: valor }, (r) => this._alResponder(r, this._colaVolumen)));
+            applet._pedir("POST", "/volumen", { valor: valor }, (r) => this._alResponder(r, this._colaVolumen, false)));
 
         const monitor = Main.layoutManager.primaryMonitor;
         this._fondo = new St.Widget({ reactive: true, x: monitor.x, y: monitor.y,
                                       width: monitor.width, height: monitor.height });
         // sin caja: los logos flotan y solo los textos llevan un recuadro semitransparente
         this._tira = new St.BoxLayout({ vertical: true, reactive: true, style: "spacing: 10px;" });
-        // la fila corta los logos de las puntas por la mitad: se ve que la lista sigue
-        this._fila = new St.Widget({ width: 2 * _centroDial(DIAL_LADO), height: DIAL_GRANDE,
+        this._fila = new St.Widget({ width: 2 * (_centroDial(DIAL_LADO) + DIAL_CHICO / 2), height: DIAL_GRANDE,
                                      clip_to_allocation: true });
+        this._fila.add_effect(_difuminado());
         this._textos = new St.BoxLayout({ vertical: true, width: DIAL_ANCHO_TEXTOS, x_expand: true,
                                           x_align: Clutter.ActorAlign.CENTER,
                                           style: "background-color: rgba(20, 20, 26, 0.6); border-radius: 18px;"
@@ -583,6 +601,7 @@ class Dial {
         this._fondo.grab_key_focus();
         this._mostrarAviso("…");
         this._fondo.ease({ opacity: 255, duration: DIAL_ANIMACION_MS, mode: Clutter.AnimationMode.EASE_OUT_QUAD });
+        this._reiniciarCierre();        // antes de pedir nada: pase lo que pase, se cierra solo
 
         applet._pedir("GET", "/estado", undefined, (r) => {
             if (this._cerrado) return;
@@ -634,7 +653,7 @@ class Dial {
                 x: mitad + _centroDial(visible ? d : 0) - DIAL_GRANDE / 2,
                 scale_x: d === 0 ? 1 : DIAL_CHICO / DIAL_GRANDE,
                 scale_y: d === 0 ? 1 : DIAL_CHICO / DIAL_GRANDE,
-                opacity: !visible ? 0 : d === 0 ? 255 : 150,
+                opacity: !visible ? 0 : d === 0 ? 255 : 210,
             };
             const salta = antes === undefined || !visible || Math.abs(antes - d) > 1;
             logo.remove_all_transitions();
@@ -732,12 +751,12 @@ class Dial {
         this._colaVolumen.pedir(nuevo);
     }
 
-    _alResponder(r, cola) {
+    _alResponder(r, cola, eraSintonizar) {
         cola.listo();
         if (this._cerrado || r.codigo !== 200) return;
         this._applet._aplicar(r.datos);
         this._estado = Object.assign({}, this._estado, r.datos, { iconos: this._estado.iconos });
-        if (this._volumen === 0) this._volumen = r.datos.volumen;     // sintonizar con la radio apagada la prende en 50
+        this._volumen = AppletDir.logic.volumenTrasRespuesta(this._volumen, r.datos.volumen, eraSintonizar);
         this._refrescarTextos();
     }
 

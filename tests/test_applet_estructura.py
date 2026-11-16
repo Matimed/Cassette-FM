@@ -138,3 +138,19 @@ def test_el_dial_usa_la_logica_probada():
 def test_el_dial_no_usa_keyval_name():
     # el Clutter de Cinnamon 6.4 no tiene keyval_name: cada tecla tiraba un TypeError y el dial no respondía
     assert "keyval_name" not in _js() and "Clutter.KEY_Escape" in _js()
+
+
+def test_el_dial_arma_el_cierre_antes_de_pedir_el_estado():
+    js = _js()
+    constructor = js[js.index("class Dial {"):]
+    constructor = constructor[:constructor.index("\n    }\n")]
+    assert constructor.index("this._reiniciarCierre(") < constructor.index('applet._pedir("GET", "/estado"')
+
+
+def test_pedir_no_se_traga_los_errores_del_callback():
+    assert "global.logError(" in _cuerpo(_js(), "_pedir(metodo, ruta, cuerpo, callback)")
+
+
+def test_la_fila_del_dial_se_difumina_hacia_los_costados():
+    js = _js()
+    assert "Clutter.ShaderEffect" in js and "smoothstep" in js and "this._fila.add_effect(" in js

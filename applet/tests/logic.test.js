@@ -241,3 +241,9 @@ test("iconoDe", () => {
   assert.equal(L.iconoDe("Power F.M.", { "Power F.M.": "/p.png" }, "/g.png"), "/p.png");
   assert.equal(L.iconoDe("X", undefined, "/g.png"), "/g.png");
 });
+
+test("volumenTrasRespuesta: solo sintonizar con la radio apagada adopta el volumen de la radio", () => {
+  assert.equal(L.volumenTrasRespuesta(0, 50, true), 50);     // ▶ con la radio apagada: prende en 50
+  assert.equal(L.volumenTrasRespuesta(0, 5, false), 0);      // respuesta vieja de /volumen 5 con el 0 en camino
+  assert.equal(L.volumenTrasRespuesta(30, 60, true), 30);    // lo local manda si no estaba en 0
+});

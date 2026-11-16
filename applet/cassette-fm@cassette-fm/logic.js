@@ -219,11 +219,17 @@ function iconoDe(nombre, iconos, generico) {
     return (iconos && iconos[nombre]) || generico;
 }
 
+// El volumen que muestra el dial después de una respuesta de la radio: lo local manda (las teclas van adelante de
+// las respuestas), salvo que sintonizar haya prendido la radio que estaba en 0 (la API la sube a 50).
+function volumenTrasRespuesta(local, delServidor, eraSintonizar) {
+    return eraSintonizar && local === 0 ? delServidor : local;
+}
+
 if (typeof module !== "undefined") {
     module.exports = {
         etiqueta, tooltip, accionDeRueda, crearLimitador, pedidoHttp, parsearRespuesta,
         parsearVoces, idiomaBase, vocesDelIdioma, etiquetaDeVoz, elegirVoz, elegirIdioma, faltante, argumentosNueva,
         mensajeDeError, argumentosMuestra, botonMuestra, rutaDeMuestra, argumentosExaminar, rutaElegida,
-        filaDial, teclaDial, crearCola, barraVolumen, iconoDe,
+        filaDial, teclaDial, crearCola, barraVolumen, iconoDe, volumenTrasRespuesta,
     };
 }
