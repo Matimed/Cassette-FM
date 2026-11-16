@@ -153,7 +153,7 @@ class Planificador:
             self._olvidar_anuncios("despues", lambda nombre, _, inicio: nombre == estacion.nombre
                                    and abs(inicio - fin_actual) <= tolerancia)
             self._encolados = {pista.clave}
-            if not _con_nombre(pista):
+            if not _con_nombre(pista) or self._antes_reservado(estacion.nombre, pista.clave, fin_actual, tolerancia):
                 return
             ahora = self._reloj()
             if fin_actual - ahora < self._configuracion(estacion.nombre).peticion_margen_segundos:
@@ -195,6 +195,15 @@ class Planificador:
             siguiente, inicio = next(transiciones(estacion, nuevo.inicio + 0.001))
             if _con_nombre(siguiente):
                 self._pendientes.append(_Peticion(estacion.nombre, "despues", siguiente, inicio, nuevo.pista, clave))
+
+    def _antes_reservado(self, estacion: str, clave: str, inicio_tema: float, tolerancia: float) -> bool:
+        """Con el lock tomado: ¿ya hay un "antes" de ese pedido en ese borde, reservado o en preparación? (tras
+        reiniciar la radio, Soloist vuelve a mandar la cola)."""
+        retraso = self._configuracion(estacion).retraso_voz_segundos
+        t = self._trabajo
+        return (any(i.estacion == estacion and i.peticion == "antes" and i.pista_destino == clave
+                    and abs(i.inicio - retraso - inicio_tema) <= tolerancia for i in self._registro.todas())
+                or (t is not None and t.estacion == estacion and t.peticion == "antes" and t.pista_destino == clave))
 
     def _olvidar_anuncios(self, modo: str, cual: Callable[[str, str, float], bool]) -> None:
         """Con el lock tomado: los anuncios `modo` de peticiones que ya no van a sonar (pendientes, en preparación o

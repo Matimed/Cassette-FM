@@ -892,6 +892,19 @@ def test_encolar_descarta_la_normal_del_borde_aunque_spotify_venga_atrasado(con_
     assert [i.id for i in m.registro.todas()] == [antes["id"]]
 
 
+def test_tras_reiniciar_no_se_pide_de_nuevo_el_antes_ya_reservado(con_peticiones):
+    m = con_peticiones
+    est = estacion()
+    m.p.al_sintonizar(est)
+    fin, antes = _registrar_antes(m, est)
+    m.p = m.nuevo()                                      # se reinició la radio: Soloist vuelve a mandar la cola
+    m.p.al_sintonizar(est)
+    m.p.al_encolado(PEDIDO, est, fin)
+    m.p.paso()
+    assert _peticiones(m) == [antes]
+    assert [i.id for i in m.registro.todas()] == [antes["id"]]
+
+
 def test_sacar_de_la_cola_y_encolar_otro_reemplaza_el_antes(con_peticiones):
     m = con_peticiones
     est = estacion()
