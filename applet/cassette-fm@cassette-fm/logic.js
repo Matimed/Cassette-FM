@@ -129,8 +129,9 @@ function mensajeDeError(codigo, stdout, stderr) {
 
 // --- Muestra de voz: ▶ al lado de la voz corre `cassette-dj muestra` y reproduce el WAV ---
 
+// Cada valor pegado a su opción (--radio=-h): un nombre que empieza con "-" no se toma como otra opción.
 function argumentosMuestra(voz, nombre) {
-    return ["muestra", "--voz", voz.alias, "--idioma", voz.idioma, "--radio", nombre.trim()];
+    return ["muestra", "--voz=" + voz.alias, "--idioma=" + voz.idioma, "--radio=" + nombre.trim()];
 }
 
 // fase: "quieto" | "generando" | "sonando"; sin voz elegida (al azar) no hay muestra.

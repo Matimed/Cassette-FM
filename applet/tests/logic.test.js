@@ -152,7 +152,9 @@ test("mensajeDeError", () => {
 
 test("argumentosMuestra: voz, su idioma y el nombre escrito", () => {
   assert.deepEqual(L.argumentosMuestra(VOCES[1], "  Sing 2 "),
-                   ["muestra", "--voz", "emma", "--idioma", "en-gb", "--radio", "Sing 2"]);
+                   ["muestra", "--voz=emma", "--idioma=en-gb", "--radio=Sing 2"]);
+  // un nombre que empieza con - va pegado a su opción: argparse no lo toma como otra opción
+  assert.deepEqual(L.argumentosMuestra(VOCES[2], "-h"), ["muestra", "--voz=dora", "--idioma=es", "--radio=-h"]);
 });
 
 test("botonMuestra", () => {

@@ -309,7 +309,9 @@ class DialogoEmisora {
     }
 
     _alElegirIdioma(idioma) {
+        const antes = this._seleccion.voz;
         this._seleccion = AppletDir.logic.elegirIdioma(this._seleccion, idioma);
+        if (this._seleccion.voz !== antes) this._cortarMuestra();     // la voz volvió a "Al azar"
         this._refrescar();
     }
 

@@ -150,7 +150,9 @@ def _muestra(config, rutas, args) -> int:
     import json
     import os
     from cassette_fm.cliente_dj import ClienteDJ, ErrorDJ
-    clave = hashlib.sha256(json.dumps([args.voz, args.idioma, args.radio.strip()]).encode()).hexdigest()[:32]
+    # la voz a la que apunta el alias entra en la clave: si se cambia en [voces], la muestra se vuelve a pedir
+    voz = config.voces.get(args.voz, args.voz)
+    clave = hashlib.sha256(json.dumps([args.voz, voz, args.idioma, args.radio.strip()]).encode()).hexdigest()[:32]
     destino = rutas.muestras / f"{clave}.wav"
     if not destino.exists():
         host = "127.0.0.1" if config.host in ("0.0.0.0", "::") else config.host

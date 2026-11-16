@@ -96,6 +96,6 @@ def test_el_modal_tiene_muestra_de_voz_y_la_corta():
     js = _js()
     assert "argumentosMuestra" in js and "botonMuestra" in js and "rutaDeMuestra" in js
     assert '"cassette-dj"' in js and '"mpv"' in js
-    for donde in ("_cerrar()", "_alElegirVoz(voz)", "_ocupado(si)"):
+    for donde in ("_cerrar()", "_alElegirVoz(voz)", "_alElegirIdioma(idioma)", "_ocupado(si)"):
         cuerpo = js[js.index("    " + donde + " {"):]
         assert "this._cortarMuestra()" in cuerpo[:cuerpo.index("\n    }\n")], donde

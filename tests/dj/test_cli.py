@@ -449,3 +449,24 @@ def test_muestra_con_el_servicio_caido_da_una_linea(entorno, monkeypatch, capsys
     assert cli.main(["muestra", "--voz", "dora", "--idioma", "es"]) == 1
     error = capsys.readouterr().err
     assert "no responde" in error and error.count("\n") == 1
+
+
+def test_muestra_con_un_nombre_que_empieza_con_guion(entorno, monkeypatch, capsys):
+    from cassette_fm.cliente_dj import ClienteDJ
+    pedidos = []
+    monkeypatch.setattr(ClienteDJ, "muestra", lambda self, v, i, r: pedidos.append((v, i, r)) or b"RIFF")
+    assert cli.main(["muestra", "--voz=dora", "--idioma=es", "--radio=-h"]) == 0     # como lo llama el applet
+    assert pedidos == [("dora", "es", "-h")]
+
+
+def test_muestra_cambia_si_el_alias_apunta_a_otra_voz(entorno, monkeypatch, capsys):
+    from cassette_fm.cliente_dj import ClienteDJ
+    pedidos = []
+    monkeypatch.setattr(ClienteDJ, "muestra", lambda self, v, i, r: pedidos.append(v) or b"RIFF")
+    entorno.config.parent.mkdir(parents=True, exist_ok=True)
+    entorno.config.write_text('[voces]\ndora = "ef_dora"\n')
+    assert cli.main(["muestra", "--voz", "dora", "--idioma", "es"]) == 0
+    primera = capsys.readouterr().out.strip()
+    entorno.config.write_text('[voces]\ndora = "em_santa"\n')
+    assert cli.main(["muestra", "--voz", "dora", "--idioma", "es"]) == 0
+    assert capsys.readouterr().out.strip() != primera and pedidos == ["dora", "dora"]
