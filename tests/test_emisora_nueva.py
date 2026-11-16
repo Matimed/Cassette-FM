@@ -4,8 +4,8 @@ import random
 import pytest
 
 from cassette_fm.config import ErrorConfig
-from cassette_fm.emisora_nueva import (Eleccion, buscar, chequear_nombre, describir, elegir_voz, escribir, guardar,
-                                       idioma_de_voz, leer_crudo, voces_disponibles, voces_en_uso)
+from cassette_fm.emisora_nueva import (Eleccion, buscar, chequear_nombre, copiar_icono, describir, elegir_voz, escribir,
+                                       guardar, idioma_de_voz, leer_crudo, voces_disponibles, voces_en_uso)
 
 ALIAS = {"puck": "am_puck", "sarah": "af_sarah", "dora": "ef_dora", "daniela": "piper:es_AR-daniela-high",
          "alex_santa": "em_alex+em_santa", "emma": "bf_emma", "siwis": "ff_siwis"}
@@ -127,3 +127,37 @@ def test_escribir_la_lista_tal_cual(tmp_path):
     archivo = tmp_path / "estaciones.json"
     escribir(archivo, [{"nombre": "Más"}])
     assert json.loads(archivo.read_text(encoding="utf-8")) == [{"nombre": "Más"}] and "Más" in archivo.read_text()
+
+
+def test_copiar_icono_copia_reusa_y_numera(tmp_path):
+    base = tmp_path / "cfg"
+    a = tmp_path / "descargas" / "Power.PNG"
+    a.parent.mkdir()
+    a.write_bytes(b"uno")
+    assert copiar_icono(a, base) == "iconos/Power.PNG"
+    assert (base / "iconos" / "Power.PNG").read_bytes() == b"uno"
+    assert copiar_icono(a, base) == "iconos/Power.PNG"              # mismo contenido: se reusa
+    otro = tmp_path / "otra" / "Power.PNG"
+    otro.parent.mkdir()
+    otro.write_bytes(b"dos")
+    assert copiar_icono(otro, base) == "iconos/Power-2.PNG"
+    assert copiar_icono(otro, base) == "iconos/Power-2.PNG"
+    assert sorted(p.name for p in (base / "iconos").iterdir()) == ["Power-2.PNG", "Power.PNG"]
+
+
+def test_copiar_icono_que_ya_esta_adentro_no_copia(tmp_path):
+    base = tmp_path / "cfg"
+    adentro = base / "iconos" / "sub" / "x.svg"
+    adentro.parent.mkdir(parents=True)
+    adentro.write_text("<svg/>")
+    assert copiar_icono(adentro, base) == "iconos/sub/x.svg"
+    assert list((base / "iconos").iterdir()) == [base / "iconos" / "sub"]
+
+
+@pytest.mark.parametrize("nombre,crear", [("x.gif", True), ("falta.png", False)])
+def test_copiar_icono_rechaza_lo_que_no_sirve(tmp_path, nombre, crear):
+    origen = tmp_path / nombre
+    if crear:
+        origen.write_bytes(b"x")
+    with pytest.raises(ErrorConfig):
+        copiar_icono(origen, tmp_path / "cfg")

@@ -394,6 +394,10 @@ usar una de esas, copiala a una playlist propia.
   `estaciones.json` con un DJ de voz propia (un alias de `[voces]` de cassette-dj que no use otra emisora, al azar;
   el idioma sale de la voz). `--voz sarah` la elige, `--idioma es` pide una en español. Si la playlist no es tuya
   o está vacía, no se guarda nada. Dos emisoras pueden usar la misma playlist: cada una va por otro tema.
+- **Logos:** cada emisora puede tener `"icono"` en `estaciones.json` (una imagen PNG, JPG o SVG; ruta absoluta o
+  relativa a `~/.config/cassette-fm/`). `cassette icono "Power F.M." ~/Descargas/power.png` copia la imagen a
+  `~/.config/cassette-fm/iconos/` y se la asigna (`--quitar` se la saca, sin borrar el archivo); `cassette nueva`
+  acepta `--icono` igual. Sin logo (o si el archivo no está), el applet usa uno genérico.
 - `cassette borrar "sing"` saca una emisora (el nombre sin importar mayúsculas) de `estaciones.json`, preguntando
   antes (`--si` no pregunta); si estaba sonando, la radio pasa a la primera. No toca la música ni la caché de Spotify.
 - `cassette renombrar "sing" "Cantemos"` le cambia el nombre (si estaba sonando, sigue en ella). El orden de los temas

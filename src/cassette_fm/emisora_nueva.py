@@ -6,6 +6,7 @@ import json
 import os
 import random
 import re
+import shutil
 import unicodedata
 from collections import Counter
 from collections.abc import Mapping
@@ -148,6 +149,36 @@ def escribir(archivo: Path, emisoras: list[dict]) -> None:
     tmp = archivo.with_name(archivo.name + ".tmp")
     tmp.write_text(json.dumps(emisoras, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
     os.replace(tmp, archivo)
+
+
+_IMAGENES = (".png", ".jpg", ".jpeg", ".svg")
+
+
+def copiar_icono(origen: Path, base: Path) -> str:
+    """Deja el logo en `base/iconos/` y devuelve su ruta relativa a `base` (la que va en `"icono"`): si ya está ahí
+    adentro no se copia; si hay otro con el mismo nombre, se reusa si es igual y si no se numera (`power-2.png`). Así
+    borrar la imagen original no deja a la emisora sin logo, y la misma imagen para dos emisoras no se duplica."""
+    origen = Path(origen).expanduser()
+    if origen.suffix.lower() not in _IMAGENES:
+        raise ErrorConfig(f"«{origen}»: el logo tiene que ser una imagen PNG, JPG o SVG")
+    if not origen.is_file():
+        raise ErrorConfig(f"«{origen}»: no existe")
+    carpeta = Path(base) / "iconos"
+    if origen.resolve().is_relative_to(carpeta.resolve()):
+        return origen.resolve().relative_to(Path(base).resolve()).as_posix()
+    contenido = origen.read_bytes()
+    carpeta.mkdir(parents=True, exist_ok=True)
+    n = 1
+    while True:
+        nombre = origen.name if n == 1 else f"{origen.stem}-{n}{origen.suffix}"
+        destino = carpeta / nombre
+        if not destino.exists():
+            shutil.copyfile(origen, destino)
+            break
+        if destino.read_bytes() == contenido:
+            break
+        n += 1
+    return f"iconos/{nombre}"
 
 
 def guardar(archivo: Path, emisoras: list[dict], nueva: dict) -> None:

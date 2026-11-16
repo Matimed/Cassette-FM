@@ -782,3 +782,59 @@ def test_renombrar_con_la_radio_apagada(tmp_path, monkeypatch, capsys, servidor_
     assert main(["renombrar", "Sing", "Cantemos"]) == 0
     assert _json.loads(r.emisoras.read_text())[-1]["nombre"] == "Cantemos"
     assert "La radio no está corriendo: el cambio se ve al prenderla." in capsys.readouterr().out
+
+
+def test_nueva_con_icono_lo_copia_y_lo_guarda(tmp_path, monkeypatch, capsys, servidor_http):
+    import json as _json
+    r, _ = _nueva(monkeypatch, tmp_path, servidor_http)
+    logo = tmp_path / "Mis imágenes" / "synth.png"
+    logo.parent.mkdir()
+    logo.write_bytes(b"png")
+    assert main(["nueva", "--icono", str(logo), "Synthwave F.M.", PLAYLIST_NUEVA]) == 0
+    assert _json.loads(r.emisoras.read_text())[-1]["icono"] == "iconos/synth.png"
+    assert (r.emisoras.parent / "iconos" / "synth.png").read_bytes() == b"png"
+
+
+def test_nueva_con_un_icono_que_no_existe_no_guarda(tmp_path, monkeypatch, capsys, servidor_http):
+    r, _ = _nueva(monkeypatch, tmp_path, servidor_http)
+    antes = r.emisoras.read_text()
+    assert main(["nueva", "--icono", str(tmp_path / "no.png"), "Synthwave F.M.", PLAYLIST_NUEVA]) == 1
+    assert r.emisoras.read_text() == antes
+
+
+def test_icono_pone_y_quitar_saca_sin_borrar_el_archivo(tmp_path, monkeypatch, capsys, servidor_http):
+    import json as _json
+    r, rutas = _borrar(monkeypatch, tmp_path, servidor_http)
+    logo = tmp_path / "power.png"
+    logo.write_bytes(b"png")
+    assert main(["icono", "sing", str(logo)]) == 0
+    assert _json.loads(r.emisoras.read_text())[-1]["icono"] == "iconos/power.png"
+    assert "🖼 Sing · iconos/power.png" in capsys.readouterr().out
+    assert main(["icono", "SING", "--quitar"]) == 0
+    assert "icono" not in _json.loads(r.emisoras.read_text())[-1]
+    assert "🖼 Sing · sin logo" in capsys.readouterr().out
+    assert (r.emisoras.parent / "iconos" / "power.png").exists()
+    assert [ruta for ruta, _ in rutas] == ["/rescan", "/rescan"]
+
+
+def test_icono_sin_ruta_ni_quitar_es_error(tmp_path, monkeypatch, capsys, servidor_http):
+    _borrar(monkeypatch, tmp_path, servidor_http)
+    assert main(["icono", "Sing"]) == 1
+    assert "--quitar" in capsys.readouterr().err
+
+
+def test_icono_de_una_emisora_que_no_existe(tmp_path, monkeypatch, capsys, servidor_http):
+    _borrar(monkeypatch, tmp_path, servidor_http)
+    assert main(["icono", "Nada", "--quitar"]) == 1
+    assert "Happy Eighties" in capsys.readouterr().err
+
+
+def test_icono_con_la_radio_apagada(tmp_path, monkeypatch, capsys, servidor_http):
+    from cassette_fm import cli
+    _borrar(monkeypatch, tmp_path, servidor_http)
+
+    def caido(*a, **k):
+        raise cli._ServicioCaido("cassette-fm no está corriendo")
+    monkeypatch.setattr(cli, "_llamar", caido)
+    assert main(["icono", "Sing", "--quitar"]) == 0
+    assert "La radio no está corriendo: el cambio se ve al prenderla." in capsys.readouterr().out

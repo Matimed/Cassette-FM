@@ -82,12 +82,17 @@ def _armar_parser() -> argparse.ArgumentParser:
     nueva.add_argument("playlist", help="el link o la URI de la playlist")
     nueva.add_argument("--voz", help="un alias de [voces] de cassette-dj (por defecto, uno libre al azar)")
     nueva.add_argument("--idioma", choices=["es", "en"], help="el idioma del DJ (por defecto, el de la voz)")
+    nueva.add_argument("--icono", help="una imagen PNG, JPG o SVG para el logo (se copia a la carpeta de la config)")
     borrar = sub.add_parser("borrar", parents=[comun], help="saca una emisora de estaciones.json (pregunta antes)")
     borrar.add_argument("nombre", help="el nombre de la emisora (sin importar mayúsculas)")
     borrar.add_argument("--si", action="store_true", help="no preguntar")
     renombrar = sub.add_parser("renombrar", parents=[comun], help="le cambia el nombre a una emisora")
     renombrar.add_argument("nombre", help="el nombre actual (sin importar mayúsculas)")
     renombrar.add_argument("nuevo", help="el nombre nuevo")
+    icono = sub.add_parser("icono", parents=[comun], help="le pone o le saca el logo a una emisora")
+    icono.add_argument("nombre", help="el nombre de la emisora (sin importar mayúsculas)")
+    icono.add_argument("ruta", nargs="?", help="una imagen PNG, JPG o SVG (se copia a la carpeta de la config)")
+    icono.add_argument("--quitar", action="store_true", help="sacarle el logo (el archivo no se borra)")
     voces = sub.add_parser("voces", help="las voces con alias que puede usar una emisora nueva")
     voces.add_argument("--json", action="store_true", help="en JSON (para el applet)")
     spotify = sub.add_parser("spotify", help="Spotify como fuente de emisoras: sesión y estado")
@@ -338,12 +343,13 @@ def _nueva(args, cfg, rutas, puerto: int) -> int:
         pistas = servicio.catalogo_spotify(cfg, rutas).pistas(playlist)
         if not pistas:
             raise config.ErrorConfig("la playlist está vacía (o no tiene temas que se puedan reproducir)")
+        icono = emisora_nueva.copiar_icono(Path(args.icono), rutas.emisoras.parent) if args.icono else None
     except (config.ErrorConfig, ErrorSpotify) as e:
         print(e, file=sys.stderr)
         return 1
     emisora_nueva.guardar(rutas.emisoras, definidas, {
         "nombre": nombre, "fuente": {"spotify": args.playlist.strip()},
-        "dj": dj})
+        "dj": dj, **({"icono": icono} if icono else {})})
     repetida = " (otra emisora ya usa esta voz: no quedaban libres)" if eleccion.repetida else ""
     print(f"✓ {nombre} ({len(pistas)} temas) · DJ: {eleccion.voz} ({eleccion.idioma}){repetida}")
     try:
@@ -394,6 +400,36 @@ def _borrar(args, rutas, puerto: int) -> int:
         print("La radio no está corriendo: el cambio se ve al prenderla.")
     except _ErrorCli as e:
         print(f"La emisora quedó borrada, pero la radio no pudo releer las emisoras: {e}", file=sys.stderr)
+        return 1
+    return 0
+
+
+def _icono(args, rutas, puerto: int) -> int:
+    """Le pone (copiando la imagen a `iconos/`) o le saca el logo a una emisora; nunca borra archivos de `iconos/`
+    (otra emisora puede usar el mismo)."""
+    from cassette_fm import emisora_nueva
+    if bool(args.ruta) == args.quitar:
+        print("indicá la imagen o --quitar (una de las dos)", file=sys.stderr)
+        return 1
+    try:
+        emisoras = emisora_nueva.leer_crudo(rutas.emisoras)
+        i = emisora_nueva.buscar(emisoras, args.nombre)
+        relativa = None if args.quitar else emisora_nueva.copiar_icono(Path(args.ruta), rutas.emisoras.parent)
+    except config.ErrorConfig as e:
+        print(e, file=sys.stderr)
+        return 1
+    emisora = {k: v for k, v in emisoras[i].items() if k != "icono"}
+    if relativa:
+        emisora["icono"] = relativa
+    emisoras[i] = emisora
+    emisora_nueva.escribir(rutas.emisoras, emisoras)
+    print(f"🖼 {emisora['nombre'].strip()} · {relativa or 'sin logo'}")
+    try:
+        _llamar(puerto, "POST", "/rescan", timeout=120)
+    except _ServicioCaido:
+        print("La radio no está corriendo: el cambio se ve al prenderla.")
+    except _ErrorCli as e:
+        print(f"El logo quedó guardado, pero la radio no pudo releer las emisoras: {e}", file=sys.stderr)
         return 1
     return 0
 
@@ -496,6 +532,8 @@ def main(argv: list[str] | None = None) -> int:
         return _voces(args, rutas)
     if args.comando == "borrar":
         return _borrar(args, rutas, getattr(args, "puerto", cfg.puerto))
+    if args.comando == "icono":
+        return _icono(args, rutas, getattr(args, "puerto", cfg.puerto))
     if args.comando == "renombrar":
         return _renombrar(args, rutas, getattr(args, "puerto", cfg.puerto))
     try:
