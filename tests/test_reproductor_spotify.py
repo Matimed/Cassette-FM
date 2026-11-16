@@ -722,6 +722,30 @@ def test_otra_version_del_tema_esperado_cuenta_como_ese():
     assert r.pista_actual == esperado and r.eventos["linea"][-1][:2] == ("pista", esperado.uri)
 
 
+def test_el_aviso_doble_de_un_pedido_no_lo_toma_por_otra_version():
+    r, control, reloj, e = en_marcha()
+    x, borde = proximo(e, reloj())
+    vivo = f"{x.cancion} (live)"                           # el pedido se llama como el tema que sigue en la agenda
+    r.manejar_evento(cola(item(AJENO, vivo)))
+    reloj.t = borde
+    r.manejar_evento(cambio(AJENO, vivo, 150000))
+    ((_, pedido),) = r.eventos["agendas"]
+    reloj.t += 0.3
+    r.manejar_evento(cambio(AJENO, vivo, 150000))          # Soloist avisa otra vez el mismo comienzo
+    assert r._estacion.pedidos == (pedido,) and r.pista_actual.uri == AJENO
+
+
+@pytest.mark.parametrize("nombre,es_version", [(" (Remastered)", True), (" - From Some Soundtrack", True),
+                                               ("0 otra canción", False), ("away", False)])
+def test_otra_version_exige_el_nombre_entero(nombre, es_version):
+    r, control, _, _, _ = armar()
+    e = estacion()
+    r.sintonizar(e)
+    esperado = next(p for p in e.pistas if p.uri == control.llamadas[0][0][0])
+    r.manejar_evento(cambio("spotify:track:otraversion00000000001", esperado.cancion + nombre))
+    assert (r.pista_actual == esperado) is es_version
+
+
 def test_un_tema_desconocido_con_otro_nombre_no_se_confunde():
     r, control, _, _, _ = armar()
     r.sintonizar(estacion())

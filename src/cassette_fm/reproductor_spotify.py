@@ -239,7 +239,9 @@ class ReproductorSpotify:
                 pista = self._pista_del_item(evento.get("item"))
                 if pista is None:
                     return
-                if pista.clave not in self._por_clave and pista.clave not in self._encolados:
+                if (pista.clave not in self._por_clave and pista.clave not in self._encolados
+                        and not (self.pista_actual is not None and pista.clave == self.pista_actual.clave)
+                        and all(p.pista.clave != pista.clave for p in estacion.pedidos)):
                     pista = self._version_del_esperado(pista, estacion) or pista
                 if self._esperando_sonido and not self._visto_esperado and pista.clave != self._esperado:
                     return        # lo que sonaba antes en la cuenta o un evento de la sintonía anterior
@@ -358,8 +360,12 @@ class ReproductorSpotify:
             it = secuencia(estacion, self._reloj())
             candidatos = [next(it)[0], next(it)[0]]
         nombre = pista.cancion.casefold()
+
+        def es_version(c: Pista) -> bool:          # el nombre entero y un agregado: «Run (Live)» sí, «Runaway» no
+            base = c.cancion.casefold()
+            return nombre.startswith(base) and (len(nombre) == len(base) or not nombre[len(base)].isalnum())
         return next((c for c in candidatos if c is not None and c.cancion and c.clave in self._por_clave
-                     and nombre.startswith(c.cancion.casefold())), None)
+                     and es_version(c)), None)
 
     def _hay_que_resintonizar(self, pista: Pista, estacion: Estacion) -> bool:
         """Un tema de la agenda empezó: ¿se corrió del reloj o se está acabando la lista enviada?
