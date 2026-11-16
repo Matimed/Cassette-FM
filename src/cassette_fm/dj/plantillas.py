@@ -51,7 +51,7 @@ _MARCOS = {
 }
 _EXTRAS = {
     "es": {
-        "hora": ["{son} {hora} y seguimos con vos.", "{son} {hora} para que lo sepas.", "{son} {hora} en la radio."],
+        "hora": ["{son} {hora} y seguimos con vos.", "En este momento {son_min} {hora}.", "{son} {hora} en la radio."],
         "estacion": ["Estás escuchando {estacion} en vivo.", "Esto es {estacion} tu radio de siempre.",
                      "Acá en {estacion} seguimos con vos.", "Bienvenidos a {estacion} la radio que no para."],
         "hora+estacion": ["En {estacion} {son_min} {hora} para vos.", "{son} {hora} acá en {estacion} con ustedes."],

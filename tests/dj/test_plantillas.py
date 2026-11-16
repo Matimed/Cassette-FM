@@ -545,3 +545,14 @@ def test_plantilla_peticion_entra_aunque_falten_palabras():
     for semilla in range(10):
         texto = MARCA.sub(lambda m: m.group(2), redactar(p, Lexico(), random.Random(semilla), 12, zona=ZONA).marcado)
         assert texto.startswith(_ANTES["es"]) and "Waiting for a Girl Like You" in texto
+
+
+def test_cada_frase_suelta_es_una_oracion_completa():
+    """Se encadenan una detrás de otra: sin mayúscula al principio o punto al final se pegan con la siguiente."""
+    from cassette_fm.dj.plantillas import _EXTRAS
+    for idioma, grupos in _EXTRAS.items():
+        for clave, frases in grupos.items():
+            for f in frases:
+                assert f[0].isupper() or f.startswith(("{son}", "{")), (idioma, clave, f)
+                assert not f.startswith("{son_min}"), (idioma, clave, f)
+                assert f.rstrip().endswith((".", "?", "!")), (idioma, clave, f)
