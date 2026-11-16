@@ -176,7 +176,7 @@ def test_el_guion_anota_los_hechos_y_sus_fuentes(montaje, hacer_pedido):
     from cassette_fm.dj.hechos.musicbrainz import DatosTema
 
     class Fuente:
-        def reunir(self, pedido, con_wikipedia=False):
+        def reunir(self, pedido, con_wikipedia=False, hasta=None):
             return (Hechos(Clima(22, "lluvia", True), DatosTema(1984, "NO", 1983, True, "https://mb/x")),
                     {"clima": {"temperatura": 22}, "musicbrainz": {"fuente": "https://mb/x"}})
 
@@ -204,7 +204,7 @@ def test_los_reintentos_por_duracion_no_vuelven_a_pedir_hechos(montaje, hacer_pe
     class Fuente:
         llamadas = 0
 
-        def reunir(self, pedido, con_wikipedia=False):
+        def reunir(self, pedido, con_wikipedia=False, hasta=None):
             Fuente.llamadas += 1
             return Hechos(), {"clima": None, "musicbrainz": None}
 
@@ -276,8 +276,9 @@ class FuenteWiki:
         self.llamadas = []
         self.tema = tema
 
-    def reunir(self, pedido, con_wikipedia=False):
+    def reunir(self, pedido, con_wikipedia=False, hasta=None):
         self.llamadas.append(con_wikipedia)
+        self.plazos = getattr(self, "plazos", []) + [hasta]
         wiki = _Resumen("Foreigner es una banda de rock.", "Foreigner", "es", "https://es.wikipedia.org/wiki/Foreigner") \
             if con_wikipedia else None
         return _Hechos(tema=self.tema, wikipedia=wiki), {"clima": None, "musicbrainz": None,
@@ -515,7 +516,7 @@ class FuenteSinDatos:
     def __init__(self):
         self.llamadas = []
 
-    def reunir(self, pedido, con_wikipedia=False):
+    def reunir(self, pedido, con_wikipedia=False, hasta=None):
         self.llamadas.append(con_wikipedia)
         return _Hechos(tema=None, wikipedia=None), {"clima": None, "musicbrainz": None, "wikipedia": None}
 
@@ -583,3 +584,10 @@ def test_el_arranque_del_prompt_se_sortea_entre_pedidos(montaje, hacer_pedido):
     usados = {clave for sistema, _ in llm.llamadas for clave, (es, _en) in ARRANQUES.items() if es in sistema}
     assert len(usados) > 1
     assert all(sum(es in sistema for es, _en in ARRANQUES.values()) == 1 for sistema, _ in llm.llamadas)
+
+
+@pytest.mark.parametrize("modo, reserva", [("llm", 60.0), ("plantillas", 0.0)])
+def test_los_hechos_se_esperan_hasta_lo_que_deja_la_voz_y_el_llm(montaje, hacer_pedido, modo, reserva):
+    productor, _, _, fuente, _ = llm_listo(montaje, modo=modo)
+    productor.producir(hacer_pedido("pz1"))
+    assert fuente.plazos == [MOMENTO - ConfigServicioDJ().llm_margen_segundos - reserva]

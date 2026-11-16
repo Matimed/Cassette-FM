@@ -1,6 +1,8 @@
 """Hechos verificados para las frases del DJ: clima, datos del tema (MusicBrainz)."""
 import logging
 import threading
+import time
+from collections.abc import Callable
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
@@ -23,14 +25,17 @@ class Hechos:
 class FuenteHechos:
     """Junta el clima y los datos del tema de un pedido, en paralelo y con tope de espera. Nunca lanza."""
 
-    def __init__(self, clima, musicbrainz, espera_segundos: float = 6.0, wikipedia=None):
+    def __init__(self, clima, musicbrainz, espera_segundos: float = 6.0, wikipedia=None,
+                 reloj: Callable[[], float] = time.time):
+        self._reloj = reloj
         self._clima = clima
         self._musicbrainz = musicbrainz
         self._wikipedia = wikipedia
         self._espera = espera_segundos
 
-    def reunir(self, pedido, con_wikipedia: bool = False) -> tuple[Hechos, dict]:
-        """(Hechos para redactar, `fuentes` para anotar en el guion)."""
+    def reunir(self, pedido, con_wikipedia: bool = False, hasta: float | None = None) -> tuple[Hechos, dict]:
+        """(Hechos para redactar, `fuentes` para anotar en el guion). Con `hasta` (un instante del reloj), a
+        MusicBrainz ocupado se lo espera hasta ese momento en vez de la espera normal."""
         resultados: dict[str, object] = {}
 
         def pedir(nombre, funcion):
@@ -47,11 +52,12 @@ class FuenteHechos:
             s = pedido.siguiente
             hilos.append(threading.Thread(target=pedir, daemon=True, name="hechos-musicbrainz",
                                           args=("musicbrainz", lambda: self._musicbrainz.datos_del_tema(
-                                              s.artista, s.titulo, s.isrc, s.album))))
+                                              s.artista, s.titulo, s.isrc, s.album, hasta=hasta))))
         for h in hilos:
             h.start()
+        espera = self._espera if hasta is None else max(self._espera, hasta - self._reloj())
         for h in hilos:
-            h.join(self._espera)
+            h.join(espera if h.name == "hechos-musicbrainz" else self._espera)
         clima, tema = resultados.get("clima"), resultados.get("musicbrainz")
         wiki = None
         if con_wikipedia and self._wikipedia is not None and tema is not None and getattr(tema, "wikidata", None):

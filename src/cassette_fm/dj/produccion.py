@@ -27,6 +27,7 @@ INTENTOS = 3
 _TIEMPO_MINIMO_LLM = 5.0     # si quedan menos segundos que esto, ni se le pregunta al LLM
 _PALABRAS_POR_SEGUNDO = 3     # lo que dice una voz sin clips medidos: 45 palabras en un clip de 15 s
 _GUIONES_PARA_RITMO = 500     # cuántos guiones viejos se miran al arrancar para medir cada voz
+_RESERVA_LLM = 60.0           # lo que se le deja al LLM para escribir: hasta ahí se puede esperar a MusicBrainz
 
 
 @dataclass(frozen=True)
@@ -111,8 +112,9 @@ class Productor:
         usa_llm = modo == "llm" and self._llm is not None
         if modo == "llm" and self._llm is None:
             motivo = "el modo llm está activo pero no hay cliente de LLM"
-        hechos, fuentes = (self._hechos.reunir(pedido, con_wikipedia=usa_llm) if self._hechos is not None
-                           else (Hechos(), None))
+        hasta = pedido.momento.timestamp() - self._config.llm_margen_segundos - (_RESERVA_LLM if usa_llm else 0.0)
+        hechos, fuentes = (self._hechos.reunir(pedido, con_wikipedia=usa_llm, hasta=hasta)
+                           if self._hechos is not None else (Hechos(), None))
         if usa_llm:
             resultado = self._producir_llm(pedido, ruta, hechos, fuentes)
             if isinstance(resultado, Resultado):

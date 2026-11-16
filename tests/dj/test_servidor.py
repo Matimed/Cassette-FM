@@ -468,7 +468,7 @@ def test_en_modo_llm_con_el_llm_caido_igual_hay_frase(servicio, llm_falso):
     from cassette_fm.dj.hechos.wikipedia import Resumen
 
     class ConDato:                       # sin ningún dato el LLM ni se consulta
-        def reunir(self, pedido, con_wikipedia=False):
+        def reunir(self, pedido, con_wikipedia=False, hasta=None):
             return Hechos(wikipedia=Resumen("Foreigner es una banda.", "Foreigner", "es", "https://x")), None
 
     cfg = ConfigServicioDJ(llm_url=llm_falso.url, llm_timeout_segundos=2.0)

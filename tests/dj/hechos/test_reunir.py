@@ -32,8 +32,9 @@ class MBFalso:
         self.valor, self.demora, self.error = valor, demora, error
         self.llamadas = []
 
-    def datos_del_tema(self, artista, titulo, isrc=None, album=None):
+    def datos_del_tema(self, artista, titulo, isrc=None, album=None, hasta=None):
         self.llamadas.append((artista, titulo, isrc))
+        self.plazos = getattr(self, "plazos", []) + [hasta]
         time.sleep(self.demora)
         if self.error:
             raise self.error
@@ -132,3 +133,16 @@ def test_una_wikipedia_colgada_no_pasa_del_tope():
     t0 = _t.monotonic()
     hechos, _ = FuenteHechos(None, MBFalso(), 0.3, wikipedia=w).reunir(pedido(), con_wikipedia=True)
     assert _t.monotonic() - t0 < 1.0 and hechos.wikipedia is None
+
+
+def test_con_plazo_espera_a_musicbrainz_hasta_el_plazo_y_se_lo_pasa():
+    mb = MBFalso(demora=0.5)
+    hasta = time.time() + 3
+    hechos, _ = FuenteHechos(None, mb, espera_segundos=0.1).reunir(pedido(), hasta=hasta)
+    assert hechos.tema == TEMA and mb.plazos == [hasta]
+
+
+def test_un_plazo_ya_vencido_no_acorta_la_espera_normal():
+    mb = MBFalso(demora=0.3)
+    hechos, _ = FuenteHechos(None, mb, espera_segundos=2).reunir(pedido(), hasta=time.time() - 10)
+    assert hechos.tema == TEMA

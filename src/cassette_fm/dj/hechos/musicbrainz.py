@@ -1,3 +1,4 @@
+import itertools
 import json
 import logging
 import re
@@ -25,6 +26,8 @@ _LETRAS = str.maketrans({"ø": "o", "æ": "ae", "œ": "oe", "ł": "l", "đ": "d"
 _GENERICOS = {"intro", "outro", "interlude", "skit", "prelude", "interludio", "intermezzo", "untitled",
               "sin titulo", "introduccion", "epilogo", "prologue", "prologo", "reprise", "bonus track"}
 _ESPERAS_REINTENTO = (2.0, 5.0)    # segundos antes de cada reintento si MusicBrainz está ocupado
+# con un plazo (lo que falta para que hable el DJ) se sigue probando; la última espera se repite
+_ESPERAS_CON_PLAZO = (2.0, 5.0, 10.0, 20.0, 30.0)
 INTERVALO_SEGUNDOS = 1.0
 
 
@@ -131,12 +134,14 @@ class ClienteMusicBrainz:
         self._lock_ritmo = threading.Lock()
         self._ultimo = None
         self._avisado = False
+        self._plazo = threading.local()             # hasta cuándo reintentar la consulta en curso de cada hilo
         if not config.contacto.strip():
             _log.warning("cassette-dj: sin 'contacto' en config.toml no se consulta MusicBrainz "
                          "(se usa en el User-Agent que pide MusicBrainz)")
 
     def datos_del_tema(self, artista: str, titulo: str, isrc: str | None = None,
-                       album: str | None = None) -> DatosTema | None:
+                       album: str | None = None, hasta: float | None = None) -> DatosTema | None:
+        """Con `hasta` (un instante del reloj), si MusicBrainz está ocupado se reintenta hasta ese momento."""
         c = self._config
         if not c.contacto.strip() or not artista.strip() or not titulo.strip():
             return None
@@ -167,7 +172,11 @@ class ClienteMusicBrainz:
                 return c.cache_error_minutos * 60
             return (c.cache_datos_dias if valor is not None else c.cache_sin_dato_dias) * 86400
 
-        valor = self._cache.consultar(clave, vigencia, buscar)
+        self._plazo.hasta = hasta
+        try:
+            valor = self._cache.consultar(clave, vigencia, buscar)
+        finally:
+            self._plazo.hasta = None
         if fallo:
             if not self._avisado:
                 self._avisado = True
@@ -299,13 +308,22 @@ class ClienteMusicBrainz:
         return buenas
 
     def _pedir(self, ruta: str, parametros: dict):
-        """Un GET a la API; un 503/429 o un timeout (MusicBrainz ocupado) se reintenta tras una espera."""
-        for espera in (*_ESPERAS_REINTENTO, None):
+        """Un GET a la API; un 503/429 o un timeout (MusicBrainz ocupado) se reintenta tras una espera: dos
+        veces, o mientras quede plazo si la consulta tiene uno."""
+        hasta = getattr(self._plazo, "hasta", None)
+        for intento in itertools.count():
             try:
                 return self._pedir_una_vez(ruta, parametros)
             except _Pasajero as e:
-                if espera is None:
-                    raise _Fallo(str(e)) from None
+                if hasta is None:
+                    if intento >= len(_ESPERAS_REINTENTO):
+                        raise _Fallo(str(e)) from None
+                    espera = _ESPERAS_REINTENTO[intento]
+                else:
+                    espera = _ESPERAS_CON_PLAZO[min(intento, len(_ESPERAS_CON_PLAZO) - 1)]
+                    # el próximo intento también puede tardar el timeout entero
+                    if self._reloj() + espera + INTERVALO_SEGUNDOS + self._config.timeout_hechos_segundos > hasta:
+                        raise _Fallo(str(e)) from None
                 self._dormir(espera)
 
     def _pedir_una_vez(self, ruta: str, parametros: dict):

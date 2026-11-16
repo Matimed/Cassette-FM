@@ -392,3 +392,20 @@ def test_un_503_pasajero_se_reintenta_con_espera_y_da_el_dato(servidor_http):
 
 def test_el_timeout_por_defecto_da_tiempo_a_un_musicbrainz_lento():
     assert ConfigServicioDJ().timeout_hechos_segundos >= 10
+
+
+def test_con_plazo_se_sigue_reintentando_mientras_haya_tiempo(servidor_http):
+    respuestas = [(503, "ocupado")] * 5 + [(200, {"recordings": [grabacion(fecha="1984")]})]
+    c, r = montar(servidor_http)
+    servidor_http.reglas.insert(0, ("/ws/2/recording", lambda ruta: respuestas.pop(0), 200, "application/json", 0))
+    assert c.datos_del_tema("a-ha", "Take On Me", hasta=r.t + 120).anio == 1984
+    largas = [e for e in r.esperas if e >= 2]
+    assert len(largas) == 5 and largas == sorted(largas)             # cada vez espera un poco más
+
+
+def test_con_plazo_no_se_espera_mas_alla_del_plazo(servidor_http):
+    servidor_http.responder("/ws/2/recording", "ocupado", codigo=503)
+    c, r = montar(servidor_http)
+    hasta = r.t + 60
+    assert c.datos_del_tema("a-ha", "Take On Me", hasta=hasta) is None
+    assert r.t <= hasta and len(servidor_http.pedidos) > 3
