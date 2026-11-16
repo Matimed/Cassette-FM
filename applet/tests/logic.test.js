@@ -89,3 +89,61 @@ test("parsearRespuesta: acepta cuerpo con acentos", () => {
   const r = L.parsearRespuesta('HTTP/1.0 200 OK\r\n\r\n{"estacion":"Música Ñandú"}');
   assert.equal(r.datos.estacion, "Música Ñandú");
 });
+
+const VOCES = [
+  { alias: "puck", voz: "am_puck", idioma: "en", emisoras: ["Happy Eighties"] },
+  { alias: "emma", voz: "bf_emma", idioma: "en-gb", emisoras: [] },
+  { alias: "dora", voz: "ef_dora", idioma: "es", emisoras: ["Sing", "Otra"] },
+];
+
+test("parsearVoces", () => {
+  assert.deepEqual(L.parsearVoces(JSON.stringify(VOCES) + "\n"), VOCES);
+  assert.equal(L.parsearVoces("usage: cassette [-h]"), null);
+  assert.equal(L.parsearVoces('{"alias": "x"}'), null);
+  assert.equal(L.parsearVoces('[{"alias": "x"}]'), null);
+  assert.equal(L.parsearVoces(null), null);
+});
+
+test("vocesDelIdioma: en-gb cuenta como inglés; Cualquiera las muestra todas", () => {
+  assert.deepEqual(L.vocesDelIdioma(VOCES, "en").map(v => v.alias), ["puck", "emma"]);
+  assert.deepEqual(L.vocesDelIdioma(VOCES, "es").map(v => v.alias), ["dora"]);
+  assert.equal(L.vocesDelIdioma(VOCES, "").length, 3);
+});
+
+test("etiquetaDeVoz", () => {
+  assert.equal(L.etiquetaDeVoz(VOCES[1]), "emma");
+  assert.equal(L.etiquetaDeVoz(VOCES[2]), "dora · Sing, Otra");
+  assert.equal(L.etiquetaDeVoz(null), "Al azar");
+});
+
+test("elegir una voz con Cualquiera fija su idioma; con idioma elegido no lo cambia", () => {
+  assert.deepEqual(L.elegirVoz({ idioma: "", voz: null }, VOCES[1]), { idioma: "en", voz: VOCES[1] });
+  assert.deepEqual(L.elegirVoz({ idioma: "es", voz: null }, VOCES[2]), { idioma: "es", voz: VOCES[2] });
+  assert.deepEqual(L.elegirVoz({ idioma: "es", voz: VOCES[2] }, null), { idioma: "es", voz: null });
+});
+
+test("cambiar a un idioma que la voz no habla la vuelve a Al azar", () => {
+  assert.deepEqual(L.elegirIdioma({ idioma: "", voz: VOCES[2] }, "en"), { idioma: "en", voz: null });
+  assert.deepEqual(L.elegirIdioma({ idioma: "en", voz: VOCES[1] }, "en"), { idioma: "en", voz: VOCES[1] });
+  assert.deepEqual(L.elegirIdioma({ idioma: "es", voz: VOCES[2] }, ""), { idioma: "", voz: VOCES[2] });
+});
+
+test("faltante", () => {
+  assert.equal(L.faltante("  ", "x"), "Falta el nombre");
+  assert.equal(L.faltante("Sing", " "), "Falta el link de la playlist");
+  assert.equal(L.faltante("Sing", "x"), null);
+});
+
+test("argumentosNueva: cada dato es un argumento, sin shell", () => {
+  const link = "https://open.spotify.com/playlist/4iH?si=b5";
+  assert.deepEqual(L.argumentosNueva("Sing «2»", link, { idioma: "", voz: null }), ["nueva", "Sing «2»", link]);
+  assert.deepEqual(L.argumentosNueva("S", link, { idioma: "es", voz: VOCES[2] }),
+                   ["nueva", "S", link, "--voz", "dora", "--idioma", "es"]);
+  assert.deepEqual(L.argumentosNueva("S", link, { idioma: "en", voz: null }), ["nueva", "S", link, "--idioma", "en"]);
+});
+
+test("mensajeDeError", () => {
+  assert.equal(L.mensajeDeError(1, "", "la playlist está vacía\n"), "la playlist está vacía");
+  assert.equal(L.mensajeDeError(1, "✓ Sing (3 temas)\nLa emisora quedó guardada…\n\n", ""), "La emisora quedó guardada…");
+  assert.equal(L.mensajeDeError(2, "", ""), "cassette nueva terminó con error (código 2)");
+});
