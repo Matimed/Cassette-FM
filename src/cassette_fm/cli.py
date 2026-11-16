@@ -72,6 +72,12 @@ def _armar_parser() -> argparse.ArgumentParser:
     tune.add_argument("nombre", nargs="+")
     vol = sub.add_parser("vol", parents=[comun], help="volumen: N, +N o -N")
     vol.add_argument("valor")
+    nueva = sub.add_parser("nueva", parents=[comun],
+                           help="crea una emisora de Spotify con una playlist tuya y la sintoniza")
+    nueva.add_argument("nombre", help="el nombre de la emisora (entre comillas si tiene espacios)")
+    nueva.add_argument("playlist", help="el link o la URI de la playlist")
+    nueva.add_argument("--voz", help="un alias de [voces] de cassette-dj (por defecto, uno libre al azar)")
+    nueva.add_argument("--idioma", choices=["es", "en"], help="el idioma del DJ (por defecto, el de la voz)")
     spotify = sub.add_parser("spotify", help="Spotify como fuente de emisoras: sesión y estado")
     spotify_sub = spotify.add_subparsers(dest="accion", required=True)
     spotify_sub.add_parser("login", help="abre el navegador para darle permiso a cassette-fm en tu cuenta")
@@ -299,6 +305,45 @@ def _spotify_estado(cfg, rutas, s) -> int:
     return 0
 
 
+def _nueva(args, cfg, rutas, puerto: int) -> int:
+    """Valida todo antes de escribir: nombre libre, link de playlist, voz y que Spotify deje leer la playlist (que
+    queda en la caché: el rescan de la radio no la vuelve a bajar)."""
+    from cassette_fm import emisora_nueva, emisoras, servicio
+    from cassette_fm.dj.config import cargar_config_dj, rutas_dj
+    from cassette_fm.spotify.api import ErrorSpotify
+    try:
+        definidas = emisora_nueva.leer_crudo(rutas.emisoras)
+        nombre = emisora_nueva.chequear_nombre(definidas, args.nombre)
+        playlist = emisoras.playlist_de(args.playlist)
+        if playlist is None:
+            raise config.ErrorConfig(f"«{args.playlist}» no es el link de una playlist de Spotify")
+        archivo_dj = rutas_dj().config
+        alias = cargar_config_dj(archivo_dj).voces if archivo_dj.exists() else {}
+        eleccion = emisora_nueva.elegir_voz(alias, emisora_nueva.voces_en_uso(definidas), args.idioma, args.voz)
+        pistas = servicio.catalogo_spotify(cfg, rutas).pistas(playlist)
+        if not pistas:
+            raise config.ErrorConfig("la playlist está vacía (o no tiene temas que se puedan reproducir)")
+    except (config.ErrorConfig, ErrorSpotify) as e:
+        print(e, file=sys.stderr)
+        return 1
+    emisora_nueva.guardar(rutas.emisoras, definidas, {
+        "nombre": nombre, "fuente": {"spotify": args.playlist.strip()},
+        "dj": {"idioma": eleccion.idioma, "voz": eleccion.voz}})
+    repetida = " (otra emisora ya usa esta voz: no quedaban libres)" if eleccion.repetida else ""
+    print(f"✓ {nombre} ({len(pistas)} temas) · DJ: {eleccion.voz} ({eleccion.idioma}){repetida}")
+    try:
+        _llamar(puerto, "POST", "/rescan", timeout=120)
+    except _ErrorCli as e:
+        print(f"La emisora quedó guardada y aparece cuando arranque la radio ({e})")
+        return 0
+    try:
+        print(_linea_estado(_llamar(puerto, "POST", "/sintonizar", {"estacion": nombre})))
+    except _ErrorCli as e:
+        print(f"La emisora quedó guardada, pero la radio no la pudo sintonizar: {e}", file=sys.stderr)
+        return 1
+    return 0
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = _armar_parser()
     args = parser.parse_args(argv)
@@ -331,6 +376,8 @@ def main(argv: list[str] | None = None) -> int:
             print(e, file=sys.stderr)
             return 1
         return 0
+    if args.comando == "nueva":
+        return _nueva(args, cfg, rutas, getattr(args, "puerto", cfg.puerto))
     try:
         _ejecutar(args, getattr(args, "puerto", cfg.puerto))
     except _ErrorCli as e:

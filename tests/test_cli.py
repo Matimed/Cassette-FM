@@ -466,3 +466,108 @@ def test_spotify_estado_sin_soloist_instalado(tmp_path, monkeypatch, capsys):
     r.config.write_text(f'[spotify]\nsoloist_ws = "ws://127.0.0.1:9"\nsoloist_bin = "{tmp_path / "no-esta"}"\n')
     main(["spotify", "estado"])
     assert "no está instalado" in capsys.readouterr().out
+
+
+# --- cassette nueva ---
+
+PLAYLIST_NUEVA = "https://open.spotify.com/playlist/4iHcTVQbU4QvIJV5Xao0fs?si=abc"
+TEMA = {"is_local": False, "item": {"type": "track", "uri": "spotify:track:44AyOl4qVkzS48vBsbNXaC", "name": "T",
+                                    "duration_ms": 200000, "artists": [{"name": "A"}]}}
+HAPPY = [{"nombre": "Happy Eighties", "fuente": {"spotify": "spotify:playlist:63xdHPD31lRpaR31ZzRcgc"},
+          "dj": {"idioma": "en", "voz": "puck"}}]
+
+
+def _nueva(monkeypatch, tmp_path, servidor_http, items=(TEMA,), codigo=200, llamar=None):
+    """Entorno de `cassette nueva`: config con la API falsa, sesión, una emisora (voz puck), alias puck y sarah, y
+    el servicio reemplazado por `llamar` (por defecto anota las rutas)."""
+    import json as _json
+    from cassette_fm import cli
+    r = _rutas_tmp(monkeypatch, tmp_path)
+    r.config.write_text(f'[spotify]\napi_url = "{servidor_http.url}/v1"\n')
+    r.spotify_token.parent.mkdir(parents=True, exist_ok=True)
+    r.spotify_token.write_text(_json.dumps({"access_token": "A", "refresh_token": "R", "expira": 9e18}))
+    r.emisoras.write_text(_json.dumps(HAPPY))
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "xdg"))
+    (tmp_path / "xdg" / "cassette-dj").mkdir(parents=True)
+    (tmp_path / "xdg" / "cassette-dj" / "config.toml").write_text('[voces]\npuck = "am_puck"\nsarah = "af_sarah"\n')
+    servidor_http.responder("/v1/playlists/4iHcTVQbU4QvIJV5Xao0fs/items",
+                            {"items": list(items), "next": None} if codigo == 200
+                            else {"error": {"status": codigo, "message": "Forbidden"}}, codigo)
+    servidor_http.responder("/v1/playlists/4iHcTVQbU4QvIJV5Xao0fs", {"snapshot_id": "S", "name": "Synth"})
+    rutas = []
+
+    def anotar(puerto, metodo, ruta, cuerpo=None, timeout=10):
+        rutas.append((ruta, cuerpo))
+        return {"encendida": True, "estacion": "Synthwave F.M.", "pista": None, "volumen": 60, "fuente": "spotify"}
+    monkeypatch.setattr(cli, "_llamar", llamar or anotar)
+    return r, rutas
+
+
+def test_nueva_guarda_rescanea_y_sintoniza(tmp_path, monkeypatch, capsys, servidor_http):
+    import json as _json
+    r, rutas = _nueva(monkeypatch, tmp_path, servidor_http)
+    assert main(["nueva", "Synthwave F.M.", PLAYLIST_NUEVA]) == 0
+    assert _json.loads(r.emisoras.read_text())[-1] == {
+        "nombre": "Synthwave F.M.", "fuente": {"spotify": PLAYLIST_NUEVA}, "dj": {"idioma": "en", "voz": "sarah"}}
+    assert rutas == [("/rescan", None), ("/sintonizar", {"estacion": "Synthwave F.M."})]
+    salida = capsys.readouterr().out
+    assert "✓ Synthwave F.M. (1 temas) · DJ: sarah (en)" in salida and "▶ Synthwave F.M. · Spotify" in salida
+
+
+def test_nueva_con_nombre_repetido_no_baja_nada(tmp_path, monkeypatch, capsys, servidor_http):
+    r, rutas = _nueva(monkeypatch, tmp_path, servidor_http)
+    antes = r.emisoras.read_text()
+    assert main(["nueva", "happy eighties", PLAYLIST_NUEVA]) == 1
+    assert "Happy Eighties" in capsys.readouterr().err
+    assert servidor_http.pedidos == [] and rutas == [] and r.emisoras.read_text() == antes
+
+
+def test_nueva_con_link_que_no_es_playlist(tmp_path, monkeypatch, capsys, servidor_http):
+    _nueva(monkeypatch, tmp_path, servidor_http)
+    assert main(["nueva", "X", "https://open.spotify.com/album/4iHcTVQbU4QvIJV5Xao0fs"]) == 1
+    assert "playlist" in capsys.readouterr().err and servidor_http.pedidos == []
+
+
+def test_nueva_con_playlist_ajena_no_guarda(tmp_path, monkeypatch, capsys, servidor_http):
+    r, rutas = _nueva(monkeypatch, tmp_path, servidor_http, codigo=403)
+    antes = r.emisoras.read_text()
+    assert main(["nueva", "X", PLAYLIST_NUEVA]) == 1
+    assert "no es tuya" in capsys.readouterr().err and r.emisoras.read_text() == antes and rutas == []
+
+
+def test_nueva_con_playlist_vacia_no_guarda(tmp_path, monkeypatch, capsys, servidor_http):
+    r, rutas = _nueva(monkeypatch, tmp_path, servidor_http, items=())
+    antes = r.emisoras.read_text()
+    assert main(["nueva", "X", PLAYLIST_NUEVA]) == 1
+    assert "vacía" in capsys.readouterr().err and r.emisoras.read_text() == antes and rutas == []
+
+
+def test_nueva_con_voz_e_idioma_que_no_coinciden(tmp_path, monkeypatch, capsys, servidor_http):
+    r, _ = _nueva(monkeypatch, tmp_path, servidor_http)
+    assert main(["nueva", "X", PLAYLIST_NUEVA, "--voz", "sarah", "--idioma", "es"]) == 1
+    assert "sarah" in capsys.readouterr().err and servidor_http.pedidos == []
+
+
+def test_nueva_con_el_servicio_caido_queda_guardada(tmp_path, monkeypatch, capsys, servidor_http):
+    import json as _json
+    from cassette_fm import cli
+
+    def caido(*a, **kw):
+        raise cli._ErrorCli("cassette-fm no está corriendo. Arrancalo con: systemctl --user start cassette-fm")
+    r, _ = _nueva(monkeypatch, tmp_path, servidor_http, llamar=caido)
+    assert main(["nueva", "Synthwave F.M.", PLAYLIST_NUEVA]) == 0
+    assert _json.loads(r.emisoras.read_text())[-1]["nombre"] == "Synthwave F.M."
+    assert "cuando arranque" in capsys.readouterr().out
+
+
+def test_nueva_que_la_radio_no_puede_sintonizar_lo_dice(tmp_path, monkeypatch, capsys, servidor_http):
+    from cassette_fm import cli
+
+    def sin_emisora(puerto, metodo, ruta, cuerpo=None, timeout=10):
+        if ruta == "/sintonizar":
+            raise cli._ErrorCli("no existe la estación «Synthwave F.M.»")
+        return {}
+    _nueva(monkeypatch, tmp_path, servidor_http, llamar=sin_emisora)
+    assert main(["nueva", "Synthwave F.M.", PLAYLIST_NUEVA]) == 1
+    salida = capsys.readouterr()
+    assert "no existe la estación" in salida.err and "cuando arranque" not in salida.out + salida.err
