@@ -591,3 +591,14 @@ def test_los_hechos_se_esperan_hasta_lo_que_deja_la_voz_y_el_llm(montaje, hacer_
     productor, _, _, fuente, _ = llm_listo(montaje, modo=modo)
     productor.producir(hacer_pedido("pz1"))
     assert fuente.plazos == [MOMENTO - ConfigServicioDJ().llm_margen_segundos - reserva]
+
+
+def test_el_ritmo_medido_con_el_nombre_crudo_vale_para_su_alias(montaje, hacer_pedido):
+    from dataclasses import replace
+    crear, _, guiones = montaje
+    guiones.anotar(voz="em_santa", texto=" ".join(["palabra"] * 40), duracion=20.0)    # 2 palabras por segundo
+    config = replace(_MUCHOS, voces={"santa": "em_santa"})
+    productor, _ = crear(config=config, modo=ModoDJ("llm"), llm=LLMFalso(), hechos=FuenteWiki(), reloj=RelojFalso())
+    productor.producir(hacer_pedido("al1", duracion_maxima_segundos=25, voz="santa"))
+    (g,) = [g for g in guiones.ultimos(10) if g.get("fuente") == "llm"]
+    assert "y 47 palabras" in g["sistema"]

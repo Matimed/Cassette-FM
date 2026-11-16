@@ -65,9 +65,14 @@ class Productor:
         for g in guiones.ultimos(_GUIONES_PARA_RITMO):
             self._medir(g.get("voz"), g.get("texto"), g.get("duracion"))
 
+    def _voz_real(self, voz: str) -> str:
+        """El ritmo es de la voz, no del nombre: un alias y su nombre crudo comparten lo medido."""
+        return self._config.voces.get(voz, voz)
+
     def _medir(self, voz, texto, duracion) -> None:
         if not isinstance(voz, str) or not isinstance(texto, str) or not isinstance(duracion, (int, float)):
             return
+        voz = self._voz_real(voz)
         palabras = len(texto.split())
         if palabras == 0 or duracion <= 0:
             return
@@ -80,7 +85,7 @@ class Productor:
         maxima = pedido.duracion_maxima_segundos
         if not maxima:
             return self._config.palabras_maximas
-        ritmo = self._ritmos.get(pedido.voz)
+        ritmo = self._ritmos.get(self._voz_real(pedido.voz))
         if ritmo is None:
             return int(maxima * _PALABRAS_POR_SEGUNDO)
         return max(15, int(maxima * ritmo * 0.95))
