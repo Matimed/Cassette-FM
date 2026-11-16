@@ -573,3 +573,13 @@ def test_el_llm_que_saluda_con_el_momento_equivocado_se_corrige(montaje, hacer_p
     productor, _, _, _, _ = llm_listo(montaje, mala)
     r = productor.producir(hacer_pedido("cm1"))             # el pedido es a las 21:47
     assert r.texto.startswith("Buenas noches") and "esta noche suena" in r.texto
+
+
+def test_el_arranque_del_prompt_se_sortea_entre_pedidos(montaje, hacer_pedido):
+    from cassette_fm.dj.redactor_llm import ARRANQUES
+    productor, _, llm, _, _ = llm_listo(montaje)
+    for i in range(8):
+        productor.producir(hacer_pedido(f"ar{i}"))
+    usados = {clave for sistema, _ in llm.llamadas for clave, (es, _en) in ARRANQUES.items() if es in sistema}
+    assert len(usados) > 1
+    assert all(sum(es in sistema for es, _en in ARRANQUES.values()) == 1 for sistema, _ in llm.llamadas)

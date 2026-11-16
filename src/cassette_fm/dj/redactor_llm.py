@@ -79,6 +79,8 @@ def campos_de_voz(pedido: Pedido, hechos: Hechos, zona: tzinfo | None = None) ->
 
 
 def _hechos_del_tema(hechos: Hechos, idioma: str) -> list[str]:
+    """Año del tema y, si no hay resumen de Wikipedia, país e inicio de la banda: con todo junto el modelo
+    recitaba una ficha ("released in 1984, is from Norway, formed in 1982…")."""
     t = hechos.tema
     if t is None:
         return []
@@ -86,6 +88,8 @@ def _hechos_del_tema(hechos: Hechos, idioma: str) -> list[str]:
     if t.anio is not None and 1900 <= t.anio <= 2099:
         frases.append(("Año de la canción (no del álbum): %s" if idioma == "es"
                        else "Song year (the song, not the album): %s") % t.anio)
+    if hechos.wikipedia is not None:
+        return frases
     pais = nombre_de_pais(t.pais, idioma) if t.pais else None
     if pais:
         frases.append(("El artista viene de %s." if idioma == "es" else "The artist comes from %s.") % pais)
@@ -95,8 +99,15 @@ def _hechos_del_tema(hechos: Hechos, idioma: str) -> list[str]:
     return frases
 
 
+# por dónde empieza la frase: se sortea por pedido para que no salgan todas con el mismo molde
+ARRANQUES = {"artista": ("Empezá por el nombre del artista.", "Start with the artist's name."),
+             "tema": ("Empezá por el nombre del tema.", "Start with the song title."),
+             "dato": ("Empezá por el dato y después presentá el tema.", "Start with the fact, then introduce the song.")}
+
+
 def construir_peticion(pedido: Pedido, ingredientes: Sequence[str], hechos: Hechos,
-                       campos_de_voz: Mapping[str, str], palabras_maximas: int) -> Peticion:
+                       campos_de_voz: Mapping[str, str], palabras_maximas: int,
+                       arranque: str | None = None) -> Peticion:
     idioma = _idioma(pedido)
     es = idioma == "es"
     artista = (" y " if es else " and ").join(artistas_del_tag(pedido.siguiente.artista))
@@ -146,6 +157,8 @@ def construir_peticion(pedido: Pedido, ingredientes: Sequence[str], hechos: Hech
     tope = min(palabras_maximas, 20 + 15 * n_hechos)
     minimo = max(8, tope // 2)
     tono = (f"\nTono: {pedido.personalidad}" if pedido.personalidad else "")
+    if arranque in ARRANQUES and (arranque != "dato" or "dato" in ingredientes):
+        tono = f"\n- {ARRANQUES[arranque][0 if es else 1]}" + tono
     if es:
         sistema = (f"Sos el locutor de la radio {pedido.estacion}. Escribí UNA sola intervención hablada, de entre "
                    f"{minimo} y {tope} palabras, en español.\n"
@@ -161,6 +174,10 @@ def construir_peticion(pedido: Pedido, ingredientes: Sequence[str], hechos: Hech
                    "- No menciones el momento del día, el día de la semana ni el clima si el mensaje no los da.\n"
                    "- NUNCA digas que el tema es popular, un éxito, un clásico, que sube en las listas ni que lo escucha mucha "
                    "gente: es inventado y aburre. Hablá de la canción, del artista o de los datos del mensaje.\n"
+                   "- Nada de elogios vacíos (increíble, fantástico, hermoso, un temazo, un sonido único): decí algo "
+                   "concreto o nada. No digas \"queridos oyentes\" ni que el tema está dando que hablar o es muy "
+                   "escuchado.\n"
+                   "- Contá a lo sumo dos datos. No enumeres integrantes, nombres completos ni fechas de más.\n"
                    "- Escribí los años con cifras (por ejemplo 1984).\n"
                    "- Si hay un dato de Wikipedia, usá a lo sumo uno y decilo con tus palabras en una frase corta."
                    + tono)
@@ -179,6 +196,9 @@ def construir_peticion(pedido: Pedido, ingredientes: Sequence[str], hechos: Hech
                    "- Do not mention the time of day, the day of the week or the weather unless the message gives it.\n"
                    "- NEVER say the song is popular, a hit or a classic, that it is climbing the charts or that many people "
                    "listen to it: it is made up and boring. Talk about the song, the artist or the facts in the message.\n"
+                   "- No empty praise (fantastic, amazing, beautiful, great track, distinctive sound): say something "
+                   "concrete or nothing. Do not call the audience \"listeners\" and do not start with \"This track\".\n"
+                   "- Mention at most two facts. Do not list band members, full birth names or extra dates.\n"
                    "- Write years as digits (for example 1984).\n"
                    "- If there is a Wikipedia fact, use at most one, in your own words, in one short sentence."
                    + tono)

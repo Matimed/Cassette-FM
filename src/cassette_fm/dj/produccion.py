@@ -15,7 +15,7 @@ from cassette_fm.dj.guiones import RegistroGuiones
 from cassette_fm.dj.lexico import Lexico
 from cassette_fm.dj.pedido import Pedido
 from cassette_fm.dj.plantillas import ingredientes_disponibles, redactar
-from cassette_fm.dj.redactor_llm import (campos_de_voz, construir_peticion, limpiar_salida, marcar_nombres,
+from cassette_fm.dj.redactor_llm import (ARRANQUES, campos_de_voz, construir_peticion, limpiar_salida, marcar_nombres,
                                          corregir_momento, numeros_a_palabras, salvar,
                                          verificar)
 from cassette_fm.dj.selector import elegir_ingredientes
@@ -139,6 +139,7 @@ class Productor:
         if con_dato:
             elegidos = (*elegidos, "dato")
         campos = campos_de_voz(pedido, hechos, self._zona)
+        arranque = self._azar.choice(sorted(ARRANQUES))
         ultimo = "el LLM no dio una frase"
         limite = pedido.momento.timestamp() - c.llm_margen_segundos      # la voz arranca en `momento`
         for intento in range(1, c.llm_intentos + 1):
@@ -146,7 +147,7 @@ class Productor:
             if restante < _TIEMPO_MINIMO_LLM:
                 ultimo = f"sin tiempo para el LLM (quedan {max(restante, 0):.0f} s antes de la voz)"
                 break
-            peticion = construir_peticion(pedido, elegidos, hechos, campos, palabras)
+            peticion = construir_peticion(pedido, elegidos, hechos, campos, palabras, arranque)
             guion = dict(self._base(pedido), fuente="llm", ingredientes=list(elegidos), modelo=c.llm_modelo,
                          intento=intento, sistema=peticion.sistema, usuario=peticion.usuario)
             if fuentes is not None:

@@ -144,6 +144,44 @@ def test_con_pocos_hechos_el_prompt_pide_una_frase_corta_para_que_no_rellene_inv
     assert "entre 37 y 75 palabras" in peticion(["cancion", "estacion", "hora", "momento", "album"], maximo=75).sistema
 
 
+def test_el_prompt_pide_el_arranque_elegido():
+    p, en = pedido(), pedido("en")
+    assert "Empezá por el nombre del artista" in construir_peticion(
+        p, ["cancion"], HECHOS, campos_de_voz(p, HECHOS), 45, arranque="artista").sistema
+    assert "Start with the song title" in construir_peticion(
+        en, ["cancion"], HECHOS, campos_de_voz(en, HECHOS), 45, arranque="tema").sistema
+    assert "Start with the fact" in construir_peticion(
+        en, ["cancion", "dato"], HECHOS, campos_de_voz(en, HECHOS), 45, arranque="dato").sistema
+    sin = peticion(["cancion"]).sistema
+    assert "Empezá por" not in sin
+
+
+def test_sin_el_ingrediente_dato_no_se_pide_arrancar_por_el_dato():
+    en = pedido("en")
+    assert "Start with" not in construir_peticion(
+        en, ["cancion"], HECHOS, campos_de_voz(en, HECHOS), 45, arranque="dato").sistema
+
+
+def test_el_prompt_prohibe_las_muletillas_y_los_elogios_vacios():
+    es = peticion(["cancion"]).sistema
+    assert "oyentes" in es and "dando que hablar" in es and "muy escuchado" in es and "increíble" in es
+    en = peticion(["cancion"], p=pedido("en")).sistema
+    assert "This track" in en and "listeners" in en and "fantastic" in en and "distinctive sound" in en
+
+
+def test_el_prompt_pide_pocos_datos_y_sin_fichas():
+    assert "integrantes" in peticion(["cancion"]).sistema
+    assert "band members" in peticion(["cancion"], p=pedido("en")).sistema
+
+
+def test_con_wikipedia_el_dato_es_el_resumen_y_el_anio_sin_pais_ni_inicio_de_la_banda():
+    u = peticion(["cancion", "dato"]).usuario
+    assert "A-ha es una banda noruega" in u and "1984" in u
+    assert "Noruega" not in u and "1983" not in u
+    sin_wiki = peticion(["cancion", "dato"], hechos=Hechos(HECHOS.clima, HECHOS.tema, None)).usuario
+    assert "Noruega" in sin_wiki and "1983" in sin_wiki
+
+
 def test_el_resumen_de_wikipedia_solo_si_el_ingrediente_dato():
     assert "A-ha es una banda noruega" not in peticion(["cancion", "clima"]).usuario
     assert "A-ha es una banda noruega" in peticion(["cancion", "dato"]).usuario
