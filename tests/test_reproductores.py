@@ -145,6 +145,14 @@ def test_reenvia_al_cambiar_agenda_y_al_encolado():
     assert vistos == [("agenda", "E", "P"), ("encolado", "P", "E", 9.0)]
 
 
+def test_al_desencolado_llega_desde_spotify():
+    r, _, spotify, _ = armar()
+    vistos = []
+    r.al_desencolado = vistos.append
+    spotify.al_desencolado("P")
+    assert vistos == ["P"]
+
+
 def test_actualizar_llega_a_spotify_solo_si_esta_sonando():
     r, mpv, spot, reg = armar()
     r.actualizar(est("Sing", "spotify"))

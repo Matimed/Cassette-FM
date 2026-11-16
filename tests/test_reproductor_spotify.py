@@ -74,7 +74,8 @@ def armar(control=None, soloist=None, reloj=None, uris=100):
     tempo = Temporizadores()
     r = ReproductorSpotify(control, soloist, reloj=reloj, uris_por_pedido=uris, espera_sonido_segundos=10.0,
                            temporizador=tempo, en_segundo_plano=lambda f: f())
-    r.eventos = {"sonar": 0, "fallas": [], "cambios": [], "linea": [], "agendas": [], "encolados": []}
+    r.eventos = {"sonar": 0, "fallas": [], "cambios": [], "linea": [], "agendas": [], "encolados": [],
+                 "desencolados": []}
     r.al_sonar = lambda: r.eventos.__setitem__("sonar", r.eventos["sonar"] + 1)
     r.al_fallar = lambda e, motivo=None: r.eventos["fallas"].append((e.nombre, motivo))
 
@@ -88,6 +89,7 @@ def armar(control=None, soloist=None, reloj=None, uris=100):
     r.al_cambiar_pista = cambio_de_pista
     r.al_cambiar_agenda = cambio_de_agenda
     r.al_encolado = lambda p, e, fin: r.eventos["encolados"].append((p, e.nombre, fin))
+    r.al_desencolado = lambda clave: r.eventos["desencolados"].append(clave)
     return r, control, soloist, reloj, tempo
 
 
@@ -584,6 +586,52 @@ def test_encolar_avisa_con_metadata_y_fin_del_tema_actual():
     assert fin_actual == pytest.approx(fin)
     r.manejar_evento(cola(CAPTURADOS[PARA_NO_OLVIDAR]))      # Soloist repite la cola: no se avisa de nuevo
     assert len(r.eventos["encolados"]) == 1
+
+
+TRANSITORIA = {"type": "queue_changed", "upcoming": [{"source": "context",
+                                                      "item": {"uri": "spotify:meta:node_rules_placeholder"}}]}
+
+
+def test_sacar_de_la_cola_el_encolado_avisado_lo_desencola():
+    r, _, _, _ = en_marcha()
+    r.manejar_evento(cola(item(AJENO)))
+    assert len(r.eventos["encolados"]) == 1
+    r.manejar_evento(cola())
+    assert r.eventos["desencolados"] == [AJENO]
+
+
+def test_la_cola_transitoria_de_soloist_no_desencola_ni_olvida_la_cola():
+    r, control, reloj, e = en_marcha()
+    _, fin = proximo(e, reloj())
+    r.manejar_evento(cola(item(AJENO)))
+    r.manejar_evento(TRANSITORIA)                          # Soloist la manda al agregar otro tema a la cola
+    assert r.eventos["desencolados"] == []
+    reloj.t = fin
+    r.manejar_evento(cambio(AJENO, "Encolado", 150000))
+    assert r.eventos["agendas"][-1][1].pista.uri == AJENO and len(control.llamadas) == 1
+
+
+def test_el_pedido_que_empieza_no_cuenta_como_desencolado():
+    r, _, reloj, e = en_marcha()
+    _, fin = proximo(e, reloj())
+    r.manejar_evento(cola(item(AJENO)))
+    reloj.t = fin
+    r.manejar_evento(cambio(AJENO, "Encolado", 150000))
+    r.manejar_evento(cola())                               # Soloist lo saca de la cola porque empezó
+    assert r.eventos["desencolados"] == []
+
+
+def test_item_sin_nombre_es_pedido_sin_cancion():
+    r, _, reloj, e = en_marcha()
+    _, fin = proximo(e, reloj())
+    sin_nombre = {"uri": AJENO, "decorations": {
+        "creators": [{"entity": {"decorations": {"identity": {"name": "Artista"}}}}],
+        "playback": {"duration_ms": 150000}}}
+    r.manejar_evento(cola(sin_nombre))
+    reloj.t = fin
+    r.manejar_evento(cambio(AJENO))
+    pedido = r.eventos["agendas"][-1][1]
+    assert pedido.pista.cancion is None and pedido.pista.titulo == "Artista"
 
 
 def test_tema_encolado_que_empieza_es_un_pedido_sin_resintonia():

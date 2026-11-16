@@ -694,6 +694,7 @@ class PlanificadorDePedidos:
     def __init__(self):
         self.agendas = []
         self.encolados = []
+        self.desencolados = []
 
     def al_sintonizar(self, estacion):
         pass
@@ -709,6 +710,9 @@ class PlanificadorDePedidos:
 
     def al_encolado(self, pista, estacion, fin_actual):
         self.encolados.append((pista, estacion.nombre, fin_actual))
+
+    def al_desencolado(self, clave):
+        self.desencolados.append(clave)
 
 
 def _estacion(radio, nombre):
@@ -765,6 +769,24 @@ def test_al_encolado_pasa_al_planificador():
     b = _estacion(radio, "B")
     rep.al_encolado(PEDIDO, b, 1234.0)
     assert plan.encolados == [(PEDIDO, "B", 1234.0)]
+
+
+def test_desencolado_llega_al_planificador():
+    plan = PlanificadorDePedidos()
+    radio, rep, _, _ = crear(planificador=plan)
+    rep.al_desencolado("spotify:track:x")
+    assert plan.desencolados == ["spotify:track:x"]
+
+
+def test_cambio_de_agenda_conserva_las_pistas_de_la_radio():
+    plan = PlanificadorDePedidos()
+    radio, rep, _, _ = crear(planificador=plan)
+    b = _estacion(radio, "B")
+    # el reproductor armó la agenda con las pistas de antes de un rescan
+    vieja = replace(b, pistas=est("Vieja").pistas, corrimiento=10.0, pedidos=(Pedido(PEDIDO, EPOCA + 100),))
+    rep.al_cambiar_agenda(vieja, vieja.pedidos[0])
+    nueva = _estacion(radio, "B")
+    assert nueva.pistas == b.pistas and nueva.corrimiento == 10.0 and nueva.pedidos == vieja.pedidos
 
 
 def test_al_sintonizar_pliega_los_pedidos_vencidos():

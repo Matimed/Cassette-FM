@@ -103,6 +103,7 @@ class Radio:
         reproductor.al_fallar = self._al_fallar
         reproductor.al_cambiar_agenda = self._al_cambiar_agenda
         reproductor.al_encolado = self._al_encolado
+        reproductor.al_desencolado = self._al_desencolado
         self._poner_volumen(estado.volumen)
 
     def estaciones(self) -> list[Estacion]:
@@ -289,8 +290,12 @@ class Radio:
         self._guardar(self._estado)
 
     def _al_cambiar_agenda(self, estacion: Estacion, nuevo: Pedido | None) -> None:
-        """El reproductor vio empezar un pedido (`nuevo`) o terminar los que había."""
+        """El reproductor vio empezar un pedido (`nuevo`) o terminar los que había. Las pistas son de la radio (un
+        rescan pudo cambiarlas mientras tanto); del reproductor se toman el corrimiento y los pedidos."""
         with self._lock:
+            suya = next((e for e in self._estaciones if e.nombre == estacion.nombre), None)
+            if suya is not None:
+                estacion = replace(suya, corrimiento=estacion.corrimiento, pedidos=estacion.pedidos)
             self._reemplazar(estacion)
         if self._planificador is not None:      # fuera del lock, como al_rescan
             self._planificador.al_cambiar_agenda(estacion, nuevo)
@@ -299,6 +304,11 @@ class Radio:
         """Encolaron un tema que va a sonar cuando termine el actual (`fin_actual`, epoch)."""
         if self._planificador is not None:
             self._planificador.al_encolado(pista, estacion, fin_actual)
+
+    def _al_desencolado(self, clave: str) -> None:
+        """Sacaron de la cola de la app el tema encolado que iba a sonar."""
+        if self._planificador is not None:
+            self._planificador.al_desencolado(clave)
 
     def _medir_desfase(self, pista, estacion) -> None:
         with self._lock_dj:

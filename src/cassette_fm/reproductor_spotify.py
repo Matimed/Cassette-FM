@@ -67,6 +67,7 @@ class ReproductorSpotify:
     al_sonar: Callable[[], None] | None = None        # empezó a sonar lo pedido: la radio saca la estática
     al_cambiar_agenda: Callable[[Estacion, Pedido | None], None] | None = None   # empezó un pedido o terminaron
     al_encolado: Callable[[Pista, Estacion, float], None] | None = None          # (pista, emisora, fin del actual)
+    al_desencolado: Callable[[str], None] | None = None   # sacaron de la cola el encolado avisado (su clave)
 
     def __init__(self, control, soloist, reloj: Callable[[], float] = time.time, uris_por_pedido: int = 100,
                  espera_sonido_segundos: float = 10.0, temporizador=_temporizar,
@@ -218,12 +219,12 @@ class ReproductorSpotify:
 
     def manejar_evento(self, evento: dict) -> None:
         tipo = evento.get("type")
-        avisar = sonar = perdido = agenda = encolado = None
+        avisar = sonar = perdido = agenda = encolado = desencolado = None
         resintonizar = False
         with self._lock:
             estacion = self._estacion
             if tipo == "queue_changed":       # la cola se sigue aunque no suene Spotify: puede sonar al volver
-                encolado = self._leer_cola(evento.get("upcoming"), estacion)
+                encolado, desencolado = self._leer_cola(evento.get("upcoming"), estacion)
             elif estacion is None:
                 return
             elif tipo == "track_changed":
@@ -302,6 +303,8 @@ class ReproductorSpotify:
             self.al_cambiar_agenda(*agenda)       # antes que el cambio de tema: la radio mide con la agenda nueva
         if avisar is not None and self.al_cambiar_pista is not None:
             self.al_cambiar_pista(*avisar)
+        if desencolado is not None and self.al_desencolado is not None:
+            self.al_desencolado(desencolado)
         if encolado is not None and self.al_encolado is not None:
             self.al_encolado(*encolado)
         if resintonizar:
@@ -325,10 +328,15 @@ class ReproductorSpotify:
             return True
         return self._enviados - self._vistos < 10
 
-    def _leer_cola(self, upcoming, estacion: Estacion | None) -> tuple[Pista, Estacion, float] | None:
+    def _leer_cola(self, upcoming, estacion: Estacion | None) -> tuple[tuple[Pista, Estacion, float] | None,
+                                                                       str | None]:
         """Con el lock tomado: recuerda lo encolado en la app (solo con duración: si no, no se puede correr la
-        agenda) y, si lo próximo en sonar es un encolado nuevo, da el aviso para `al_encolado`."""
+        agenda). Devuelve el aviso para `al_encolado` si lo próximo en sonar es un encolado nuevo, y la clave del
+        encolado ya avisado si lo sacaron de la cola sin que empezara (para `al_desencolado`)."""
         entradas = [u for u in upcoming if isinstance(u, dict)] if isinstance(upcoming, list) else []
+        uris = [u["item"].get("uri") for u in entradas if isinstance(u.get("item"), dict)]
+        if any(isinstance(uri, str) and uri.startswith("spotify:meta:") for uri in uris):
+            return None, None        # la cola transitoria que manda Soloist al agregar un tema: no es la cola real
         encolados = {}
         for u in entradas:
             if u.get("source") == "queue":
@@ -337,12 +345,15 @@ class ReproductorSpotify:
                     encolados.setdefault(pista.clave, pista)
         self._encolados = encolados
         self._por_anunciar = None
+        desencolado = None
+        if self._anunciado is not None and self._anunciado not in encolados:
+            desencolado, self._anunciado = self._anunciado, None
         if not entradas or entradas[0].get("source") != "queue" or estacion is None:
-            return None
+            return None, desencolado
         proxima = encolados.get((entradas[0].get("item") or {}).get("uri"))
         if proxima is None or proxima.clave == self._anunciado:
-            return None
-        return self._aviso_de_encolado(proxima, estacion)
+            return None, desencolado
+        return self._aviso_de_encolado(proxima, estacion), desencolado
 
     def _aviso_de_encolado(self, proxima: Pista, estacion: Estacion) -> tuple[Pista, Estacion, float] | None:
         """Con el lock tomado: el aviso de `proxima` con el fin del tema actual; sin posición todavía (recién
@@ -362,14 +373,14 @@ class ReproductorSpotify:
         if uri in self._por_clave:
             return self._por_clave[uri]
         deco = item.get("decorations") if isinstance(item.get("decorations"), dict) else {}
-        nombre = _nombre(deco) or uri
+        nombre = _nombre(deco)          # sin nombre no se anuncia (el título queda solo para mostrar)
         ms = (deco.get("playback") or {}).get("duration_ms") if isinstance(deco.get("playback"), dict) else None
         duracion = ms / 1000 if isinstance(ms, (int, float)) and not isinstance(ms, bool) and ms > 0 else 0.0
         creadores = deco.get("creators") if isinstance(deco.get("creators"), list) else []
         artista = ", ".join(n for n in map(_nombre_de_entidad, creadores) if n) or None
-        return Pista(ruta=None, duracion=duracion, titulo=f"{artista} - {nombre}" if artista else nombre,
-                     fuente="spotify", artista=artista, cancion=nombre, album=_nombre_de_entidad(deco.get("parent")),
-                     uri=uri)
+        titulo = " - ".join(x for x in (artista, nombre) if x) or uri
+        return Pista(ruta=None, duracion=duracion, titulo=titulo, fuente="spotify", artista=artista, cancion=nombre,
+                     album=_nombre_de_entidad(deco.get("parent")), uri=uri)
 
     def actualizar(self, estacion: Estacion) -> None:
         """El rescan de la radio: si `estacion` es la que suena, toma sus pistas. El corrimiento y los pedidos

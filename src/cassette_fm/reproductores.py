@@ -19,6 +19,7 @@ class Reproductores:
         self.al_fallar = None
         self.al_cambiar_agenda = None     # solo Spotify: empezó o terminó un pedido (la cola de la app)
         self.al_encolado = None
+        self.al_desencolado = None
         local.al_cambiar_pista = self._cambio
         local.al_fallar = self._falla
         if spotify is not None:
@@ -27,6 +28,7 @@ class Reproductores:
             spotify.al_sonar = self._sono_spotify
             spotify.al_cambiar_agenda = lambda *a: self.al_cambiar_agenda and self.al_cambiar_agenda(*a)
             spotify.al_encolado = lambda *a: self.al_encolado and self.al_encolado(*a)
+            spotify.al_desencolado = lambda *a: self.al_desencolado and self.al_desencolado(*a)
 
     @property
     def pista_actual(self):
