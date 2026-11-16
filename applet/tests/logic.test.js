@@ -230,9 +230,10 @@ test("crearCola: uno a la vez, y al terminar solo el último que se pidió", () 
 });
 
 test("barraVolumen", () => {
-  assert.equal(L.barraVolumen(60), "▮▮▮▮▮▮▱▱▱▱ 60");
-  assert.equal(L.barraVolumen(5), "▮▱▱▱▱▱▱▱▱▱ 5");
-  assert.equal(L.barraVolumen(100), "▮▮▮▮▮▮▮▮▮▮ 100");
+  // un cuadrado por cada 5 %
+  assert.equal(L.barraVolumen(60), "▮".repeat(12) + "▱".repeat(8) + " 60");
+  assert.equal(L.barraVolumen(5), "▮" + "▱".repeat(19) + " 5");
+  assert.equal(L.barraVolumen(100), "▮".repeat(20) + " 100");
   assert.equal(L.barraVolumen(0), "Apagada");
 });
 

@@ -212,8 +212,8 @@ function crearCola(enviar) {
 
 function barraVolumen(v) {
     if (v === 0) return "Apagada";
-    const llenas = Math.round(v / 10);
-    return "▮".repeat(llenas) + "▱".repeat(10 - llenas) + " " + v;
+    const llenas = Math.round(v / 5);          // un cuadrado por cada 5 %
+    return "▮".repeat(llenas) + "▱".repeat(20 - llenas) + " " + v;
 }
 
 function iconoDe(nombre, iconos, generico) {
