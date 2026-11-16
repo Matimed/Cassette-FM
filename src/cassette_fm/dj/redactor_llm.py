@@ -130,7 +130,13 @@ def construir_peticion(pedido: Pedido, ingredientes: Sequence[str], hechos: Hech
         lineas.append("El tema anterior fue una petición especial del público: mencionalo y presentá el siguiente."
                       if es else
                       "The previous song was a special request from a listener: mention it and introduce the next one.")
-    if ("anterior" in ingredientes or pedido.peticion == "despues") and pedido.anterior is not None:
+    elif pedido.peticion == "seguidas" and pedido.anterior is not None:
+        lineas.append("El tema anterior fue una petición especial del público y este también: mencioná el anterior y "
+                      "presentá este como petición." if es else
+                      "The previous song was a special request from a listener and so is this one: mention the "
+                      "previous one and introduce this one as a request.")
+    if (("anterior" in ingredientes or pedido.peticion in ("despues", "seguidas"))
+            and pedido.anterior is not None):
         previo = " y ".join(artistas_del_tag(pedido.anterior.artista)) if es \
             else " and ".join(artistas_del_tag(pedido.anterior.artista))
         lineas.append(f"{'Tema anterior' if es else 'Previous song'}: {_titulo_limpio(pedido.anterior.titulo)} "

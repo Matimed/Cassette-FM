@@ -30,7 +30,8 @@ class Pedido:
     personalidad: str = ""
     duracion_maxima_segundos: float | None = None
     velocidad: float | None = None      # pisa a la velocidad del servicio (0,5 a 2)
-    peticion: str | None = None         # "antes" (presenta un tema pedido) o "despues" (el anterior fue pedido)
+    peticion: str | None = None         # "antes" (presenta un tema pedido), "despues" (el anterior fue pedido) o
+                                        # "seguidas" (el anterior fue pedido y este también)
 
     @property
     def lang(self) -> str:
@@ -120,10 +121,10 @@ def leer_pedido(datos: object) -> Pedido:
         velocidad = float(velocidad)
 
     peticion = datos.get("peticion")
-    if peticion is not None and peticion not in ("antes", "despues"):
-        raise ValueError("campo 'peticion': tiene que ser antes o despues")
-    if peticion == "despues" and anterior is None:
-        raise ValueError("campo 'anterior': falta (peticion despues)")
+    if peticion is not None and peticion not in ("antes", "despues", "seguidas"):
+        raise ValueError("campo 'peticion': tiene que ser antes, despues o seguidas")
+    if peticion in ("despues", "seguidas") and anterior is None:
+        raise ValueError(f"campo 'anterior': falta (peticion {peticion})")
 
     return Pedido(id=id_, estacion=estacion, idioma=idioma, voz=voz, momento=momento, anterior=anterior,
                   siguiente=siguiente, recientes=tuple(recientes),

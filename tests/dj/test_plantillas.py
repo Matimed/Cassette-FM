@@ -528,6 +528,18 @@ def test_plantilla_despues_nombra_el_tema_pedido(idioma, inicio):
         assert "Waiting for a Girl Like You" in texto
 
 
+@pytest.mark.parametrize("idioma,inicio,otra", [
+    ("es", "Eso fue una petición especial: Is This Love de Whitesnake.", "Y llega otra."),
+    ("en", "That was a special request: Is This Love by Whitesnake.", "And here comes another one.")])
+def test_plantilla_seguidas_cierra_el_pedido_anterior_y_abre_el_siguiente(idioma, inicio, otra):
+    p = _replace(pedido(idioma=idioma), peticion="seguidas")
+    for semilla in range(20):
+        r = redactar(p, Lexico(), random.Random(semilla), 45, zona=ZONA)
+        texto = MARCA.sub(lambda m: m.group(2), r.marcado)
+        assert texto.startswith(f"{inicio} {otra}"), texto
+        assert texto.count("Whitesnake") == 1 and "Waiting for a Girl Like You" in texto
+
+
 def test_plantilla_peticion_entra_aunque_falten_palabras():
     p = _replace(pedido(), peticion="antes")
     for semilla in range(10):

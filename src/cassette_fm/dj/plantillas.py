@@ -96,9 +96,11 @@ _COLAS = {
 # la oración de una petición del público: va primero y nunca se descarta
 _PETICION = {
     "es": {"antes": ["Llega una petición especial del público.", "Tenemos una petición especial para ustedes."],
-           "despues": ["Eso fue una petición especial: {titulo_ant} de {artista_ant}."]},
+           "despues": ["Eso fue una petición especial: {titulo_ant} de {artista_ant}."],
+           "seguidas": ["Eso fue una petición especial: {titulo_ant} de {artista_ant}. Y llega otra."]},
     "en": {"antes": ["Here comes a special request from a listener.", "We have a special request for you."],
-           "despues": ["That was a special request: {titulo_ant} by {artista_ant}."]},
+           "despues": ["That was a special request: {titulo_ant} by {artista_ant}."],
+           "seguidas": ["That was a special request: {titulo_ant} by {artista_ant}. And here comes another one."]},
 }
 _DESCARTE = ("dato", "clima", "anterior", "album")        # lo primero que se saca si la frase no entra
 _SUELTOS = ("hora", "estacion", "momento", "anterior")
@@ -230,8 +232,10 @@ def redactar(pedido: Pedido, lexico: Lexico, azar: random.Random, palabras_maxim
         campos["artista_ant"] = (" y " if es else " and ").join(m(a) for a in _artistas(pedido.anterior.artista))
         campos["titulo_ant"] = m(titulo_hablado(pedido.anterior.titulo))
     disponibles = ingredientes_disponibles(pedido, hechos)
-    peticion = pedido.peticion if pedido.peticion != "despues" or pedido.anterior is not None else None
-    if peticion == "despues":
+    peticion = pedido.peticion
+    if peticion in ("despues", "seguidas") and pedido.anterior is None:
+        peticion = "antes" if peticion == "seguidas" else None      # sin el anterior no se lo puede nombrar
+    if peticion in ("despues", "seguidas"):
         disponibles.discard("anterior")          # ya lo nombra la oración de la petición
     if "clima" in disponibles:
         c = hechos.clima

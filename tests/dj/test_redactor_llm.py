@@ -608,12 +608,16 @@ from dataclasses import replace as _replace
     ("en", "antes", "This song is a special request from a listener: introduce it as such."),
     ("es", "despues", "El tema anterior fue una petición especial del público: mencionalo y presentá el siguiente."),
     ("en", "despues", "The previous song was a special request from a listener: mention it and introduce the next one."),
+    ("es", "seguidas", "El tema anterior fue una petición especial del público y este también: mencioná el anterior y "
+                       "presentá este como petición."),
+    ("en", "seguidas", "The previous song was a special request from a listener and so is this one: mention the "
+                       "previous one and introduce this one as a request."),
 ])
 def test_prompt_llm_marca_la_peticion(idioma, valor, linea):
     p = _replace(pedido(idioma=idioma), peticion=valor)
     pet = peticion(["cancion"], p=p)
     assert linea in pet.usuario
-    if valor == "despues":
+    if valor in ("despues", "seguidas"):
         assert "Dale Don Dale" in pet.usuario       # el tema pedido va aunque "anterior" no se haya elegido
 
 
