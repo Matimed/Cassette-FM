@@ -54,3 +54,15 @@ def test_la_rueda_se_conecta_a_la_senal_del_actor():
     assert "scroll-event" in js
     assert "on_applet_scrolled" not in js
     assert "Clutter.ScrollDirection.SMOOTH" in js and "EVENT_PROPAGATE" in js
+
+
+def test_el_menu_tiene_nueva_emisora_y_corre_cassette_asincrono():
+    js = _js()
+    assert "Nueva emisora…" in js and "ModalDialog" in js
+    assert "Gio.Subprocess" in js and "communicate_utf8_async" in js
+    for sincronico in ("spawn_command_line_sync", "communicate_utf8(", ".wait(", "spawn_sync"):
+        assert sincronico not in js, sincronico     # el panel nunca se congela
+
+
+def test_el_modal_no_usa_el_combo_de_cinnamon():
+    assert "PopupComboBoxMenuItem" not in _js()     # no funciona dentro de un ModalDialog
