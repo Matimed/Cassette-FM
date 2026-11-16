@@ -110,12 +110,13 @@ function faltante(nombre, link) {
     return null;
 }
 
-// Los argumentos de `cassette nueva`, uno por elemento: el proceso se lanza sin shell.
+// Los argumentos de `cassette nueva`, uno por elemento: el proceso se lanza sin shell. Las opciones van antes de
+// "--" para que un nombre que empieza con "-" no se tome como opción.
 function argumentosNueva(nombre, link, seleccion) {
-    const args = ["nueva", nombre, link];
+    const args = ["nueva"];
     if (seleccion.voz) args.push("--voz", seleccion.voz.alias);
     if (seleccion.idioma !== "") args.push("--idioma", seleccion.idioma);
-    return args;
+    return args.concat(["--", nombre, link]);
 }
 
 function mensajeDeError(codigo, stdout, stderr) {

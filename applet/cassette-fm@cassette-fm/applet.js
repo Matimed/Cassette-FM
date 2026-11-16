@@ -239,6 +239,7 @@ class DialogoEmisora {
         this._link = campo("https://open.spotify.com/playlist/…");
         caja.add_child(fila("Nombre", this._nombre));
         caja.add_child(fila("Playlist", this._link));
+        for (const campo of [this._nombre, this._link]) campo.clutter_text.connect("activate", () => this._alEnter());
 
         const filaIdioma = fila("Idioma");
         this._botonesIdioma = [["", "Cualquiera"], ["es", "Español"], ["en", "Inglés"]].map(([idioma, texto]) => {
@@ -340,11 +341,24 @@ class DialogoEmisora {
         this._error.show();
     }
 
+    // Mientras corre `cassette nueva` no se puede tocar nada: lo que se ve es lo que se está creando.
     _ocupado(si) {
+        if (si && this._lista.visible) this._desplegar(false);
         this._crear.label = si ? "Creando…" : "Crear";
         // un botón no reactivo tampoco responde a su tecla (Enter, Escape): no hay doble `cassette nueva`
         this._crear.reactive = !si;
         this._cancelar.reactive = !si;
+        for (const campo of [this._nombre, this._link]) {
+            campo.reactive = !si;
+            campo.clutter_text.editable = !si;
+        }
+        for (const boton of [this._botonVoz, ...this._botonesIdioma, ...this._opciones.get_children()])
+            boton.reactive = !si;
+    }
+
+    // Enter en un campo: el St.Entry se come la tecla y el "default" de Crear no se entera.
+    _alEnter() {
+        if (this._crear.reactive) this._alCrear();
     }
 
     _alCrear() {

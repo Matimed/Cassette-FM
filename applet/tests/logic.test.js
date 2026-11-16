@@ -134,12 +134,14 @@ test("faltante", () => {
   assert.equal(L.faltante("Sing", "x"), null);
 });
 
-test("argumentosNueva: cada dato es un argumento, sin shell", () => {
+test("argumentosNueva: cada dato es un argumento, sin shell; las opciones antes de -- y del nombre", () => {
   const link = "https://open.spotify.com/playlist/4iH?si=b5";
-  assert.deepEqual(L.argumentosNueva("Sing «2»", link, { idioma: "", voz: null }), ["nueva", "Sing «2»", link]);
+  assert.deepEqual(L.argumentosNueva("Sing «2»", link, { idioma: "", voz: null }), ["nueva", "--", "Sing «2»", link]);
   assert.deepEqual(L.argumentosNueva("S", link, { idioma: "es", voz: VOCES[2] }),
-                   ["nueva", "S", link, "--voz", "dora", "--idioma", "es"]);
-  assert.deepEqual(L.argumentosNueva("S", link, { idioma: "en", voz: null }), ["nueva", "S", link, "--idioma", "en"]);
+                   ["nueva", "--voz", "dora", "--idioma", "es", "--", "S", link]);
+  assert.deepEqual(L.argumentosNueva("S", link, { idioma: "en", voz: null }), ["nueva", "--idioma", "en", "--", "S", link]);
+  // un nombre que empieza con - no es una opción (con -h, cassette mostraría la ayuda y saldría con 0)
+  assert.deepEqual(L.argumentosNueva("-h", link, { idioma: "", voz: null }), ["nueva", "--", "-h", link]);
 });
 
 test("mensajeDeError", () => {

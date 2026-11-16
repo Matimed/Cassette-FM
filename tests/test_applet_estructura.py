@@ -75,3 +75,18 @@ def test_el_limite_de_cassette_nueva_cubre_el_rescan_de_la_cli():
     limite = int(re.search(r"LIMITE_NUEVA_SEGUNDOS = (\d+)", _js()).group(1))
     assert limite >= rescan + 60, (limite, rescan)    # más la playlist, la sintonía y el arranque de Python
     assert "LIMITE_NUEVA_SEGUNDOS, (r)" in _js()
+
+
+def test_enter_en_los_campos_crea():
+    # el St.Entry se come el Return: el "default" del botón Crear no se entera
+    assert len(re.findall(r'clutter_text\.connect\("activate"', _js())) >= 1
+    assert "_alEnter" in _js() and "this._crear.reactive" in _js()
+
+
+def test_mientras_crea_se_bloquea_todo_el_modal():
+    js = _js()
+    cuerpo = js[js.index("    _ocupado(si) {"):]
+    cuerpo = cuerpo[:cuerpo.index("\n    }\n")]
+    for widget in ("this._nombre", "this._link", "this._botonVoz", "this._botonesIdioma", "this._opciones",
+                   "this._crear", "this._cancelar"):
+        assert widget in cuerpo, widget

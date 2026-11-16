@@ -632,3 +632,10 @@ def test_voces_con_la_config_del_dj_rota_da_un_error_legible(tmp_path, monkeypat
     assert main(["voces", "--json"]) == 1
     error = capsys.readouterr().err
     assert "config.toml" in error and "Traceback" not in error
+
+
+def test_nueva_con_un_nombre_que_empieza_con_guion_despues_de_doble_guion(tmp_path, monkeypatch, capsys, servidor_http):
+    import json as _json
+    r, _ = _nueva(monkeypatch, tmp_path, servidor_http)
+    assert main(["nueva", "--voz", "sarah", "--", "-80s-", PLAYLIST_NUEVA]) == 0      # como lo llama el applet
+    assert _json.loads(r.emisoras.read_text())[-1]["nombre"] == "-80s-"
