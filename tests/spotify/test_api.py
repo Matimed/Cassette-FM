@@ -124,3 +124,31 @@ def test_put_con_error_es_error_spotify(servidor_http):
     with pytest.raises(ErrorSpotify, match="Device not found") as e:
         c.put("/me/player/play")
     assert e.value.codigo == 404
+
+
+def test_un_429_queda_en_el_log_con_la_espera(servidor_http, caplog):
+    respuestas = secuencia((429, {"error": {"status": 429, "message": "rate"}}), (200, {"ok": 1}))
+    servidor_http.responder("/v1/me", respuestas, encabezados={"Retry-After": "2"})
+    c, _ = cliente(servidor_http)
+    with caplog.at_level("INFO", logger="cassette_fm"):
+        c.get("/me", {"fields": "a"})
+    assert "429" in caplog.text and "2 s" in caplog.text and "GET /me" in caplog.text
+    assert "fields" not in caplog.text and "Bearer" not in caplog.text
+
+
+def test_un_pedido_lento_queda_en_el_log(servidor_http, caplog):
+    servidor_http.responder("/v1/me/player/play", "", 204)
+    tiempos = iter([100.0, 102.6])
+    c = ClienteSpotify(SesionFalsa(), ConfigSpotify(api_url=servidor_http.url + "/v1"), reloj=lambda: next(tiempos))
+    with caplog.at_level("INFO", logger="cassette_fm"):
+        c.put("/me/player/play", {"device_id": "D"}, {"uris": []})
+    assert "2.6 s" in caplog.text and "PUT /me/player/play" in caplog.text and "device_id" not in caplog.text
+
+
+def test_un_pedido_rapido_no_loguea(servidor_http, caplog):
+    servidor_http.responder("/v1/me", {"ok": 1})
+    tiempos = iter([100.0, 101.9])
+    c = ClienteSpotify(SesionFalsa(), ConfigSpotify(api_url=servidor_http.url + "/v1"), reloj=lambda: next(tiempos))
+    with caplog.at_level("INFO", logger="cassette_fm"):
+        c.get("/me")
+    assert caplog.text == ""

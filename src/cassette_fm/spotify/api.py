@@ -1,6 +1,9 @@
-"""Cliente mínimo de la Web API de Spotify: token, un reintento por 401 o por un 429 corto, y paginación."""
+"""Cliente mínimo de la Web API de Spotify: token, un reintento por 401 o por un 429 corto, y paginación.
+
+Los pedidos lentos y los 429 quedan en el log (solo método y ruta: ni parámetros ni token)."""
 import http.client
 import json
+import logging
 import time
 import urllib.error
 import urllib.parse
@@ -11,6 +14,9 @@ from cassette_fm.config import ConfigSpotify
 from cassette_fm.spotify.sesion import ErrorSesion
 
 _ESPERA_MAXIMA_429 = 5.0     # un Retry-After más largo no se espera (el rescan no se cuelga)
+_LENTO_SEGUNDOS = 2.0        # un pedido que tarda más (reintentos incluidos) queda en el log
+
+_log = logging.getLogger("cassette_fm")
 
 
 class ErrorSpotify(Exception):
@@ -22,10 +28,12 @@ class ErrorSpotify(Exception):
 
 
 class ClienteSpotify:
-    def __init__(self, sesion, config: ConfigSpotify, dormir: Callable[[float], None] = time.sleep):
+    def __init__(self, sesion, config: ConfigSpotify, dormir: Callable[[float], None] = time.sleep,
+                 reloj: Callable[[], float] = time.monotonic):
         self._sesion = sesion
         self._config = config
         self._dormir = dormir
+        self._reloj = reloj
 
     def get(self, ruta: str, params: dict | None = None) -> dict:
         """`ruta` relativa a la API ("/playlists/x") o una URL absoluta de la misma API (el `next` de una página)."""
@@ -38,19 +46,28 @@ class ClienteSpotify:
         url = ruta if ruta.startswith("http") else self._config.api_url + ruta
         if params:
             url += ("&" if "?" in url else "?") + urllib.parse.urlencode(params)
+        base = urllib.parse.urlsplit(self._config.api_url).path
+        pedido = f"{metodo} {urllib.parse.urlsplit(url).path.removeprefix(base)}"   # sin parámetros ni token
+        inicio = self._reloj()
         forzado = esperado = False
-        while True:
-            try:
-                return self._pedir(metodo, url, self._token(forzado), cuerpo)
-            except _Respuesta as r:
-                if r.codigo == 401 and not forzado:
-                    forzado = True
-                    continue
-                if r.codigo == 429 and not esperado and r.espera is not None and r.espera <= _ESPERA_MAXIMA_429:
-                    esperado = True
-                    self._dormir(r.espera)
-                    continue
-                raise ErrorSpotify(f"Spotify contestó {r.codigo}: {r.mensaje}", r.codigo) from None
+        try:
+            while True:
+                try:
+                    return self._pedir(metodo, url, self._token(forzado), cuerpo)
+                except _Respuesta as r:
+                    if r.codigo == 401 and not forzado:
+                        forzado = True
+                        continue
+                    if r.codigo == 429 and not esperado and r.espera is not None and r.espera <= _ESPERA_MAXIMA_429:
+                        _log.warning("Spotify limita los pedidos (429): espero %g s y reintento %s", r.espera, pedido)
+                        esperado = True
+                        self._dormir(r.espera)
+                        continue
+                    raise ErrorSpotify(f"Spotify contestó {r.codigo}: {r.mensaje}", r.codigo) from None
+        finally:
+            demora = self._reloj() - inicio
+            if demora > _LENTO_SEGUNDOS:
+                _log.warning("Spotify tardó %.1f s en contestar %s", demora, pedido)
 
     def paginas(self, ruta: str, params: dict | None = None) -> Iterator[dict]:
         pagina = self.get(ruta, params)
