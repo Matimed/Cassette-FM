@@ -119,7 +119,7 @@ class ReproductorSpotify:
             self._posicion = None
             lista = list(islice(secuencia(estacion, self._reloj()), self._uris_por_pedido))
             uris = [p.uri for p, _ in lista]
-            posicion_ms = int(lista[0][1] * 1000)
+            posicion_ms = self._posicion_al_play(*lista[0])
             self._esperado, self._visto_esperado, self._esperando_sonido = uris[0], False, True
             self._activo, self._enviados, self._vistos, self._primero_pendiente = False, len(uris), 0, True
             self._perdido = False
@@ -127,7 +127,17 @@ class ReproductorSpotify:
             self._espera_timer = self._temporizador(self._espera, lambda: self._no_sono(n))
         self._en_segundo_plano(lambda: self._reproducir(n, estacion, uris, posicion_ms))
 
-    def _reproducir(self, n: int, estacion: Estacion, uris: list[str], posicion_ms: int) -> None:
+    def _posicion_al_play(self, pista: Pista, segundo: float) -> Callable[[], int]:
+        """La posición del primer tema cuando salga el play: `segundo` es la de ahora, y lo que tarden las órdenes
+        previas (volumen, shuffle, repeat) corre también; sin pasar el final del tema."""
+        calculada = self._reloj()
+
+        def posicion() -> int:
+            s = segundo + max(0.0, self._reloj() - calculada)
+            return int(max(0.0, min(s, pista.duracion - 1.0)) * 1000)
+        return posicion
+
+    def _reproducir(self, n: int, estacion: Estacion, uris: list[str], posicion_ms: Callable[[], int]) -> None:
         with self._orden_lock:
             if n != self._sintonia:
                 return                            # ya se pidió otra cosa: esta orden no sale
@@ -160,7 +170,8 @@ class ReproductorSpotify:
             lista = list(islice(secuencia(estacion, self._reloj()), self._uris_por_pedido))
             uris = [p.uri for p, _ in lista]
             self._esperado, self._enviados, self._vistos, self._primero_pendiente = uris[0], len(uris), 0, True
-        self._en_segundo_plano(lambda: self._reproducir(n, estacion, uris, int(lista[0][1] * 1000)))
+        posicion_ms = self._posicion_al_play(*lista[0])
+        self._en_segundo_plano(lambda: self._reproducir(n, estacion, uris, posicion_ms))
 
     def _no_sono(self, n: int) -> None:
         with self._lock:

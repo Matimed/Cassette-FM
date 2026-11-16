@@ -23,9 +23,12 @@ class ControlFalso:
     def __init__(self, error=None):
         self.llamadas = []
         self.error = error
+        self.antes = None          # lo que pasa antes del play (shuffle, repeat: tardan)
 
     def reproducir(self, uris, posicion_ms):
-        self.llamadas.append((list(uris), posicion_ms))
+        if self.antes:
+            self.antes()
+        self.llamadas.append((list(uris), posicion_ms()))
         if self.error:
             raise self.error
 
@@ -283,6 +286,25 @@ def proximo(e, t):
 def sonando(r, control):
     r.manejar_evento(cambio(control.llamadas[-1][0][0]))
     r.manejar_evento(SONANDO)
+
+
+def test_la_posicion_del_play_cuenta_lo_que_tardaron_las_ordenes_previas():
+    r, control, _, reloj, _ = armar()
+    e = estacion()
+    _, segundo = next(secuencia(e, reloj()))
+    control.antes = lambda: setattr(reloj, "t", reloj.t + 2.5)
+    r.sintonizar(e)
+    assert control.llamadas[0][1] == pytest.approx((segundo + 2.5) * 1000, abs=1)
+
+
+def test_la_posicion_del_play_no_pasa_el_final_del_tema():
+    r, control, _, reloj, _ = armar()
+    e = estacion()
+    primero, fin = proximo(e, reloj())
+    actual, _ = next(secuencia(e, reloj()))
+    control.antes = lambda: setattr(reloj, "t", fin + 5)      # tardó más que lo que le quedaba al tema
+    r.sintonizar(e)
+    assert control.llamadas[0][1] < actual.duracion * 1000
 
 
 def test_desfase_grande_resintoniza_en_el_borde_y_chico_no():
