@@ -21,6 +21,8 @@ const ESPERA_RUEDA_MS = 150;
 const LIMITE_VOCES_SEGUNDOS = 30;
 // `cassette nueva` espera el rescan de la radio hasta 120 s después de guardar: cortarlo antes la deja guardada sin avisar
 const LIMITE_NUEVA_SEGUNDOS = 180;
+const LIMITE_MUESTRA_SEGUNDOS = 60;         // la primera muestra espera que el servicio DJ cargue el modelo
+const LIMITE_SONANDO_SEGUNDOS = 120;
 
 class CassetteApplet extends Applet.TextIconApplet {
     constructor(metadata, orientation, panelHeight, instanceId) {
@@ -171,15 +173,16 @@ class CassetteApplet extends Applet.TextIconApplet {
         }
     }
 
-    // Corre `cassette <argumentos>` sin shell y sin bloquear el panel; callback({codigo, stdout, stderr}) o
-    // callback({error}) si no se encuentra, no arranca o pasa el límite (y entonces se lo corta).
-    _correrCassette(argumentos, segundos, callback) {
-        let ruta = GLib.find_program_in_path("cassette");
-        const local = GLib.get_home_dir() + "/.local/bin/cassette";
+    // Corre `<programa> <argumentos>` sin shell y sin bloquear el panel; callback({codigo, stdout, stderr}) o
+    // callback({error}) si no se encuentra, no arranca o pasa el límite (y entonces se lo corta). Devuelve el
+    // proceso (para cortarlo con force_exit) o null si no arrancó.
+    _correr(programa, argumentos, segundos, callback) {
+        let ruta = GLib.find_program_in_path(programa);
+        const local = GLib.get_home_dir() + "/.local/bin/" + programa;
         if (!ruta && GLib.file_test(local, GLib.FileTest.IS_EXECUTABLE)) ruta = local;
         if (!ruta) {
-            callback({ error: "No encuentro el comando cassette (¿está instalado en ~/.local/bin?)" });
-            return;
+            callback({ error: "No encuentro el comando " + programa + " (¿está instalado?)" });
+            return null;
         }
         let terminado = false;
         let vencimiento = 0;
@@ -194,13 +197,13 @@ class CassetteApplet extends Applet.TextIconApplet {
             proceso = Gio.Subprocess.new([ruta, ...argumentos],
                 Gio.SubprocessFlags.STDOUT_PIPE | Gio.SubprocessFlags.STDERR_PIPE);
         } catch (e) {
-            callback({ error: "No pude correr cassette: " + e.message });
-            return;
+            callback({ error: "No pude correr " + programa + ": " + e.message });
+            return null;
         }
         vencimiento = Mainloop.timeout_add_seconds(segundos, () => {
             vencimiento = 0;
             proceso.force_exit();
-            terminar({ error: "cassette tardó más de " + segundos + " s: se cortó" });
+            terminar({ error: programa + " tardó más de " + segundos + " s: se cortó" });
             return false;
         });
         proceso.communicate_utf8_async(null, null, (p, res) => {
@@ -208,9 +211,10 @@ class CassetteApplet extends Applet.TextIconApplet {
                 const [, stdout, stderr] = p.communicate_utf8_finish(res);
                 terminar({ codigo: p.get_exit_status(), stdout: stdout, stderr: stderr });
             } catch (e) {
-                terminar({ error: "No pude leer lo que contestó cassette: " + e.message });
+                terminar({ error: "No pude leer lo que contestó " + programa + ": " + e.message });
             }
         });
+        return proceso;
     }
 }
 
@@ -222,6 +226,9 @@ class DialogoEmisora {
         this._voces = [];
         this._seleccion = { idioma: "", voz: null };
         this._cerrado = false;
+        this._fase = "quieto";          // de la muestra de voz: quieto, generando o sonando
+        this._muestra = 0;              // cuál es la muestra vigente: la respuesta de una ya cortada no cambia nada
+        this._proceso = null;
         this._dialogo = new ModalDialog.ModalDialog({ destroyOnClose: true });
         const caja = this._dialogo.contentLayout;
         caja.set_style("width: 30em; spacing: 8px;");
@@ -254,7 +261,9 @@ class DialogoEmisora {
 
         this._botonVoz = new St.Button({ style_class: "dialog-button", can_focus: true, x_expand: true });
         this._botonVoz.connect("clicked", () => this._desplegar(!this._lista.visible));
-        caja.add_child(fila("Voz", this._botonVoz));
+        this._botonMuestra = new St.Button({ style_class: "dialog-button", can_focus: true });
+        this._botonMuestra.connect("clicked", () => this._alMuestra());
+        caja.add_child(fila("Voz", this._botonVoz, this._botonMuestra));
 
         // El desplegable: una lista con scroll dentro del diálogo (el combo de Cinnamon solo anda dentro de un menú).
         this._opciones = new St.BoxLayout({ vertical: true });
@@ -279,7 +288,7 @@ class DialogoEmisora {
 
     abrir() {
         this._dialogo.open();
-        this._applet._correrCassette(["voces", "--json"], LIMITE_VOCES_SEGUNDOS, (r) => {
+        this._applet._correr("cassette", ["voces", "--json"], LIMITE_VOCES_SEGUNDOS, (r) => {
             if (this._cerrado) return;
             const voces = r.error || r.codigo !== 0 ? null : AppletDir.logic.parsearVoces(r.stdout);
             if (voces === null) {
@@ -294,6 +303,7 @@ class DialogoEmisora {
     }
 
     _cerrar() {
+        this._cortarMuestra();
         this._cerrado = true;
         this._dialogo.close();
     }
@@ -304,6 +314,7 @@ class DialogoEmisora {
     }
 
     _alElegirVoz(voz) {
+        this._cortarMuestra();
         this._seleccion = AppletDir.logic.elegirVoz(this._seleccion, voz);
         this._desplegar(false);
         this._refrescar();
@@ -334,6 +345,56 @@ class DialogoEmisora {
             opcion.connect("clicked", () => this._alElegirVoz(voz));
             this._opciones.add_child(opcion);
         }
+        const muestra = AppletDir.logic.botonMuestra(this._seleccion.voz, this._fase);
+        this._botonMuestra.label = muestra.texto;
+        this._botonMuestra.reactive = muestra.activo;
+    }
+
+    // ▶: la voz elegida dice "Hola, soy … y estás escuchando <nombre>" (`cassette-dj muestra`, después mpv); ■ la corta.
+    _alMuestra() {
+        if (this._fase === "sonando") {
+            this._cortarMuestra();
+            return;
+        }
+        const voz = this._seleccion.voz;
+        if (this._fase !== "quieto" || !voz) return;
+        const n = ++this._muestra;
+        this._error.hide();
+        this._fase = "generando";
+        this._refrescar();
+        const argumentos = AppletDir.logic.argumentosMuestra(voz, this._nombre.get_text());
+        this._proceso = this._applet._correr("cassette-dj", argumentos, LIMITE_MUESTRA_SEGUNDOS, (r) => {
+            if (n !== this._muestra || this._cerrado) return;
+            const ruta = r.error || r.codigo !== 0 ? null : AppletDir.logic.rutaDeMuestra(r.stdout);
+            if (!ruta) {
+                this._proceso = null;
+                this._fase = "quieto";
+                this._refrescar();
+                const motivo = r.error || (r.codigo !== 0 ? AppletDir.logic.mensajeDeError(r.codigo, r.stdout, r.stderr)
+                                                          : "cassette-dj no devolvió el audio");
+                this._mostrarError("No pude reproducir la muestra: " + motivo);
+                return;
+            }
+            this._fase = "sonando";
+            this._refrescar();
+            this._proceso = this._applet._correr("mpv", ["--no-video", "--really-quiet", ruta],
+                                                 LIMITE_SONANDO_SEGUNDOS, (s) => {
+                if (n !== this._muestra || this._cerrado) return;
+                this._proceso = null;
+                this._fase = "quieto";
+                this._refrescar();
+                if (s.error) this._mostrarError("No pude reproducir la muestra: " + s.error);
+            });
+        });
+    }
+
+    _cortarMuestra() {
+        this._muestra++;
+        if (this._proceso) this._proceso.force_exit();
+        this._proceso = null;
+        if (this._fase === "quieto") return;
+        this._fase = "quieto";
+        if (!this._cerrado) this._refrescar();
     }
 
     _mostrarError(texto) {
@@ -343,6 +404,7 @@ class DialogoEmisora {
 
     // Mientras corre `cassette nueva` no se puede tocar nada: lo que se ve es lo que se está creando.
     _ocupado(si) {
+        this._cortarMuestra();
         if (si && this._lista.visible) this._desplegar(false);
         this._crear.label = si ? "Creando…" : "Crear";
         // un botón no reactivo tampoco responde a su tecla (Enter, Escape): no hay doble `cassette nueva`
@@ -352,8 +414,10 @@ class DialogoEmisora {
             campo.reactive = !si;
             campo.clutter_text.editable = !si;
         }
-        for (const boton of [this._botonVoz, ...this._botonesIdioma, ...this._opciones.get_children()])
+        for (const boton of [this._botonVoz, this._botonMuestra, ...this._botonesIdioma,
+                             ...this._opciones.get_children()])
             boton.reactive = !si;
+        if (!si) this._refrescar();     // el ▶ vuelve a depender de la voz elegida
     }
 
     // Enter en un campo: el St.Entry se come la tecla y el "default" de Crear no se entera.
@@ -372,7 +436,7 @@ class DialogoEmisora {
         this._error.hide();
         this._ocupado(true);
         const argumentos = AppletDir.logic.argumentosNueva(nombre, link, this._seleccion);
-        this._applet._correrCassette(argumentos, LIMITE_NUEVA_SEGUNDOS, (r) => {
+        this._applet._correr("cassette", argumentos, LIMITE_NUEVA_SEGUNDOS, (r) => {
             if (!r.error && r.codigo === 0) {
                 this._cerrar();
                 this._applet._sondear();

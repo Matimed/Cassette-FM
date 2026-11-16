@@ -90,3 +90,12 @@ def test_mientras_crea_se_bloquea_todo_el_modal():
     for widget in ("this._nombre", "this._link", "this._botonVoz", "this._botonesIdioma", "this._opciones",
                    "this._crear", "this._cancelar"):
         assert widget in cuerpo, widget
+
+
+def test_el_modal_tiene_muestra_de_voz_y_la_corta():
+    js = _js()
+    assert "argumentosMuestra" in js and "botonMuestra" in js and "rutaDeMuestra" in js
+    assert '"cassette-dj"' in js and '"mpv"' in js
+    for donde in ("_cerrar()", "_alElegirVoz(voz)", "_ocupado(si)"):
+        cuerpo = js[js.index("    " + donde + " {"):]
+        assert "this._cortarMuestra()" in cuerpo[:cuerpo.index("\n    }\n")], donde
