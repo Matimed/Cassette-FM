@@ -125,8 +125,8 @@ def crear_servidor(radio, host: str = "127.0.0.1", puerto: int = 7710,
 
         def _dj_modo(self, datos: dict) -> dict:
             modo = datos.get("modo")
-            if modo not in ("plantillas", "llm"):
-                raise _SolicitudInvalida("'modo' tiene que ser \"plantillas\" o \"llm\"")
+            if modo not in ("plantillas", "llm", "apagado"):
+                raise _SolicitudInvalida("'modo' tiene que ser \"plantillas\", \"llm\" o \"apagado\"")
             try:
                 return radio.dj_modo(modo)
             except ValueError as e:

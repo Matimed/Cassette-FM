@@ -100,6 +100,7 @@ class Planificador:
         self._encolados: set[str] = set()      # claves de pedidos ya avisados por la cola
         self._ultima_peticion: set[str] = set()  # estaciones cuya última intervención fue una petición
         self._a_cancelar: list[str] = []
+        self._apagado = False                   # el DJ apagado: no se le pide nada al servicio (se recuerda)
         self._servicio_caido = False
         self._error: str | None = None
         self._no_antes_de = 0.0
@@ -142,7 +143,8 @@ class Planificador:
         """Encolaron `pista`, que va a sonar cuando termine el tema actual (`fin_actual`): si hay tiempo, se pide el
         anuncio "antes"; si no, va "después" cuando empiece."""
         with self._lock:
-            if self._estacion is None or self._estacion.nombre != estacion.nombre or pista.clave in self._encolados:
+            if self._apagado or self._estacion is None or self._estacion.nombre != estacion.nombre \
+                    or pista.clave in self._encolados:
                 return
             self._encolados.add(pista.clave)
             if not _con_nombre(pista):
@@ -196,6 +198,8 @@ class Planificador:
         with self._turno:
             with self._lock:
                 estacion = self._estacion
+                if self._apagado:
+                    raise ValueError("el DJ está apagado: prendelo con `cassette dj modo plantillas` (o llm)")
                 if estacion is None:
                     raise ValueError("no hay ninguna estación sintonizada")
                 if self._trabajo is not None:
@@ -226,18 +230,51 @@ class Planificador:
                     "en_segundos": hueco.inicio_voz - ahora, "tema": hueco.pista.titulo}
 
     def modo(self, nuevo: str | None = None) -> dict:
-        """El modo del servicio DJ (plantillas | llm); con `nuevo` lo cambia. ValueError con el mensaje si el
-        servicio no responde o lo rechaza."""
+        """El modo del DJ: apagado (la radio no le pide nada al servicio, que puede estar parado) o el del
+        servicio (plantillas | llm); con `nuevo` lo cambia. ValueError con el mensaje si el servicio no responde
+        o lo rechaza; en ese caso, si estaba apagado, sigue apagado."""
+        if nuevo == "apagado":
+            self._apagar()
+            return {"modo": "apagado"}
+        with self._lock:
+            if nuevo is None and self._apagado:
+                return {"modo": "apagado"}
         try:
-            return {"modo": self._cliente.modo()} if nuevo is None else self._cliente.poner_modo(nuevo)
+            respuesta = {"modo": self._cliente.modo()} if nuevo is None else self._cliente.poner_modo(nuevo)
         except ErrorDJ as e:
             raise ValueError(str(e)) from None
+        if nuevo is not None:
+            with self._lock:
+                if self._apagado:
+                    self._apagado = False
+                    self._pendientes = []           # lo que llegó mientras estaba apagado ya es viejo
+                    self._guardar()
+        return respuesta
+
+    def _apagar(self) -> None:
+        """Cancela el trabajo en curso (en la próxima vuelta) y descarta todo lo reservado, incluso los anuncios
+        de peticiones: apagado, el DJ no habla más."""
+        with self._turno:
+            with self._lock:
+                self._apagado = True
+                self._pendientes = []
+                if self._trabajo is not None:
+                    self._a_cancelar.append(self._trabajo.id)
+                    self._trabajo = None
+                self._guardar()
+            for nombre in sorted({i.estacion for i in self._registro.todas()}):
+                self._locutor.descartar_estacion(nombre)
+            for i in self._registro.todas():
+                self._registro.quitar(i)
 
     # --- la vuelta ---
 
     def paso(self) -> None:
         with self._turno:
             self._cancelaciones_pendientes()
+            with self._lock:
+                if self._apagado:
+                    return
             if self._reloj() < self._no_antes_de:
                 return
             with self._lock:
@@ -270,6 +307,7 @@ class Planificador:
             t = self._trabajo
             return {
                 "estacion": self._estacion.nombre if self._estacion else None,
+                "apagado": self._apagado,
                 "en_curso": ({"id": t.id, "estacion": t.estacion, "estado": t.estado,
                               "en_segundos": t.inicio_voz - ahora} if t else None),
                 "servicio": "no responde" if self._servicio_caido else "ok",
@@ -512,6 +550,7 @@ class Planificador:
                 "firmas": self._firmas,
                 "en_curso": ({k: v for k, v in vars(self._trabajo).items() if k != "estado"}
                              if self._trabajo else None),
+                "apagado": self._apagado,
             }
             try:
                 self._archivo.parent.mkdir(parents=True, exist_ok=True)
@@ -531,6 +570,7 @@ class Planificador:
             return
         if not isinstance(datos, dict):
             return
+        self._apagado = datos.get("apagado") is True
         try:
             self._ultima = {str(n): Ultima(float(v[0]), float(v[1])) for n, v in dict(datos.get("ultima", {})).items()}
             self._recientes = {str(n): [str(x) for x in v] for n, v in dict(datos.get("recientes", {})).items()}

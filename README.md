@@ -90,9 +90,13 @@ verificados y, además, el resumen de Wikipedia del artista. El modo se cambia e
 | `cassette dj modo` | muestra el modo actual (`plantillas` o `llm`) |
 | `cassette dj modo llm` | pasa a LLM; avisa si el servidor de LLM (Ollama) no responde |
 | `cassette dj modo plantillas` | vuelve a las plantillas |
+| `cassette dj modo apagado` | apaga el locutor: la radio sigue sonando sin voces y no le pide nada al servicio DJ |
 
 El cambio **no se guarda**: al reiniciar el servicio DJ vuelve a `plantillas`. Para arrancar siempre en LLM, poné
-`modo = "llm"` en `~/.config/cassette-dj/config.toml`. En modo `plantillas` no se hace ningún pedido al LLM ni a Wikipedia.
+`modo = "llm"` en `~/.config/cassette-dj/config.toml`. El modo `apagado` vive en la radio y **sí se guarda**:
+descarta lo que había reservado y deja de pedir clips; el servicio DJ, sin trabajo, suelta la voz de la memoria a los
+`descargar_tras_minutos` y Ollama descarga el modelo a los 5 minutos. Para apagarlo para siempre, `[dj] activo = false`
+en la config de la radio. En modo `plantillas` no se hace ningún pedido al LLM ni a Wikipedia.
 Si el LLM no responde, tarda de más o su frase no pasa la verificación (año o cifra inventados, nombres que no están en
 los hechos, enlaces…), esa frase sale por plantillas. `cassette-dj modo [llm|plantillas]` hace lo mismo hablando
 directo con el servicio.

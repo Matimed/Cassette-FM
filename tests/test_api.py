@@ -257,6 +257,11 @@ def test_post_dj_modo_pasa_el_modo(servidor):
     assert [l[2]["nuevo"] for l in servidor.radio.llamadas] == ["llm", "plantillas"]
 
 
+def test_post_dj_modo_apagado(servidor):
+    assert pedir(servidor, "POST", "/dj/modo", {"modo": "apagado"}) == (200, {"modo": "apagado"})
+    assert servidor.radio.llamadas[-1][2]["nuevo"] == "apagado"
+
+
 def test_dj_modo_inactivo_409(servidor):
     servidor.radio.error = DJInactivo("sin planificador")
     for metodo, cuerpo in (("GET", None), ("POST", {"modo": "llm"})):

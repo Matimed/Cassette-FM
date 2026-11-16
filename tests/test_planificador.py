@@ -634,6 +634,68 @@ def test_modo_delega_en_el_cliente_y_convierte_errores(mundo):
         mundo.p.modo("plantillas")
 
 
+def test_apagado_cancela_lo_en_curso_descarta_lo_reservado_y_no_pide_mas(mundo):
+    est, pedido = sintonizar_y_pedir(mundo)
+    from cassette_fm.intervenciones import Intervencion
+    _, inicio = next(iter(transiciones(est, T0)))
+    audio = generar_clip_de_prueba(mundo.clips / "r.wav", 3.0)
+    mundo.registro.agregar(Intervencion("r", "E", inicio + 1, 3.0, audio, "t", str(est.pistas[0].ruta),
+                                        peticion="antes"))
+    assert mundo.p.modo("apagado") == {"modo": "apagado"}
+    mundo.p.paso()
+    assert mundo.cliente.cancelados == [pedido["id"]] and mundo.registro.todas() == []
+    for _ in range(3):
+        mundo.reloj.t += 1000
+        mundo.p.paso()
+    assert len(mundo.cliente.enviados) == 1
+    assert mundo.p.estado()["apagado"] is True
+
+
+def test_apagado_no_le_pregunta_el_modo_al_servicio(mundo):
+    mundo.p.modo("apagado")
+    mundo.cliente.error_modo = ErrorDJ("el servicio DJ no responde en http://x")
+    assert mundo.p.modo() == {"modo": "apagado"}
+
+
+def test_apagado_no_acepta_pedidos_manuales_ni_peticiones(mundo):
+    est = estacion()
+    mundo.p.al_sintonizar(est)
+    mundo.p.modo("apagado")
+    with pytest.raises(ValueError, match="apagado"):
+        mundo.p.pedir_ahora(20.0)
+    mundo.p.al_encolado(PEDIDO_APAGADO, est, T0 + 120)
+    mundo.p.paso()
+    assert mundo.cliente.enviados == []
+
+
+def test_volver_a_un_modo_lo_prende_y_se_lo_pasa_al_servicio(mundo):
+    mundo.p.al_sintonizar(estacion())
+    mundo.p.modo("apagado")
+    assert mundo.p.modo("llm") == {"modo": "llm", "llm": "ok"}
+    mundo.p.paso()
+    assert len(mundo.cliente.enviados) == 1 and mundo.p.estado()["apagado"] is False
+
+
+def test_si_el_servicio_no_responde_al_prender_sigue_apagado(mundo):
+    mundo.p.modo("apagado")
+    mundo.cliente.error_modo = ErrorDJ("el servicio DJ no responde en http://x")
+    with pytest.raises(ValueError, match="no responde"):
+        mundo.p.modo("plantillas")
+    assert mundo.p.modo() == {"modo": "apagado"}
+
+
+def test_apagado_se_recuerda_al_reiniciar_la_radio(mundo):
+    mundo.p.modo("apagado")
+    otro = mundo.nuevo()
+    otro.al_sintonizar(estacion())
+    otro.paso()
+    assert otro.modo() == {"modo": "apagado"} and mundo.cliente.enviados == []
+
+
+PEDIDO_APAGADO = Pista(None, 180.0, "Queen - Bohemian Rhapsody", fuente="spotify", artista="Queen",
+                       cancion="Bohemian Rhapsody", uri="spotify:track:apagado")
+
+
 # --- peticiones (etapa 7a) ---
 
 from cassette_fm.agenda import con_pedido, plegar, secuencia

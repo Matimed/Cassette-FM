@@ -290,6 +290,22 @@ def test_dj_modo_plantillas(servicio, capsys):
     assert servicio.radio.llamadas[-1] == ("dj_modo", (), {"nuevo": "plantillas"})
 
 
+def test_dj_modo_apagado_explica_como_prenderlo(servicio, capsys):
+    assert main(["dj", "modo", "apagado", "--puerto", servicio.puerto]) == 0
+    salida = capsys.readouterr().out
+    assert salida.startswith("Modo del DJ: apagado.") and "cassette dj modo plantillas" in salida
+    assert servicio.radio.llamadas[-1] == ("dj_modo", (), {"nuevo": "apagado"})
+
+
+def test_dj_estado_con_el_dj_apagado_lo_dice(servicio, capsys):
+    servicio.radio.dj = {"activo": True, "hablando": False, "desfase_segundos": None, "intervenciones": [],
+                         "planificador": {"estacion": "Lentos", "servicio": "ok", "error": None, "apagado": True,
+                                          "proximo_intento_en": None, "en_curso": None}}
+    main(["dj", "estado", "--puerto", servicio.puerto])
+    assert capsys.readouterr().out.splitlines()[1:] == [
+        "locutor apagado (para prenderlo: cassette dj modo plantillas o llm)"]
+
+
 def test_dj_modo_error_de_la_api_da_codigo_1(servicio, capsys):
     from cassette_fm.radio import DJInactivo
     servicio.radio.error = DJInactivo("sin planificador")
