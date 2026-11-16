@@ -82,6 +82,15 @@ class ClienteDJ:
             raise ErrorDJ("el servicio DJ contestó una respuesta ilegible (sin modo)")
         return datos
 
+    def muestra(self, voz: str, idioma: str, radio: str = "") -> bytes:
+        """El WAV de la frase de muestra de `voz` ("Hola, soy dora y estás escuchando…"); la primera puede tardar
+        lo que el servicio en cargar el modelo."""
+        cuerpo = json.dumps({"voz": voz, "idioma": idioma, "radio": radio}).encode("utf-8")
+        try:
+            return self._pedir("POST", "/muestra", cuerpo, timeout=max(self._timeout, 60.0))
+        except _NoExiste as e:
+            raise ErrorDJ(f"el servicio DJ no sabe hacer muestras (¿hay que reiniciarlo?): {e}") from None
+
     def salud(self) -> dict:
         datos = self._json(self._pedir("GET", "/salud"))
         if not isinstance(datos, dict):
@@ -94,11 +103,12 @@ class ClienteDJ:
         except (ValueError, UnicodeDecodeError, RecursionError):
             raise ErrorDJ("el servicio DJ contestó una respuesta ilegible (no es JSON)") from None
 
-    def _pedir(self, metodo: str, ruta: str, cuerpo: bytes | None = None, con_largo: bool = False):
+    def _pedir(self, metodo: str, ruta: str, cuerpo: bytes | None = None, con_largo: bool = False,
+               timeout: float | None = None):
         req = urllib.request.Request(self._url + ruta, data=cuerpo, method=metodo,
                                      headers={"Content-Type": "application/json"})
         try:
-            with urllib.request.urlopen(req, timeout=self._timeout) as r:
+            with urllib.request.urlopen(req, timeout=timeout or self._timeout) as r:
                 crudo = r.read()
                 largo = r.headers.get("Content-Length")
         except urllib.error.HTTPError as e:

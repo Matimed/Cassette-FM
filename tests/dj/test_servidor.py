@@ -68,7 +68,7 @@ def montar(tmp_path, sintetizador, fonemizar=fon_falso, lexico=None, cola=None, 
                             **({"reloj": reloj} if reloj else {}))
     s.cola = cola or Cola(s.productor, trabajadores=1)
     s.srv = crear_servidor(s.cola, sintetizador, "127.0.0.1", 0, s.config.modelos_dir, timeout=timeout,
-                           modo=modo, probar_llm=probar_llm)
+                           modo=modo, probar_llm=probar_llm, productor=s.productor)
     threading.Thread(target=lambda: s.srv.serve_forever(poll_interval=0.02), daemon=True).start()
     s.base = f"http://127.0.0.1:{s.srv.server_address[1]}"
     return s
@@ -484,3 +484,36 @@ def test_post_modo_llm_distingue_que_falte_el_modelo(servicio):
     from cassette_fm.dj.modo import ModoDJ
     s = servicio(SintetizadorFalso(), modo=ModoDJ(), probar_llm=lambda: "falta el modelo")
     assert json_de(pedir(s, "POST", "/modo", {"modo": "llm"}))[1] == {"modo": "llm", "llm": "falta el modelo"}
+
+
+def test_muestra_devuelve_el_wav_de_la_frase(servicio):
+    s = servicio(SintetizadorFalso())
+    codigo, cuerpo, cab = pedir(s, "POST", "/muestra", {"voz": "em_santa", "idioma": "es", "radio": "Sing"})
+    assert codigo == 200 and cab["Content-Type"] == "audio/wav" and cuerpo[:4] == b"RIFF"
+
+
+@pytest.mark.parametrize("cuerpo", [{"idioma": "es"}, {"voz": "x", "idioma": "fr"}, {"voz": "", "idioma": "es"},
+                                    {"voz": "x", "idioma": "es", "radio": 3}])
+def test_muestra_invalida_da_400(servicio, cuerpo):
+    s = servicio(SintetizadorFalso())
+    assert json_de(pedir(s, "POST", "/muestra", cuerpo))[0] == 400
+
+
+def test_muestra_con_voz_inexistente_da_400(servicio):
+    class Rechaza(SintetizadorFalso):
+        def sintetizar(self, *a, **k):
+            raise ValueError("la voz 'zz' no existe")
+    s = servicio(Rechaza())
+    codigo, d = json_de(pedir(s, "POST", "/muestra", {"voz": "zz", "idioma": "es"}))
+    assert codigo == 400 and "zz" in d["error"]
+
+
+def test_muestra_sin_modelos_da_503(servicio, tmp_path):
+    s = servicio(Sintetizador(ConfigServicioDJ(modelos_dir=tmp_path / "vacio")), modelos_dir=tmp_path / "vacio")
+    assert json_de(pedir(s, "POST", "/muestra", {"voz": "am_puck", "idioma": "en"}))[0] == 503
+
+
+def test_cliente_pide_la_muestra(servicio):
+    from cassette_fm.cliente_dj import ClienteDJ
+    s = servicio(SintetizadorFalso())
+    assert ClienteDJ(s.base).muestra("em_santa", "es", "Sing")[:4] == b"RIFF"

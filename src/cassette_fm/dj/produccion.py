@@ -13,12 +13,13 @@ from cassette_fm.dj.llm import ClienteLLM, ErrorLLM
 from cassette_fm.dj.modo import ModoDJ
 from cassette_fm.dj.guiones import RegistroGuiones
 from cassette_fm.dj.lexico import Lexico
-from cassette_fm.dj.pedido import Pedido
+from cassette_fm.dj.pedido import IDIOMAS, Pedido
 from cassette_fm.dj.plantillas import ingredientes_disponibles, redactar
 from cassette_fm.dj.redactor_llm import (ARRANQUES, campos_de_voz, construir_peticion, limpiar_salida, marcar_nombres,
                                          corregir_momento, numeros_a_palabras, salvar,
                                          verificar)
 from cassette_fm.dj.selector import elegir_ingredientes
+from cassette_fm.dj.muestra import frase_muestra
 from cassette_fm.dj.sintetizador import decir
 
 _ID = re.compile(r"[A-Za-z0-9_-]{1,64}")
@@ -89,6 +90,11 @@ class Productor:
         if ritmo is None:
             return int(maxima * _PALABRAS_POR_SEGUNDO)
         return max(15, int(maxima * ritmo * 0.95))
+
+    def muestra(self, voz: str, idioma: str, radio: str, destino: Path) -> float:
+        """La frase de muestra de `voz` (ver `frase_muestra`) en `destino`; la duración en segundos."""
+        marcado = frase_muestra(voz, idioma, radio, self._lexico)
+        return decir(self._sintetizador, self._fonemizar, marcado, voz, IDIOMAS[idioma], destino)[1]
 
     def producir(self, pedido: Pedido) -> Resultado:
         if not _ID.fullmatch(pedido.id):

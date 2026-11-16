@@ -2,6 +2,7 @@ import json
 import logging
 import re
 import signal
+import tempfile
 import threading
 from collections.abc import Callable
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -19,7 +20,7 @@ from cassette_fm.dj.hechos.wikipedia import ClienteWikipedia
 from cassette_fm.dj.lexico import Lexico
 from cassette_fm.dj.llm import ClienteLLM
 from cassette_fm.dj.modo import ModoDJ
-from cassette_fm.dj.pedido import leer_pedido
+from cassette_fm.dj.pedido import IDIOMAS, leer_pedido
 from cassette_fm.dj.produccion import Productor
 from cassette_fm.dj.sintetizador import ErrorModelos, Sintetizador, faltan_modelos, fonemizador
 
@@ -33,7 +34,8 @@ _MANTENIMIENTO_SEGUNDOS = 30.0
 
 def crear_servidor(cola: Cola, sintetizador, host: str, puerto: int, modelos_dir: Path,
                    timeout: float = 10.0, modo: ModoDJ | None = None,
-                   probar_llm: Callable[[], bool | str] | None = None) -> ThreadingHTTPServer:
+                   probar_llm: Callable[[], bool | str] | None = None,
+                   productor: Productor | None = None) -> ThreadingHTTPServer:
     modo = modo or ModoDJ()
     if host not in ("127.0.0.1", "localhost", "::1"):
         _log.warning("el servicio DJ escucha en %s sin autenticación: usalo solo en una red de confianza", host)
@@ -125,6 +127,32 @@ def crear_servidor(cola: Cola, sintetizador, host: str, puerto: int, modelos_dir
                 self._error(400, "el cuerpo no es JSON válido")
                 return None
 
+        def _post_muestra(self) -> None:
+            """La frase de muestra de una voz, sintetizada en el momento (el modal de emisora nueva del applet)."""
+            datos = self._leer_cuerpo()
+            if datos is None:
+                return
+            if not isinstance(datos, dict):
+                return self._error(400, "el cuerpo tiene que ser un objeto con voz, idioma y radio")
+            voz, idioma, radio = datos.get("voz"), datos.get("idioma"), datos.get("radio", "")
+            if not isinstance(voz, str) or not 1 <= len(voz.strip()) <= 64:
+                return self._error(400, "campo 'voz': tiene que ser el nombre de una voz")
+            if idioma not in IDIOMAS:
+                return self._error(400, f"campo 'idioma': tiene que ser uno de {', '.join(IDIOMAS)}")
+            if not isinstance(radio, str) or len(radio) > 100:
+                return self._error(400, "campo 'radio': tiene que ser un texto de hasta 100 caracteres")
+            if productor is None:
+                return self._error(503, "este servicio no genera muestras")
+            with tempfile.TemporaryDirectory(prefix="cassette-dj-muestra-") as carpeta:
+                destino = Path(carpeta) / "muestra.wav"
+                try:
+                    productor.muestra(voz.strip(), idioma, radio, destino)
+                except ErrorModelos as e:
+                    return self._error(503, str(e))
+                except ValueError as e:
+                    return self._error(400, str(e))
+                self._enviar(200, destino.read_bytes(), "audio/wav")
+
         def _post_modo(self) -> None:
             datos = self._leer_cuerpo()
             if datos is None:
@@ -144,6 +172,8 @@ def crear_servidor(cola: Cola, sintetizador, host: str, puerto: int, modelos_dir
         def _post(self, ruta: str) -> None:
             if ruta == "/modo":
                 return self._post_modo()
+            if ruta == "/muestra":
+                return self._post_muestra()
             if ruta != "/intervenciones":
                 return self._error(404, f"ruta desconocida: {ruta}")
             crudo = (self.headers.get("Content-Length") or "0").strip()
@@ -203,7 +233,7 @@ def servir(config: ConfigServicioDJ, rutas: RutasDJ, parar: threading.Event | No
                           RegistroGuiones(rutas.guiones), hechos=hechos, modo=modo, llm=llm)
     cola = Cola(productor, trabajadores=config.trabajadores, retencion_segundos=config.retencion_minutos * 60)
     servidor = crear_servidor(cola, sintetizador, config.host, config.puerto, config.modelos_dir, modo=modo,
-                              probar_llm=llm.estado)
+                              probar_llm=llm.estado, productor=productor)
     threading.Thread(target=lambda: servidor.serve_forever(poll_interval=0.05), daemon=True,
                      name="dj-http").start()
     faltan = faltan_modelos(config.modelos_dir)
