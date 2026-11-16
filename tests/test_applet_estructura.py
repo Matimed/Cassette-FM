@@ -133,3 +133,8 @@ def test_el_dial_usa_la_logica_probada():
     js = _js()
     for funcion in ("teclaDial", "filaDial", "crearCola", "barraVolumen", "iconoDe"):
         assert f"AppletDir.logic.{funcion}(" in js, funcion
+
+
+def test_el_dial_no_usa_keyval_name():
+    # el Clutter de Cinnamon 6.4 no tiene keyval_name: cada tecla tiraba un TypeError y el dial no respondía
+    assert "keyval_name" not in _js() and "Clutter.KEY_Escape" in _js()

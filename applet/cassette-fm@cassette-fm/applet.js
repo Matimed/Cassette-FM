@@ -509,6 +509,13 @@ const DIAL_CIERRE_MS = 5000;        // sin tocar nada, se cierra solo
 const DIAL_AVISO_MS = 2000;         // lo que dura el aviso de "no responde"
 const DIAL_PASO_VOLUMEN = 5;
 
+// El Clutter de Cinnamon no sabe dar el nombre de una tecla: los que entiende teclaDial, a mano.
+function _nombreDeTecla(simbolo) {
+    const nombres = { [Clutter.KEY_Left]: "Left", [Clutter.KEY_Right]: "Right", [Clutter.KEY_Up]: "Up",
+                      [Clutter.KEY_Down]: "Down", [Clutter.KEY_Escape]: "Escape" };
+    return nombres[simbolo] || null;
+}
+
 // Centro (en x, relativo al centro de la fila) del logo con desplazamiento `d`.
 function _centroDial(d) {
     if (d === 0) return 0;
@@ -537,16 +544,17 @@ class Dial {
         this._fondo = new St.Widget({ reactive: true, x: monitor.x, y: monitor.y,
                                       width: monitor.width, height: monitor.height });
         this._tira = new St.BoxLayout({ vertical: true, reactive: true,
-                                        style: "background-color: rgba(8, 8, 12, 0.86); border-radius: 28px;"
+                                        style: "background-color: rgba(8, 8, 12, 0.95); border-radius: 28px;"
                                                + " padding: 20px 32px; spacing: 6px;" });
         this._fila = new St.Widget({ width: 2 * (_centroDial(DIAL_LADO) + DIAL_CHICO / 2), height: DIAL_GRANDE,
                                      clip_to_allocation: true });
-        this._nombre = new St.Label({ style: "font-size: 1.5em; font-weight: bold; color: #fff;",
-                                      x_align: Clutter.ActorAlign.CENTER });
-        this._pista = new St.Label({ style: "font-size: 1em; color: rgba(255,255,255,0.7);",
-                                     x_align: Clutter.ActorAlign.CENTER });
-        this._ayuda = new St.Label({ style: "font-size: 0.9em; color: rgba(255,255,255,0.55);",
-                                     x_align: Clutter.ActorAlign.CENTER });
+        // a lo ancho de la tira y centrados: si no, se quedan con la medida del primer texto ("…")
+        this._nombre = new St.Label({ style: "font-size: 1.5em; font-weight: bold; color: #fff; text-align: center;",
+                                      x_expand: true });
+        this._pista = new St.Label({ style: "font-size: 1em; color: rgba(255,255,255,0.7); text-align: center;",
+                                     x_expand: true });
+        this._ayuda = new St.Label({ style: "font-size: 0.9em; color: rgba(255,255,255,0.55); text-align: center;",
+                                     x_expand: true });
         for (const hijo of [this._fila, this._nombre, this._pista, this._ayuda]) this._tira.add_child(hijo);
         this._fondo.add_child(this._tira);
         this._fondo.opacity = 0;
@@ -650,6 +658,7 @@ class Dial {
     }
 
     _centrar() {
+        this._tira.queue_relayout();
         const monitor = Main.layoutManager.primaryMonitor;
         const [, ancho] = this._tira.get_preferred_width(-1);
         const [, alto] = this._tira.get_preferred_height(ancho);
@@ -678,7 +687,7 @@ class Dial {
     }
 
     _alTecla(event) {
-        const accion = AppletDir.logic.teclaDial(Clutter.keyval_name(event.get_key_symbol()));
+        const accion = AppletDir.logic.teclaDial(_nombreDeTecla(event.get_key_symbol()));
         if (accion === "cerrar") this.cerrar();
         else if (accion === "anterior") this._mover(-1);
         else if (accion === "siguiente") this._mover(+1);
