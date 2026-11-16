@@ -19,7 +19,7 @@ from cassette_fm.dj.redactor_llm import (ARRANQUES, campos_de_voz, construir_pet
                                          corregir_momento, numeros_a_palabras, salvar,
                                          verificar)
 from cassette_fm.dj.selector import elegir_ingredientes
-from cassette_fm.dj.texto_voz import preparar, texto_para_piper
+from cassette_fm.dj.sintetizador import decir
 
 _ID = re.compile(r"[A-Za-z0-9_-]{1,64}")
 _log = logging.getLogger("cassette_fm")
@@ -187,9 +187,8 @@ class Productor:
                 self._guiones.anotar(**guion, texto=texto, descartado=True, motivo=motivo)
                 ultimo = motivo
                 continue
-            prep = preparar(marcado, pedido.lang, self._fonemizar)
-            duracion = self._sintetizador.sintetizar(prep.fonemas, pedido.voz, pedido.lang, ruta,
-                                                   velocidad=pedido.velocidad, texto=texto_para_piper(prep.marcado))
+            prep, duracion = decir(self._sintetizador, self._fonemizar, marcado, pedido.voz, pedido.lang, ruta,
+                                   velocidad=pedido.velocidad)
             self._medir(pedido.voz, prep.texto, duracion)
             guion.update(texto=prep.texto, marcado=prep.marcado, fonemas=prep.fonemas, duracion=duracion)
             if maxima is None or duracion <= maxima:
@@ -211,9 +210,8 @@ class Productor:
             redaccion = redactar(pedido, self._lexico, self._azar, palabras, self._zona, hechos=hechos,
                                  pesos=c.pesos_ingredientes, maximo=c.ingredientes_max,
                                  penalizacion=c.penalizacion_reciente)
-            prep = preparar(redaccion.marcado, pedido.lang, self._fonemizar)
-            duracion = self._sintetizador.sintetizar(prep.fonemas, pedido.voz, pedido.lang, ruta,
-                                                   velocidad=pedido.velocidad, texto=texto_para_piper(prep.marcado))
+            prep, duracion = decir(self._sintetizador, self._fonemizar, redaccion.marcado, pedido.voz, pedido.lang,
+                                   ruta, velocidad=pedido.velocidad)
             self._medir(pedido.voz, prep.texto, duracion)
             guion = dict(self._base(pedido), ingredientes=list(redaccion.ingredientes), texto=prep.texto,
                          marcado=prep.marcado, fonemas=prep.fonemas, duracion=duracion)

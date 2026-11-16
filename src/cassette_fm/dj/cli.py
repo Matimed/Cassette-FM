@@ -80,11 +80,10 @@ def _voz_prueba(config, rutas, args, sintetizador, fonemizar) -> int:
     try:
         for i, g in enumerate(elegidos, 1):
             lang = IDIOMAS[g["idioma"]]
-            prep = preparar(g["marcado"], lang, fonemizar)
-            print(f"{i:02d} · {prep.texto}")
+            print(f"{i:02d} · {preparar(g['marcado'], lang, fonemizar).texto}")
             for voz in args.voz:
                 destino = salida / f"{i:02d}-{voz}.wav"
-                sintetizador.sintetizar(prep.fonemas, voz, lang, destino)
+                sint.decir(sintetizador, fonemizar, g["marcado"], voz, lang, destino)
                 print(f"     {destino}")
     except (sint.ErrorModelos, ValueError) as e:
         print(f"No se pudo sintetizar: {e}", file=sys.stderr)

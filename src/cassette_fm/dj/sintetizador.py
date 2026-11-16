@@ -12,6 +12,7 @@ from pathlib import Path
 from typing import Any
 
 from cassette_fm.dj.config import ConfigServicioDJ
+from cassette_fm.dj.texto_voz import Preparado, preparar, texto_para_piper
 
 ARCHIVOS_MODELO = ("kokoro-v1.0.onnx", "voices-v1.0.bin")
 URL_MODELOS = "https://github.com/thewh1teagle/kokoro-onnx/releases/download/model-files-v1.0/"
@@ -246,3 +247,12 @@ class Sintetizador:
             self._piper = {}
         _devolver_memoria()
         return True
+
+
+def decir(sintetizador, fonemizar: Callable[[str, str], str], marcado: str, voz: str, lang: str, destino: Path,
+          velocidad: float | None = None) -> tuple[Preparado, float]:
+    """Prepara un texto marcado y lo sintetiza en `destino`: Kokoro habla con los fonemas, Piper con el texto."""
+    prep = preparar(marcado, lang, fonemizar)
+    duracion = sintetizador.sintetizar(prep.fonemas, voz, lang, destino, velocidad=velocidad,
+                                       texto=texto_para_piper(prep.marcado))
+    return prep, duracion

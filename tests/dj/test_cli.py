@@ -23,10 +23,12 @@ def fon_falso(texto, lang):
 class SintetizadorFalso:
     def __init__(self, voces=("em_santa", "em_alex")):
         self.llamadas = []
+        self.textos = []
         self._voces = list(voces)
 
     def sintetizar(self, fonemas, voz, lang, salida, velocidad=None, texto=None):
         self.llamadas.append((fonemas, voz, lang, Path(salida)))
+        self.textos.append(texto)
         Path(salida).parent.mkdir(parents=True, exist_ok=True)
         with wave.open(str(salida), "wb") as w:
             w.setnchannels(1); w.setsampwidth(2); w.setframerate(8000)
@@ -76,6 +78,14 @@ def test_voz_prueba_resintetiza_los_guiones_tal_cual(entorno, tmp_path, capsys):
     assert [c[0] for c in sint.llamadas] == [esperado, esperado]
     assert [c[1] for c in sint.llamadas] == ["em_santa", "em_alex"]
     assert "Seguimos con Daddy Yankee" in capsys.readouterr().out
+
+
+def test_voz_prueba_le_pasa_el_texto_a_piper(entorno, tmp_path):
+    cargar_guiones(entorno, [guion("Seguimos con la mejor música para todos ustedes.")])
+    sint = SintetizadorFalso()
+    assert cli.main(["voz-prueba", "--voz", "piper:es_AR-daniela-high", "--salida", str(tmp_path / "s")],
+                    sintetizador=sint, fonemizar=fon_falso) == 0
+    assert sint.textos == ["Seguimos con la mejor música para todos ustedes."]
 
 
 def test_voz_prueba_toma_los_ultimos_n_en_orden(entorno, tmp_path):

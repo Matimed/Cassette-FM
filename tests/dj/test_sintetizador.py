@@ -10,6 +10,7 @@ import pytest
 np = pytest.importorskip("numpy")
 
 from cassette_fm.dj.config import ConfigServicioDJ
+from cassette_fm.dj.texto_voz import preparar, texto_para_piper
 from cassette_fm.dj import sintetizador as mod
 from cassette_fm.dj.sintetizador import (ARCHIVOS_MODELO, ErrorModelos, Sintetizador, descargar_modelos,
                                          faltan_modelos, fonemizador)
@@ -401,3 +402,16 @@ def test_piper_mete_silencios_en_las_comas_y_entre_oraciones(tmp_path, fabrica_f
 def test_piper_sin_puntuacion_es_un_solo_trozo_sin_silencios(tmp_path, fabrica_falsa):
     s, registro, _ = sint_piper(tmp_path, fabrica_falsa)
     assert s.sintetizar("x", "piper:es_AR-daniela-high", "es", tmp_path / "a.wav", texto="Hola gente") == pytest.approx(1.0, abs=0.01)
+
+
+def test_decir_le_pasa_fonemas_y_texto_al_sintetizador(tmp_path):
+    class Anota:
+        def sintetizar(self, fonemas, voz, lang, salida, velocidad=None, texto=None):
+            self.args = (fonemas, voz, lang, salida, velocidad, texto)
+            return 1.5
+    s = Anota()
+    fon = lambda t, l: f"<{l}:{t}>"
+    prep, duracion = mod.decir(s, fon, "Hola, soy {es:dora} y nada más.", "dora", "es", tmp_path / "x.wav",
+                               velocidad=1.1)
+    assert duracion == 1.5 and prep == preparar("Hola, soy {es:dora} y nada más.", "es", fon)
+    assert s.args == (prep.fonemas, "dora", "es", tmp_path / "x.wav", 1.1, texto_para_piper(prep.marcado))
