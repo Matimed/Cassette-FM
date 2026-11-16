@@ -173,6 +173,30 @@ def _modo(config, args) -> int:
     return 0
 
 
+def _listado_de_voces(todas: list[str], alias: dict[str, str], archivo: Path) -> str:
+    """Los alias primero (en el orden del config, con la voz a la que apuntan), después Kokoro y Piper; cada voz
+    con alias lo muestra al lado."""
+    voces = [v for v in todas if v not in alias]
+    de_cada_voz: dict[str, list[str]] = {}
+    for nombre, voz in alias.items():
+        for parte in voz.split("+"):
+            de_cada_voz.setdefault(parte, []).append(nombre)
+    lineas = [f"Alias ([voces] de {archivo}):"] if alias else [f"Alias: ninguno (se definen en [voces] de {archivo})"]
+    ancho = max((len(n) for n in alias), default=0) + 2
+    for nombre, voz in alias.items():
+        falta = "   ¡esa voz no existe!" if any(p not in voces for p in voz.split("+")) else ""
+        lineas.append(f"  {nombre.ljust(ancho)} → {voz}{falta}")
+    for titulo, grupo in (("Kokoro", [v for v in voces if not v.startswith("piper:")]),
+                          ("Piper", [v for v in voces if v.startswith("piper:")])):
+        if not grupo:
+            continue
+        ancho = max(len(v) for v in grupo) + 3
+        lineas += ["", f"{titulo}:"]
+        lineas += [f"  {v.ljust(ancho)}(alias: {', '.join(de_cada_voz[v])})" if v in de_cada_voz else f"  {v}"
+                   for v in grupo]
+    return "\n".join(lineas)
+
+
 def main(argv: list[str] | None = None, *, sintetizador=None, fonemizar=None, clientes=None) -> int:
     parser = _armar_parser()
     args = parser.parse_args(argv)
@@ -212,10 +236,11 @@ def main(argv: list[str] | None = None, *, sintetizador=None, fonemizar=None, cl
         return 0
     if args.comando == "voces":
         try:
-            print("\n".join((sintetizador or sint.Sintetizador(config)).voces()))
+            todas = (sintetizador or sint.Sintetizador(config)).voces()
         except sint.ErrorModelos as e:
             print(e, file=sys.stderr)
             return 1
+        print(_listado_de_voces(todas, config.voces, rutas.config))
         return 0
     if args.comando == "guiones":
         return _guiones(rutas, args)

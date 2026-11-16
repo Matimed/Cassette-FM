@@ -140,7 +140,31 @@ def test_modelos_baja_los_que_faltan(entorno, monkeypatch, capsys):
 
 def test_voces_lista_las_voces(entorno, capsys):
     assert cli.main(["voces"], sintetizador=SintetizadorFalso(("a_voz", "b_voz"))) == 0
-    assert capsys.readouterr().out.split() == ["a_voz", "b_voz"]
+    salida = capsys.readouterr().out
+    assert "  a_voz\n  b_voz\n" in salida and "ninguno" in salida      # sin alias definidos, lo dice
+
+
+def test_voces_separa_los_alias_kokoro_y_piper(entorno, capsys):
+    entorno.config.parent.mkdir(parents=True)
+    entorno.config.write_text('[voces]\nheart = "af_heart"\ndaniela = "piper:es_AR-daniela-high"\n'
+                              'mezcla = "em_alex+em_santa"\nrota = "af_nadie"\n')
+    disponibles = ("af_heart", "em_alex", "em_santa", "piper:es_AR-daniela-high", "heart", "daniela", "mezcla", "rota")
+    assert cli.main(["voces"], sintetizador=SintetizadorFalso(disponibles)) == 0
+    assert capsys.readouterr().out.splitlines() == [
+        f"Alias ([voces] de {entorno.config}):",
+        "  heart     → af_heart",
+        "  daniela   → piper:es_AR-daniela-high",
+        "  mezcla    → em_alex+em_santa",
+        "  rota      → af_nadie   ¡esa voz no existe!",
+        "",
+        "Kokoro:",
+        "  af_heart   (alias: heart)",
+        "  em_alex    (alias: mezcla)",
+        "  em_santa   (alias: mezcla)",
+        "",
+        "Piper:",
+        "  piper:es_AR-daniela-high   (alias: daniela)",
+    ]
 
 
 def test_voces_sin_archivo_explica(entorno, capsys):

@@ -251,8 +251,11 @@ alex_santa = "em_alex+em_santa"          # una mezcla de voces de Kokoro (promed
 ```
 
 - El alias solo puede tener letras, números, `_`, `.` y `-`.
-- `cassette-dj voces` lista todo lo que se puede usar: las voces de Kokoro, los modelos de Piper que haya en
-  `~/.local/share/cassette-dj/modelos/piper/` y los alias. Para escuchar una antes de elegirla:
+- `cassette-dj voces` lista primero los alias (con la voz a la que apunta cada uno, y un aviso si esa voz no
+  existe) y después todo lo demás que se puede usar: las voces de Kokoro y los modelos de Piper que haya en
+  `~/.local/share/cassette-dj/modelos/piper/`, cada una con su alias al lado si tiene. En Kokoro, la primera letra
+  del nombre es el idioma de la voz (`a` inglés de EE. UU., `b` británico, `e` español, `f` francés, `h` hindi,
+  `i` italiano, `j` japonés, `p` portugués de Brasil, `z` chino) y la segunda el género (`f` mujer, `m` hombre). Para escuchar una antes de elegirla:
   `cassette-dj voz-prueba --voz daniela` vuelve a decir los últimos guiones con esa voz.
 - Para sumar una voz de Piper, bajá su modelo a esa carpeta (las voces están en
   [rhasspy/piper-voices](https://huggingface.co/rhasspy/piper-voices)):
