@@ -703,3 +703,82 @@ def test_borrar_con_la_radio_apagada_lo_dice(tmp_path, monkeypatch, capsys, serv
     monkeypatch.setattr(cli, "_llamar", caido)
     assert main(["borrar", "--si", "Sing"]) == 0
     assert "La radio no está corriendo: el cambio se ve al prenderla." in capsys.readouterr().out
+
+
+def _renombrar(monkeypatch, tmp_path, servidor_http, sonando=None):
+    import json as _json
+    from cassette_fm import cli
+    r, _ = _nueva(monkeypatch, tmp_path, servidor_http)
+    r.emisoras.write_text(_json.dumps(HAPPY + [SING], ensure_ascii=False))
+    rutas = []
+
+    def llamar(puerto, metodo, ruta, cuerpo=None, timeout=10):
+        rutas.append((ruta, cuerpo))
+        estacion = cuerpo["estacion"] if ruta == "/sintonizar" else (sonando or "Happy Eighties")
+        return {"encendida": True, "estacion": estacion, "pista": None, "volumen": 60, "fuente": "spotify"}
+    monkeypatch.setattr(cli, "_llamar", llamar)
+    return r, rutas
+
+
+def test_renombrar_cambia_solo_el_nombre(tmp_path, monkeypatch, capsys, servidor_http):
+    import json as _json
+    r, rutas = _renombrar(monkeypatch, tmp_path, servidor_http)
+    assert main(["renombrar", " SING ", "Cantemos"]) == 0
+    assert _json.loads(r.emisoras.read_text()) == HAPPY + [dict(SING, nombre="Cantemos")]
+    assert "✎ Sing → Cantemos" in capsys.readouterr().out
+    assert [ruta for ruta, _ in rutas] == ["/estado", "/rescan"]
+
+
+def test_renombrar_la_que_suena_la_vuelve_a_sintonizar(tmp_path, monkeypatch, capsys, servidor_http):
+    _, rutas = _renombrar(monkeypatch, tmp_path, servidor_http, sonando="Sing")
+    assert main(["renombrar", "sing", "Cantemos"]) == 0
+    assert rutas[-1] == ("/sintonizar", {"estacion": "Cantemos"})
+    assert [ruta for ruta, _ in rutas] == ["/estado", "/rescan", "/sintonizar"]
+    assert "▶ Cantemos" in capsys.readouterr().out
+
+
+def test_renombrar_solo_las_mayusculas(tmp_path, monkeypatch, capsys, servidor_http):
+    import json as _json
+    r, _ = _renombrar(monkeypatch, tmp_path, servidor_http)
+    assert main(["renombrar", "sing", "SING"]) == 0
+    assert _json.loads(r.emisoras.read_text())[-1]["nombre"] == "SING"
+
+
+def test_renombrar_igual_no_toca_nada(tmp_path, monkeypatch, capsys, servidor_http):
+    r, rutas = _renombrar(monkeypatch, tmp_path, servidor_http)
+    antes = r.emisoras.read_text()
+    assert main(["renombrar", "sing", " Sing "]) == 0
+    assert "«Sing» ya se llama así." in capsys.readouterr().out and r.emisoras.read_text() == antes and rutas == []
+
+
+def test_renombrar_a_un_nombre_de_otra_emisora(tmp_path, monkeypatch, capsys, servidor_http):
+    r, rutas = _renombrar(monkeypatch, tmp_path, servidor_http)
+    antes = r.emisoras.read_text()
+    assert main(["renombrar", "Sing", "happy eighties"]) == 1
+    assert "Happy Eighties" in capsys.readouterr().err and r.emisoras.read_text() == antes and rutas == []
+
+
+def test_renombrar_a_un_nombre_vacio(tmp_path, monkeypatch, capsys, servidor_http):
+    r, rutas = _renombrar(monkeypatch, tmp_path, servidor_http)
+    antes = r.emisoras.read_text()
+    assert main(["renombrar", "Sing", "  "]) == 1
+    assert r.emisoras.read_text() == antes and rutas == []
+
+
+def test_renombrar_una_que_no_existe(tmp_path, monkeypatch, capsys, servidor_http):
+    _renombrar(monkeypatch, tmp_path, servidor_http)
+    assert main(["renombrar", "Nada", "X"]) == 1
+    assert "Happy Eighties" in capsys.readouterr().err
+
+
+def test_renombrar_con_la_radio_apagada(tmp_path, monkeypatch, capsys, servidor_http):
+    import json as _json
+    from cassette_fm import cli
+    r, _ = _renombrar(monkeypatch, tmp_path, servidor_http)
+
+    def caido(*a, **k):
+        raise cli._ServicioCaido("cassette-fm no está corriendo")
+    monkeypatch.setattr(cli, "_llamar", caido)
+    assert main(["renombrar", "Sing", "Cantemos"]) == 0
+    assert _json.loads(r.emisoras.read_text())[-1]["nombre"] == "Cantemos"
+    assert "La radio no está corriendo: el cambio se ve al prenderla." in capsys.readouterr().out

@@ -396,6 +396,8 @@ usar una de esas, copiala a una playlist propia.
   o está vacía, no se guarda nada. Dos emisoras pueden usar la misma playlist: cada una va por otro tema.
 - `cassette borrar "sing"` saca una emisora (el nombre sin importar mayúsculas) de `estaciones.json`, preguntando
   antes (`--si` no pregunta); si estaba sonando, la radio pasa a la primera. No toca la música ni la caché de Spotify.
+- `cassette renombrar "sing" "Cantemos"` le cambia el nombre (si estaba sonando, sigue en ella). El orden de los temas
+  sale del nombre: después de renombrarla, la emisora queda en otro punto de su playlist.
 - `cassette voces` lista los alias que puede usar una emisora nueva, con su idioma y las emisoras que ya los usan
   (`--json`, para el applet).
 - Los temas se guardan en `~/.cache/cassette-fm/spotify.json`: el rescan solo los vuelve a bajar si la playlist cambió,

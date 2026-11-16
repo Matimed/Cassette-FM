@@ -85,6 +85,9 @@ def _armar_parser() -> argparse.ArgumentParser:
     borrar = sub.add_parser("borrar", parents=[comun], help="saca una emisora de estaciones.json (pregunta antes)")
     borrar.add_argument("nombre", help="el nombre de la emisora (sin importar mayúsculas)")
     borrar.add_argument("--si", action="store_true", help="no preguntar")
+    renombrar = sub.add_parser("renombrar", parents=[comun], help="le cambia el nombre a una emisora")
+    renombrar.add_argument("nombre", help="el nombre actual (sin importar mayúsculas)")
+    renombrar.add_argument("nuevo", help="el nombre nuevo")
     voces = sub.add_parser("voces", help="las voces con alias que puede usar una emisora nueva")
     voces.add_argument("--json", action="store_true", help="en JSON (para el applet)")
     spotify = sub.add_parser("spotify", help="Spotify como fuente de emisoras: sesión y estado")
@@ -395,6 +398,45 @@ def _borrar(args, rutas, puerto: int) -> int:
     return 0
 
 
+def _renombrar(args, rutas, puerto: int) -> int:
+    """Le cambia el nombre a una emisora; si sonaba, la radio la vuelve a sintonizar con el nombre nuevo (el orden de
+    los temas sale del nombre: queda en otro punto, como una emisora nueva)."""
+    from cassette_fm import emisora_nueva
+    try:
+        emisoras = emisora_nueva.leer_crudo(rutas.emisoras)
+        i = emisora_nueva.buscar(emisoras, args.nombre)
+        nuevo = emisora_nueva.chequear_nombre(emisoras[:i] + emisoras[i + 1:], args.nuevo)
+    except config.ErrorConfig as e:
+        print(e, file=sys.stderr)
+        return 1
+    viejo = emisoras[i]["nombre"].strip()
+    if nuevo == viejo:
+        print(f"«{viejo}» ya se llama así.")
+        return 0
+    try:
+        antes = _llamar(puerto, "GET", "/estado")
+    except _ServicioCaido:
+        antes = None
+    except _ErrorCli as e:
+        print(e, file=sys.stderr)
+        return 1
+    emisoras[i] = dict(emisoras[i], nombre=nuevo)
+    emisora_nueva.escribir(rutas.emisoras, emisoras)
+    print(f"✎ {viejo} → {nuevo}")
+    if antes is None:
+        print("La radio no está corriendo: el cambio se ve al prenderla.")
+        return 0
+    try:
+        estado = _llamar(puerto, "POST", "/rescan", timeout=120)
+        if antes.get("encendida") and antes.get("estacion") == viejo:     # el rescan sola la mandaría a la primera
+            estado = _llamar(puerto, "POST", "/sintonizar", {"estacion": nuevo})
+    except _ErrorCli as e:
+        print(f"El nombre quedó cambiado, pero la radio no pudo releer las emisoras: {e}", file=sys.stderr)
+        return 1
+    print(_linea_estado(estado))
+    return 0
+
+
 def _voces(args, rutas) -> int:
     from cassette_fm import emisora_nueva
     from cassette_fm.dj.config import cargar_config_dj, rutas_dj
@@ -454,6 +496,8 @@ def main(argv: list[str] | None = None) -> int:
         return _voces(args, rutas)
     if args.comando == "borrar":
         return _borrar(args, rutas, getattr(args, "puerto", cfg.puerto))
+    if args.comando == "renombrar":
+        return _renombrar(args, rutas, getattr(args, "puerto", cfg.puerto))
     try:
         _ejecutar(args, getattr(args, "puerto", cfg.puerto))
     except _ErrorCli as e:
