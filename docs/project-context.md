@@ -37,7 +37,9 @@ Soloist: [`superpowers/specs/2026-11-16-sintonia-spotify-rapida-design.md`](supe
 y la radio acepta los temas que Soloist no logra cargar y saltea, en vez de re-sintonizar en bucle (CASSETTE-FM-49ga,
 probado en real: [`superpowers/specs/2026-11-16-soloist-saltea-temas-design.md`](superpowers/specs/2026-11-16-soloist-saltea-temas-design.md)).
 La clave de Soloist sigue en la línea de comando (decisión de CASSETTE-FM-q2ry): nunca mostrar los argumentos del
-proceso (`systemctl status`, `ps` con argumentos).
+proceso (`systemctl status`, `ps` con argumentos). `cassette nueva NOMBRE LINK` crea una emisora de Spotify con un DJ
+de voz propia y la sintoniza ([`superpowers/specs/2026-11-16-emisora-nueva-design.md`](superpowers/specs/2026-11-16-emisora-nueva-design.md));
+próximo paso: un botón en el listado de emisoras del applet que abra un modal con esas opciones.
 
 ## Relevamiento previo (leer antes de diseñar)
 
