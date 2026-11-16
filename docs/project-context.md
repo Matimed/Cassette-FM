@@ -28,9 +28,12 @@ botones de un parlante Bluetooth cambian de emisora:
 Etapa 7a (adelantada): **peticiones por la cola de Spotify**: lo encolado desde la app suena como petición, el DJ
 la anuncia (antes o después) y la agenda de la emisora se corre sin perder temas:
 [`superpowers/specs/2026-11-15-peticiones-spotify-design.md`](superpowers/specs/2026-11-15-peticiones-spotify-design.md).
-Probada con el usuario el 2026-11-15. Pendientes en Beans: anuncio combinado de dos pedidos seguidos y casos menores
-de la cola. (De paso se arregló que la sintonía de Spotify arrancaba 2–8 s atrasada: la posición ahora se calcula
-justo antes del play.)
+Probada con el usuario el 2026-11-15; el cierre (anuncio combinado de dos pedidos seguidos, anuncios que se
+descartan al sacar de la cola o saltear) el 2026-11-16:
+[`superpowers/specs/2026-11-15-peticiones-cierre-design.md`](superpowers/specs/2026-11-15-peticiones-cierre-design.md).
+(De paso se arregló que la sintonía de Spotify arrancaba 2–8 s atrasada: la posición se calcula justo antes del
+play.) Abiertos en Beans: Soloist a veces saltea temas en los cambios naturales o no reproduce alguno, y la radio
+re-sintoniza en bucle (CASSETTE-FM-49ga); la clave de Soloist va en la línea de comando (CASSETTE-FM-q2ry).
 
 ## Relevamiento previo (leer antes de diseñar)
 
