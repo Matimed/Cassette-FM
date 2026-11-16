@@ -399,6 +399,11 @@ usar una de esas, copiala a una playlist propia.
 - Al sintonizar una emisora de Spotify suena un segundo de estática hasta que arranca la música. Los temas siguen la
   misma agenda que una emisora local (orden mezclado, se entra con el tema empezado) y Spotify los encadena sin cortes.
   El DJ habla igual, con la música bajada.
+- A veces Soloist no logra cargar un tema (le pasa a algunos, de a ratos, aunque en la app de Spotify suenen) y pasa
+  al siguiente en menos de un segundo; a veces toca otra versión del tema (otra edición del disco). La radio lo
+  acepta: si cambia de tema a menos de 2 s del anterior, la agenda sigue desde lo que suena (en el log: «Soloist
+  salteó …»), y otra versión cuenta como el tema que tocaba. Lo mismo si salteás rápido desde la app; un salto más
+  lento vuelve a la agenda.
 - Lo que agregás a la cola desde la app de Spotify es una **petición**: ver [Peticiones](#peticiones).
 - Si ponés Spotify en otro dispositivo (el celular), la radio se apaga y avisa. Si sintonizás una emisora de Spotify,
   la radio toma el control de tu cuenta.
