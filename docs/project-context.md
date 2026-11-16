@@ -45,8 +45,13 @@ justo antes del play.)
 ## Decisiones tomadas
 
 - Proyecto nuevo desde cero; radio-dj solo como referencia de ideas.
-- Voz del DJ: **Kokoro** como opción preferida (em_santa en español; am_michael y af_heart en inglés).
-  Alternativa: edge-tts (es-MX-Jorge, es-US-Alonso, en-US-BrianMultilingual, en-US-Christopher). Piper descartado.
+- Voz del DJ: **Kokoro** en inglés (una voz por estación, elegidas el 14/11) y **Piper `es_AR-daniela-high`**
+  ("daniela") en español: es la locutora. Banco de voces del 16/11 con guiones reales: en español Daniela ganó a
+  todas; después `ef_dora` (Kokoro), `es_MX-claude-high`, `es_MX-ald-medium` (Piper) y `alex_santa` (mezcla de
+  Kokoro), que quedan como alias listos en `~/.config/cassette-dj/config.toml`.
+- TTS pesados descartados (banco del 16/11, en este equipo): XTTS-v2 tarda ~2× la duración del audio y usa 4 GB;
+  Qwen3-TTS 0.6B y Chatterbox multilingüe, 5–7× y 5,5–6 GB. Sin una mejora audible clara frente a Kokoro y Piper,
+  no compensa.
 - Hora y clima: Buenos Aires, Argentina.
 - Primero la radio sin DJ; el DJ después.
 
