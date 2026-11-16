@@ -919,6 +919,44 @@ def test_encolar_otro_cancela_el_antes_en_preparacion(con_peticiones):
     assert [p["siguiente"]["titulo"] for p in _peticiones(m)][-1] == "Bohemian Rhapsody"
 
 
+def test_otro_pedido_en_el_borde_del_despues_lo_reemplaza_con_su_antes(con_peticiones):
+    m = con_peticiones
+    est = estacion()
+    m.p.al_sintonizar(est)
+    fin = _fin_del_tema(est, T0)
+    m.reloj.t = fin - 10                                 # encolaron dos temas sobre el final
+    m.p.al_encolado(PEDIDO, est, fin)
+    m.reloj.t = fin
+    nueva = con_pedido(est, PEDIDO, fin)
+    m.p.al_cambiar_agenda(nueva, nueva.pedidos[0])
+    m.p.paso()
+    [despues] = _peticiones(m)
+    m.listo(despues["id"])
+    m.p.paso()
+    assert [i.peticion for i in m.registro.todas()] == ["despues"]
+    _, antes = _registrar_antes(m, nueva, OTRO, fin=fin + PEDIDO.duracion)   # el segundo es el próximo
+    assert antes["peticion"] == "antes" and antes["anterior"]["titulo"] == "Bohemian Rhapsody"
+    assert [i.id for i in m.registro.todas()] == [antes["id"]]
+
+
+def test_otro_pedido_en_el_borde_cancela_el_despues_en_preparacion(con_peticiones):
+    m = con_peticiones
+    est = estacion()
+    m.p.al_sintonizar(est)
+    fin = _fin_del_tema(est, T0)
+    m.reloj.t = fin - 10
+    m.p.al_encolado(PEDIDO, est, fin)
+    m.reloj.t = fin
+    nueva = con_pedido(est, PEDIDO, fin)
+    m.p.al_cambiar_agenda(nueva, nueva.pedidos[0])
+    m.p.paso()
+    [despues] = _peticiones(m)
+    m.p.al_encolado(OTRO, nueva, fin + PEDIDO.duracion)
+    m.p.paso()
+    assert despues["id"] in m.cliente.cancelados
+    assert [p["peticion"] for p in _peticiones(m)] == ["despues", "antes"]
+
+
 def test_saltear_hasta_el_pedido_descarta_el_antes_y_pide_el_despues(con_peticiones):
     m = con_peticiones
     est = estacion()

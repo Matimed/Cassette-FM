@@ -146,7 +146,12 @@ class Planificador:
             if self._apagado or self._estacion is None or self._estacion.nombre != estacion.nombre \
                     or pista.clave in self._encolados:
                 return
-            self._olvidar_encolados(self._encolados)    # el próximo es otro: lo encolado antes lo sacaron de la cola
+            # el próximo es otro: lo encolado antes lo sacaron de la cola, y el "después" de un pedido que iba a sonar
+            # en ese borde anunciaba un tema que ya no empieza ahí
+            viejos, tolerancia = self._encolados, self._configuracion(estacion.nombre).tolerancia_desfase_segundos
+            self._olvidar_anuncios("antes", lambda _, destino, __: destino in viejos)
+            self._olvidar_anuncios("despues", lambda nombre, _, inicio: nombre == estacion.nombre
+                                   and abs(inicio - fin_actual) <= tolerancia)
             self._encolados = {pista.clave}
             if not _con_nombre(pista):
                 return
@@ -191,17 +196,17 @@ class Planificador:
             if _con_nombre(siguiente):
                 self._pendientes.append(_Peticion(estacion.nombre, "despues", siguiente, inicio, nuevo.pista, clave))
 
-    def _olvidar_encolados(self, claves: set[str]) -> None:
-        """Con el lock tomado: los anuncios "antes" de esos pedidos (pendientes, en preparación o reservados) ya no
-        van a sonar."""
-        if not claves:
-            return
-        self._pendientes = [p for p in self._pendientes if not (p.modo == "antes" and p.pedido in claves)]
+    def _olvidar_anuncios(self, modo: str, cual: Callable[[str, str, float], bool]) -> None:
+        """Con el lock tomado: los anuncios `modo` de peticiones que ya no van a sonar (pendientes, en preparación o
+        reservados), según `cual(estacion, tema destino, inicio del tema destino)`."""
+        self._pendientes = [p for p in self._pendientes
+                            if not (p.modo == modo and cual(p.estacion, p.pista.clave, p.inicio_tema))]
         for i in self._registro.todas():
-            if i.peticion == "antes" and i.pista_destino in claves:
+            if i.peticion == modo and cual(i.estacion, i.pista_destino,
+                                           i.inicio - self._configuracion(i.estacion).retraso_voz_segundos):
                 self._registro.quitar(i)
         t = self._trabajo
-        if t is not None and t.peticion == "antes" and t.pedido in claves:
+        if t is not None and t.peticion == modo and cual(t.estacion, t.pista_destino, t.inicio_tema):
             self._a_cancelar.append(t.id)
             self._trabajo = None
             self._guardar()
