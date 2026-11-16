@@ -309,6 +309,33 @@ def test_la_posicion_del_play_no_pasa_el_final_del_tema():
     assert control.llamadas[0][1] < actual.duracion * 1000
 
 
+APAGAR = [("set_shuffle", {"enabled": False}), ("set_repeat_context", {"enabled": False}),
+          ("set_repeat_track", {"enabled": False})]
+
+
+def _ordenes(soloist):
+    return [c for c in soloist.comandos if c[0] != "set_volume"]
+
+
+def test_sintonizar_apaga_shuffle_y_repeat_en_soloist_antes_del_play():
+    r, control, soloist, _, _ = armar()
+    control.antes = lambda: soloist.comandos.append(("PLAY", {}))
+    r.sintonizar(estacion())
+    assert _ordenes(soloist) == APAGAR + [("PLAY", {})]
+
+
+def test_resintonizar_tambien_apaga_shuffle_y_repeat():
+    r, control, soloist, reloj, _ = armar()
+    control.antes = lambda: soloist.comandos.append(("PLAY", {}))
+    e = estacion()
+    r.sintonizar(e)
+    sonando(r, control)
+    pista, inicio = proximo(e, reloj())
+    reloj.t = inicio + 5.0                                 # desfase grande: re-sintoniza
+    r.manejar_evento(cambio(pista.uri))
+    assert _ordenes(soloist) == (APAGAR + [("PLAY", {})]) * 2
+
+
 def test_desfase_grande_resintoniza_en_el_borde_y_chico_no():
     for atraso, resintoniza in ((5.0, True), (2.0, False)):
         r, control, _, reloj, _ = armar()

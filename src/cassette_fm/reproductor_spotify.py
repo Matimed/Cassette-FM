@@ -148,6 +148,10 @@ class ReproductorSpotify:
                 return
             try:
                 self._aplicar_volumen()
+                # si la cuenta tiene shuffle o repeat, Spotify los aplica a la lista y suena otro tema; por Soloist
+                # se apagan en milisegundos (por la Web API eran ~1,2 s en cada sintonía)
+                for orden in ("set_shuffle", "set_repeat_context", "set_repeat_track"):
+                    self._soloist.comando(orden, enabled=False)
                 self._control.reproducir(uris, posicion_ms)
             except ErrorSpotify as e:
                 self._fallar(n, estacion, str(e))

@@ -27,10 +27,10 @@ class ControlSpotify:
             return self._id
 
     def reproducir(self, uris: list[str], posicion_ms: Callable[[], int]) -> None:
-        """Apaga shuffle y repeat (si no, la cuenta los aplica y suena otro tema) y reproduce la lista desde
-        `posicion_ms()` del primero, calculada justo antes del play (cada pedido a la API tarda ~0,6 s: con la
-        posición de antes el tema arrancaría atrasado). Si Spotify ya no conoce el dispositivo, lo busca de nuevo
-        una vez."""
+        """Reproduce la lista desde `posicion_ms()` del primero, calculada justo antes del play (cada pedido a la API
+        tarda ~0,6 s: con la posición de antes el tema arrancaría atrasado). Shuffle y repeat los apaga antes quien
+        llama, por el WebSocket de Soloist (por la API costaban otro ~1,2 s). Si Spotify ya no conoce el dispositivo,
+        lo busca de nuevo una vez."""
         try:
             self._reproducir(self.dispositivo(), uris, posicion_ms)
         except ErrorSpotify as e:
@@ -41,7 +41,5 @@ class ControlSpotify:
             self._reproducir(self.dispositivo(), uris, posicion_ms)
 
     def _reproducir(self, dispositivo: str, uris: list[str], posicion_ms: Callable[[], int]) -> None:
-        self._cliente.put("/me/player/shuffle", {"state": "false", "device_id": dispositivo})
-        self._cliente.put("/me/player/repeat", {"state": "off", "device_id": dispositivo})
         self._cliente.put("/me/player/play", {"device_id": dispositivo},
                           {"uris": list(uris), "position_ms": int(posicion_ms())})

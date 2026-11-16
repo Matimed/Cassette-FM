@@ -34,14 +34,14 @@ def test_sin_el_dispositivo_dice_que_revisar(servidor_http):
         control(servidor_http).dispositivo()
 
 
-def test_reproducir_apaga_shuffle_y_repeat_y_da_play(servidor_http):
+def test_reproducir_solo_da_play(servidor_http):
+    # shuffle y repeat los apaga el reproductor por el WebSocket de Soloist (cada PUT costaba ~0,6 s)
     servidor_http.responder("/v1/me/player/devices", DISPOSITIVOS)
     servidor_http.responder("/v1/me/player/", "", 204)
     control(servidor_http).reproducir(["spotify:track:a", "spotify:track:b"], lambda: 30000)
     rutas = [r for r, _ in servidor_http.cuerpos]
-    assert rutas == ["/v1/me/player/shuffle?state=false&device_id=D1", "/v1/me/player/repeat?state=off&device_id=D1",
-                     "/v1/me/player/play?device_id=D1"]
-    assert json.loads(servidor_http.cuerpos[2][1]) == {"uris": ["spotify:track:a", "spotify:track:b"], "position_ms": 30000}
+    assert rutas == ["/v1/me/player/play?device_id=D1"]
+    assert json.loads(servidor_http.cuerpos[0][1]) == {"uris": ["spotify:track:a", "spotify:track:b"], "position_ms": 30000}
 
 
 def test_play_404_rebusca_el_dispositivo_y_reintenta(servidor_http):
@@ -60,5 +60,5 @@ def test_la_posicion_se_calcula_justo_antes_del_play(servidor_http):
     servidor_http.responder("/v1/me/player/", "", 204)
     hechos = []                                      # cuántos pedidos ya se habían hecho al calcularla
     control(servidor_http).reproducir(["spotify:track:a"], lambda: hechos.append(len(servidor_http.cuerpos)) or 1234)
-    assert hechos == [2]                             # después de shuffle y repeat: lo que tardan no atrasa el tema
-    assert json.loads(servidor_http.cuerpos[2][1])["position_ms"] == 1234
+    assert hechos == [0]                             # en el momento del play: lo que tarde antes no atrasa el tema
+    assert json.loads(servidor_http.cuerpos[0][1])["position_ms"] == 1234
