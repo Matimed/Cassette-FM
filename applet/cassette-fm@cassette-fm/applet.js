@@ -18,7 +18,9 @@ let AppletDir = null;
 const INTERVALO_SEGUNDOS = 2;
 const TIMEOUT_MS = 3000;
 const ESPERA_RUEDA_MS = 150;
-const LIMITE_CASSETTE_SEGUNDOS = 60;
+const LIMITE_VOCES_SEGUNDOS = 30;
+// `cassette nueva` espera el rescan de la radio hasta 120 s después de guardar: cortarlo antes la deja guardada sin avisar
+const LIMITE_NUEVA_SEGUNDOS = 180;
 
 class CassetteApplet extends Applet.TextIconApplet {
     constructor(metadata, orientation, panelHeight, instanceId) {
@@ -171,7 +173,7 @@ class CassetteApplet extends Applet.TextIconApplet {
 
     // Corre `cassette <argumentos>` sin shell y sin bloquear el panel; callback({codigo, stdout, stderr}) o
     // callback({error}) si no se encuentra, no arranca o pasa el límite (y entonces se lo corta).
-    _correrCassette(argumentos, callback) {
+    _correrCassette(argumentos, segundos, callback) {
         let ruta = GLib.find_program_in_path("cassette");
         const local = GLib.get_home_dir() + "/.local/bin/cassette";
         if (!ruta && GLib.file_test(local, GLib.FileTest.IS_EXECUTABLE)) ruta = local;
@@ -195,10 +197,10 @@ class CassetteApplet extends Applet.TextIconApplet {
             callback({ error: "No pude correr cassette: " + e.message });
             return;
         }
-        vencimiento = Mainloop.timeout_add_seconds(LIMITE_CASSETTE_SEGUNDOS, () => {
+        vencimiento = Mainloop.timeout_add_seconds(segundos, () => {
             vencimiento = 0;
             proceso.force_exit();
-            terminar({ error: "cassette tardó más de " + LIMITE_CASSETTE_SEGUNDOS + " s: se cortó" });
+            terminar({ error: "cassette tardó más de " + segundos + " s: se cortó" });
             return false;
         });
         proceso.communicate_utf8_async(null, null, (p, res) => {
@@ -276,7 +278,7 @@ class DialogoEmisora {
 
     abrir() {
         this._dialogo.open();
-        this._applet._correrCassette(["voces", "--json"], (r) => {
+        this._applet._correrCassette(["voces", "--json"], LIMITE_VOCES_SEGUNDOS, (r) => {
             if (this._cerrado) return;
             const voces = r.error || r.codigo !== 0 ? null : AppletDir.logic.parsearVoces(r.stdout);
             if (voces === null) {
@@ -355,7 +357,8 @@ class DialogoEmisora {
         }
         this._error.hide();
         this._ocupado(true);
-        this._applet._correrCassette(AppletDir.logic.argumentosNueva(nombre, link, this._seleccion), (r) => {
+        const argumentos = AppletDir.logic.argumentosNueva(nombre, link, this._seleccion);
+        this._applet._correrCassette(argumentos, LIMITE_NUEVA_SEGUNDOS, (r) => {
             if (!r.error && r.codigo === 0) {
                 this._cerrar();
                 this._applet._sondear();

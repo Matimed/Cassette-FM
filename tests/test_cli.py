@@ -624,3 +624,11 @@ def test_voces_sin_alias_dice_donde_se_definen(tmp_path, monkeypatch, capsys, se
     (tmp_path / "xdg" / "cassette-dj" / "config.toml").write_text("")
     assert main(["voces"]) == 0
     assert "[voces]" in capsys.readouterr().out
+
+
+def test_voces_con_la_config_del_dj_rota_da_un_error_legible(tmp_path, monkeypatch, capsys, servidor_http):
+    _nueva(monkeypatch, tmp_path, servidor_http)
+    (tmp_path / "xdg" / "cassette-dj" / "config.toml").write_text("[voces\n")
+    assert main(["voces", "--json"]) == 1
+    error = capsys.readouterr().err
+    assert "config.toml" in error and "Traceback" not in error

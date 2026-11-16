@@ -361,11 +361,11 @@ def _voces(args, rutas) -> int:
     from cassette_fm.dj.config import cargar_config_dj, rutas_dj
     try:
         definidas = emisora_nueva.leer_crudo(rutas.emisoras) if rutas.emisoras.exists() else []
+        archivo_dj = rutas_dj().config
+        alias = cargar_config_dj(archivo_dj).voces if archivo_dj.exists() else {}
     except config.ErrorConfig as e:
         print(e, file=sys.stderr)
         return 1
-    archivo_dj = rutas_dj().config
-    alias = cargar_config_dj(archivo_dj).voces if archivo_dj.exists() else {}
     voces = emisora_nueva.voces_disponibles(alias, definidas)
     if args.json:
         print(json.dumps(voces, ensure_ascii=False))

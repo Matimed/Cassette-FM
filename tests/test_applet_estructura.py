@@ -66,3 +66,12 @@ def test_el_menu_tiene_nueva_emisora_y_corre_cassette_asincrono():
 
 def test_el_modal_no_usa_el_combo_de_cinnamon():
     assert "PopupComboBoxMenuItem" not in _js()     # no funciona dentro de un ModalDialog
+
+
+def test_el_limite_de_cassette_nueva_cubre_el_rescan_de_la_cli():
+    # `cassette nueva` guarda la emisora y después espera el rescan: cortarlo antes la deja guardada sin avisar
+    cli = (RAIZ / "src" / "cassette_fm" / "cli.py").read_text(encoding="utf-8")
+    rescan = int(re.search(r'"/rescan", timeout=(\d+)', cli).group(1))
+    limite = int(re.search(r"LIMITE_NUEVA_SEGUNDOS = (\d+)", _js()).group(1))
+    assert limite >= rescan + 60, (limite, rescan)    # más la playlist, la sintonía y el arranque de Python
+    assert "LIMITE_NUEVA_SEGUNDOS, (r)" in _js()
