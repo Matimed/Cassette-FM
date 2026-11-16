@@ -508,6 +508,8 @@ const DIAL_ANIMACION_MS = 150;
 const DIAL_CIERRE_MS = 5000;        // sin tocar nada, se cierra solo
 const DIAL_AVISO_MS = 2000;         // lo que dura el aviso de "no responde"
 const DIAL_PASO_VOLUMEN = 5;
+const DIAL_ALTURA = 0.08;           // el borde de arriba de la tira, en fracción del alto del monitor
+const DIAL_ANCHO_TEXTOS = 560;      // ancho fijo del recuadro de los textos (centrado bajo la fila)
 
 // El Clutter de Cinnamon no sabe dar el nombre de una tecla: los que entiende teclaDial, a mano.
 function _nombreDeTecla(simbolo) {
@@ -543,11 +545,15 @@ class Dial {
         const monitor = Main.layoutManager.primaryMonitor;
         this._fondo = new St.Widget({ reactive: true, x: monitor.x, y: monitor.y,
                                       width: monitor.width, height: monitor.height });
-        this._tira = new St.BoxLayout({ vertical: true, reactive: true,
-                                        style: "background-color: rgba(8, 8, 12, 0.95); border-radius: 28px;"
-                                               + " padding: 20px 32px; spacing: 6px;" });
-        this._fila = new St.Widget({ width: 2 * (_centroDial(DIAL_LADO) + DIAL_CHICO / 2), height: DIAL_GRANDE,
+        // sin caja: los logos flotan y solo los textos llevan un recuadro semitransparente
+        this._tira = new St.BoxLayout({ vertical: true, reactive: true, style: "spacing: 10px;" });
+        // la fila corta los logos de las puntas por la mitad: se ve que la lista sigue
+        this._fila = new St.Widget({ width: 2 * _centroDial(DIAL_LADO), height: DIAL_GRANDE,
                                      clip_to_allocation: true });
+        this._textos = new St.BoxLayout({ vertical: true, width: DIAL_ANCHO_TEXTOS, x_expand: true,
+                                          x_align: Clutter.ActorAlign.CENTER,
+                                          style: "background-color: rgba(20, 20, 26, 0.6); border-radius: 18px;"
+                                                 + " padding: 10px 24px; spacing: 4px;" });
         // a lo ancho de la tira y centrados: si no, se quedan con la medida del primer texto ("…")
         this._nombre = new St.Label({ style: "font-size: 1.5em; font-weight: bold; color: #fff; text-align: center;",
                                       x_expand: true });
@@ -555,7 +561,9 @@ class Dial {
                                      x_expand: true });
         this._ayuda = new St.Label({ style: "font-size: 0.9em; color: rgba(255,255,255,0.55); text-align: center;",
                                      x_expand: true });
-        for (const hijo of [this._fila, this._nombre, this._pista, this._ayuda]) this._tira.add_child(hijo);
+        for (const hijo of [this._nombre, this._pista, this._ayuda]) this._textos.add_child(hijo);
+        this._tira.add_child(this._fila);
+        this._tira.add_child(this._textos);
         this._fondo.add_child(this._tira);
         this._fondo.opacity = 0;
         Main.uiGroup.add_child(this._fondo);
@@ -662,7 +670,7 @@ class Dial {
         const monitor = Main.layoutManager.primaryMonitor;
         const [, ancho] = this._tira.get_preferred_width(-1);
         const [, alto] = this._tira.get_preferred_height(ancho);
-        this._tira.set_position(Math.round((monitor.width - ancho) / 2), Math.round(monitor.height / 3 - alto / 2));
+        this._tira.set_position(Math.round((monitor.width - ancho) / 2), Math.round(monitor.height * DIAL_ALTURA));
     }
 
     _mostrarAviso(texto) {
