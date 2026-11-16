@@ -735,6 +735,25 @@ def test_el_aviso_doble_de_un_pedido_no_lo_toma_por_otra_version():
     assert r._estacion.pedidos == (pedido,) and r.pista_actual.uri == AJENO
 
 
+def test_otra_version_que_ya_sonaba_al_sintonizar_corta_la_estatica():
+    r, control, _, _, _ = armar()
+    e = estacion()
+    r.sintonizar(e)
+    esperado = next(p for p in e.pistas if p.uri == control.llamadas[0][0][0])
+    # se reinició la radio con Soloist en otra versión del tema: no hay track_changed, solo el estado
+    version = item("spotify:track:otraversion00000000001", f"{esperado.cancion} - 2011 Remaster")
+    r.manejar_evento({"type": "playback_state", "status": "playing", "item": version})
+    assert r.eventos["sonar"] == 1 and r.pista_actual == esperado
+
+
+def test_otro_tema_que_ya_sonaba_al_sintonizar_no_corta_la_estatica():
+    r, *_ = armar()
+    r.sintonizar(estacion())
+    r.manejar_evento({"type": "playback_state", "status": "playing",
+                      "item": item("spotify:track:otraversion00000000001", "Love")})
+    assert r.eventos["sonar"] == 0 and r.pista_actual is None
+
+
 @pytest.mark.parametrize("nombre,es_version", [(" (Remastered)", True), (" - From Some Soundtrack", True),
                                                ("0 otra canción", False), ("away", False)])
 def test_otra_version_exige_el_nombre_entero(nombre, es_version):

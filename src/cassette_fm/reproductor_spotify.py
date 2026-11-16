@@ -295,6 +295,12 @@ class ReproductorSpotify:
                 item = evento.get("item")
                 if isinstance(item, dict) and item.get("uri") == self._esperado:
                     self._visto_esperado = True
+                elif (isinstance(item, dict) and self._primero_pendiente and not self._visto_esperado
+                      and item.get("uri") not in self._por_clave):
+                    # otra versión del tema que ya sonaba (se reinició la radio): no llega track_changed
+                    otra = self._pista_del_item(item)
+                    version = self._version_del_esperado(otra, estacion) if otra is not None else None
+                    self._visto_esperado = version is not None and version.clave == self._esperado
                 if evento.get("status") == "playing" and self._esperando_sonido and self._visto_esperado:
                     self._esperando_sonido = False
                     self._cancelar_espera()
