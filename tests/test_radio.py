@@ -310,12 +310,18 @@ def test_bajar_en_cero_apagada_sigue_apagada():
     assert not radio.encendida and rep.sintonizadas() == []
 
 
-def test_encender_con_volumen_cero_sube_a_minimo():
+def test_encender_con_volumen_cero_sube_a_50():
     radio, rep, _, _ = crear(estado=Estado(volumen=0))
     rep.llamadas.clear()
     radio.encender()
-    assert radio.volumen() == 10
-    assert rep.llamadas.index(("volumen", 10)) < rep.llamadas.index(("sintonizar", "A"))
+    assert radio.volumen() == 50
+    assert rep.llamadas.index(("volumen", 50)) < rep.llamadas.index(("sintonizar", "A"))
+
+
+def test_rotar_con_volumen_cero_sube_a_50():
+    radio, _, _, _ = crear(estado=Estado(volumen=0))
+    radio.siguiente()
+    assert radio.encendida and radio.volumen() == 50
 
 
 def test_subir_sin_estaciones_guarda_el_volumen_y_falla():
@@ -400,7 +406,7 @@ def test_el_volumen_inicial_y_el_minimo_tambien_llegan_al_locutor(tmp_path):
     assert ("volumen", 55) in loc.llamadas
     radio, rep, loc2 = con_dj(tmp_path, estado=Estado(volumen=0))
     radio.encender()
-    assert ("volumen", 10) in rep.llamadas
+    assert ("volumen", 50) in rep.llamadas
 
 
 def test_pista_iniciada_llega_al_locutor_con_el_nombre_de_la_estacion(tmp_path):

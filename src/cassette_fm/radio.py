@@ -20,7 +20,7 @@ from cassette_fm.intervenciones import Intervencion
 _log = logging.getLogger("cassette_fm")
 
 
-VOLUMEN_MINIMO = 10   # con el volumen en 0 la radio está apagada; al encender se parte de acá
+VOLUMEN_MINIMO = 50   # con el volumen en 0 la radio está apagada; al encender se parte de acá
 
 
 def agenda_de(estacion: Estacion) -> dict:
