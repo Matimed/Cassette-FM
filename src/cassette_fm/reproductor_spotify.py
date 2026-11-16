@@ -15,7 +15,7 @@ from collections.abc import Callable
 from dataclasses import replace
 from itertools import islice
 
-from cassette_fm.agenda import con_pedido, desfase, plegar, secuencia
+from cassette_fm.agenda import con_pedido, desfase, plegar, secuencia, transiciones
 from cassette_fm.biblioteca import Estacion, Pedido, Pista
 from cassette_fm.spotify.api import ErrorSpotify
 
@@ -60,6 +60,7 @@ def _nombre_de_entidad(x) -> str | None:
 class ReproductorSpotify:
     PASO_RAMPA = 0.05
     AVISO_REPETIDO_SEGUNDOS = 5.0     # Soloist a veces avisa dos veces el mismo comienzo, con milisegundos de diferencia
+    SALTEO_SEGUNDOS = 2.0             # otro tema antes de esto: Soloist no pudo cargar el anterior (o lo saltearon)
 
     pista_actual: Pista | None = None
     al_cambiar_pista: Callable[[Pista, Estacion], None] | None = None
@@ -238,6 +239,8 @@ class ReproductorSpotify:
                 pista = self._pista_del_item(evento.get("item"))
                 if pista is None:
                     return
+                if pista.clave not in self._por_clave and pista.clave not in self._encolados:
+                    pista = self._version_del_esperado(pista, estacion) or pista
                 if self._esperando_sonido and not self._visto_esperado and pista.clave != self._esperado:
                     return        # lo que sonaba antes en la cuenta o un evento de la sintonía anterior
                 if pista.clave == self._esperado:
@@ -246,7 +249,10 @@ class ReproductorSpotify:
                         and pista.clave == self.pista_actual.clave
                         and self._reloj() - self._cambio_en < self.AVISO_REPETIDO_SEGUNDOS):
                     return        # el mismo comienzo avisado otra vez: plegaría el pedido recién empezado
+                rapido = (self.pista_actual is not None and pista.clave != self.pista_actual.clave
+                          and self._reloj() - self._cambio_en < self.SALTEO_SEGUNDOS)
                 self._cambio_en = self._reloj()
+                saltada = None
                 repetido =(self._primero_pendiente and self.pista_actual is not None
                             and pista.clave == self.pista_actual.clave)   # la re-sintonía vuelve a empezarlo
                 # la (re)sintonía empezó por un pedido en curso: se retoma, no es un pedido nuevo ni un desfase
@@ -261,6 +267,16 @@ class ReproductorSpotify:
                 elif not retomado and estacion.pedidos and pista.clave in self._por_clave:
                     estacion = plegar(estacion, self._reloj())    # antes de medir el desfase
                     agenda = (estacion, None)
+                elif (rapido and not retomado and not self._primero_pendiente and pista.clave in self._por_clave
+                      and self.pista_actual.clave in self._por_clave):
+                    # Soloist saltó el tema que sonaba al instante (no pudo cargarlo): volver a pedirlo sería un bucle;
+                    # la agenda se corre para que lo que suena empiece ahora
+                    saltada = self._saltear_hasta(estacion, pista, self._reloj())
+                    if saltada is not None:
+                        _log.info("Soloist salteó %r en %r: la agenda sigue desde %r", self.pista_actual.titulo,
+                                  estacion.nombre, pista.titulo)
+                        estacion = saltada
+                        agenda = (estacion, None)
                 self._estacion = estacion
                 self.pista_actual = pista
                 self._posicion = None
@@ -268,6 +284,8 @@ class ReproductorSpotify:
                     avisar = (pista, estacion)
                 if retomado:
                     self._primero_pendiente = False
+                    self._vistos += 1
+                elif saltada is not None:
                     self._vistos += 1
                 elif pedida is None:
                     resintonizar = self._hay_que_resintonizar(pista, estacion)
@@ -318,6 +336,30 @@ class ReproductorSpotify:
             self._resintonizar()
         if perdido is not None:
             self._fallar(*perdido, "Spotify se está escuchando en otro dispositivo")
+
+    def _saltear_hasta(self, estacion: Estacion, pista: Pista, ahora: float) -> Estacion | None:
+        """La emisora con el corrimiento que hace empezar `pista` ahora (si está entre las próximas de la agenda)."""
+        if estacion.pedidos:
+            return None
+        for n, (p, inicio) in enumerate(transiciones(estacion, ahora - self.SALTEO_SEGUNDOS)):
+            if n >= 30:
+                return None
+            if p.clave == pista.clave:
+                return replace(estacion, corrimiento=estacion.corrimiento - (inicio - ahora))
+        return None
+
+    def _version_del_esperado(self, pista: Pista, estacion: Estacion) -> Pista | None:
+        """Soloist a veces toca otra versión del tema pedido (otra URI, mismo nombre con un agregado): es ese tema."""
+        if not pista.cancion:
+            return None
+        if self._primero_pendiente:
+            candidatos = [self._por_clave.get(self._esperado)]
+        else:
+            it = secuencia(estacion, self._reloj())
+            candidatos = [next(it)[0], next(it)[0]]
+        nombre = pista.cancion.casefold()
+        return next((c for c in candidatos if c is not None and c.cancion and c.clave in self._por_clave
+                     and nombre.startswith(c.cancion.casefold())), None)
 
     def _hay_que_resintonizar(self, pista: Pista, estacion: Estacion) -> bool:
         """Un tema de la agenda empezó: ¿se corrió del reloj o se está acabando la lista enviada?

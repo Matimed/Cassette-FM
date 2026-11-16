@@ -669,6 +669,67 @@ def test_item_sin_nombre_es_pedido_sin_cancion():
     assert pedido.pista.cancion is None and pedido.pista.titulo == "Artista"
 
 
+# --- temas que Soloist saltea o cambia por otra versión ---
+
+from cassette_fm.agenda import desfase  # noqa: E402
+
+
+def _x_y_z(e, reloj):
+    x, borde = proximo(e, reloj())
+    y, despues = next(transiciones(e, borde + 0.001))
+    z, _ = next(transiciones(e, despues + 0.001))
+    return borde, x, y, z
+
+
+def test_soloist_saltea_el_tema_y_la_radio_sigue_con_el_siguiente():
+    r, control, reloj, e = en_marcha()
+    borde, x, y, _ = _x_y_z(e, reloj)
+    reloj.t = borde
+    r.manejar_evento(cambio(x.uri))
+    reloj.t = borde + 0.5                                  # Soloist no pudo cargar x y pasó al siguiente
+    r.manejar_evento(cambio(y.uri))
+    assert len(control.llamadas) == 1
+    nueva, nuevo = r.eventos["agendas"][-1]
+    assert nuevo is None and desfase(nueva, y, reloj()) == pytest.approx(0, abs=0.01)
+
+
+def test_varios_salteos_seguidos_terminan_en_lo_ultimo_que_suena():
+    r, control, reloj, e = en_marcha()
+    borde, x, y, z = _x_y_z(e, reloj)
+    for i, p in enumerate((x, y, z)):
+        reloj.t = borde + 0.7 * i
+        r.manejar_evento(cambio(p.uri))
+    assert len(control.llamadas) == 1
+    assert desfase(r.eventos["agendas"][-1][0], z, reloj()) == pytest.approx(0, abs=0.01)
+
+
+def test_un_salto_lento_a_un_tema_adelantado_resintoniza():
+    r, control, reloj, e = en_marcha()
+    borde, x, y, _ = _x_y_z(e, reloj)
+    reloj.t = borde
+    r.manejar_evento(cambio(x.uri))
+    reloj.t = borde + 10
+    r.manejar_evento(cambio(y.uri))
+    assert len(control.llamadas) == 2
+
+
+def test_otra_version_del_tema_esperado_cuenta_como_ese():
+    r, control, _, _, _ = armar()
+    e = estacion()
+    r.sintonizar(e)
+    esperado = next(p for p in e.pistas if p.uri == control.llamadas[0][0][0])
+    r.manejar_evento(cambio("spotify:track:otraversion00000000001", f"{esperado.cancion} - From Some Soundtrack"))
+    assert r.pista_actual == esperado and r.eventos["linea"][-1][:2] == ("pista", esperado.uri)
+
+
+def test_un_tema_desconocido_con_otro_nombre_no_se_confunde():
+    r, control, _, _, _ = armar()
+    r.sintonizar(estacion())
+    sonando(r, control)
+    r.manejar_evento(cambio("spotify:track:otraversion00000000001", "Love"))
+    assert r.pista_actual.uri == "spotify:track:otraversion00000000001"
+
+
 def test_tema_encolado_que_empieza_es_un_pedido_sin_resintonia():
     r, control, reloj, e = en_marcha()
     _, fin = proximo(e, reloj())
