@@ -107,3 +107,29 @@ def test_el_modal_elige_el_logo_con_zenity_y_lo_bloquea_al_crear():
     cuerpo = js[js.index("    _ocupado(si) {"):]
     cuerpo = cuerpo[:cuerpo.index("\n    }\n")]
     assert "this._botonExaminar" in cuerpo and "this._botonQuitarLogo" in cuerpo
+
+
+def _cuerpo(js, firma):
+    cuerpo = js[js.index("    " + firma + " {"):]
+    return cuerpo[:cuerpo.index("\n    }\n")]
+
+
+def test_el_dial_tiene_su_atajo_y_lo_suelta_al_quitar_el_applet():
+    schema = json.loads((CARPETA / "settings-schema.json").read_text(encoding="utf-8"))
+    assert schema["atajo_dial"]["type"] == "keybinding" and schema["atajo_dial"]["default"] == "<Super><Alt>space"
+    js = _js()
+    assert "Main.keybindingManager.addHotKey(" in js
+    quitar = _cuerpo(js, "on_applet_removed_from_panel()")
+    assert "Main.keybindingManager.removeHotKey(" in quitar and "this._dial" in quitar
+
+
+def test_el_dial_siempre_suelta_el_teclado_al_cerrarse():
+    js = _js()
+    assert js.count("Main.pushModal(") == js.count("Main.popModal(") == 1
+    assert "Main.popModal(" in _cuerpo(js, "cerrar()")
+
+
+def test_el_dial_usa_la_logica_probada():
+    js = _js()
+    for funcion in ("teclaDial", "filaDial", "crearCola", "barraVolumen", "iconoDe"):
+        assert f"AppletDir.logic.{funcion}(" in js, funcion

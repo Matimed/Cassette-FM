@@ -1,6 +1,7 @@
 // Applet de Cinnamon para cassette-fm: cliente liviano de la API local del servicio.
 // Todo texto y todo detalle del protocolo HTTP viven en logic.js (probado con Node).
 const Applet = imports.ui.applet;
+const Main = imports.ui.main;
 const ModalDialog = imports.ui.modalDialog;
 const PopupMenu = imports.ui.popupMenu;
 const Settings = imports.ui.settings;
@@ -39,6 +40,10 @@ class CassetteApplet extends Applet.TextIconApplet {
         this.settings = new Settings.AppletSettings(this, metadata.uuid, instanceId);
         this.settings.bind("puerto", "puerto", () => this._sondear());
         this.settings.bind("mostrar_estacion", "mostrar_estacion", () => this._aplicar(this.estado));
+        this._dial = null;
+        this._nombreAtajo = "cassette-fm-dial-" + instanceId;
+        this.settings.bind("atajo_dial", "atajo_dial", () => this._registrarAtajo());
+        this._registrarAtajo();
 
         this._seccionEstaciones = new PopupMenu.PopupMenuSection();
         this._applet_context_menu.addMenuItem(this._seccionEstaciones, 0);
@@ -71,7 +76,18 @@ class CassetteApplet extends Applet.TextIconApplet {
         return Clutter.EVENT_STOP;
     }
 
+    // El atajo del dial: lo abre, y si está abierto lo cierra (Cinnamon invoca los atajos aunque el dial tenga el
+    // teclado tomado).
+    _registrarAtajo() {
+        Main.keybindingManager.addHotKey(this._nombreAtajo, this.atajo_dial, () => {
+            if (this._dial) this._dial.cerrar();
+            else this._dial = new Dial(this);
+        });
+    }
+
     on_applet_removed_from_panel() {
+        Main.keybindingManager.removeHotKey(this._nombreAtajo);
+        if (this._dial) this._dial.cerrar();
         if (this._temporizador) {
             Mainloop.source_remove(this._temporizador);
             this._temporizador = 0;
@@ -479,6 +495,245 @@ class DialogoEmisora {
             this._ocupado(false);
             this._mostrarError(r.error || AppletDir.logic.mensajeDeError(r.codigo, r.stdout, r.stderr));
         });
+    }
+}
+
+// --- El dial: la tira de logos estilo GTA 4 (Super+Alt+Espacio) ---
+
+const DIAL_GRANDE = 160;            // el logo de la emisora actual
+const DIAL_CHICO = 96;              // los demás
+const DIAL_PASO = 120;              // distancia entre los centros de los logos chicos
+const DIAL_LADO = 3;                // logos a cada lado de la actual
+const DIAL_ANIMACION_MS = 150;
+const DIAL_CIERRE_MS = 5000;        // sin tocar nada, se cierra solo
+const DIAL_AVISO_MS = 2000;         // lo que dura el aviso de "no responde"
+const DIAL_PASO_VOLUMEN = 5;
+
+// Centro (en x, relativo al centro de la fila) del logo con desplazamiento `d`.
+function _centroDial(d) {
+    if (d === 0) return 0;
+    const primero = DIAL_GRANDE / 2 + DIAL_CHICO / 2 + 16;
+    return Math.sign(d) * (primero + (Math.abs(d) - 1) * DIAL_PASO);
+}
+
+// Compone actores de St sobre Main.uiGroup: un fondo transparente que ocupa la pantalla (toma el teclado y cierra
+// con un clic afuera) y la tira centrada a un tercio de alto del monitor principal.
+class Dial {
+    constructor(applet) {
+        this._applet = applet;
+        this._cerrado = false;
+        this._estado = null;
+        this._actual = null;
+        this._volumen = 0;
+        this._logos = new Map();        // nombre → St.Icon
+        this._lugares = new Map();      // nombre → desplazamiento visible (undefined: no se ve)
+        this._vencimiento = 0;
+        this._colaEmisora = AppletDir.logic.crearCola((nombre) =>
+            applet._pedir("POST", "/sintonizar", { estacion: nombre }, (r) => this._alResponder(r, this._colaEmisora)));
+        this._colaVolumen = AppletDir.logic.crearCola((valor) =>
+            applet._pedir("POST", "/volumen", { valor: valor }, (r) => this._alResponder(r, this._colaVolumen)));
+
+        const monitor = Main.layoutManager.primaryMonitor;
+        this._fondo = new St.Widget({ reactive: true, x: monitor.x, y: monitor.y,
+                                      width: monitor.width, height: monitor.height });
+        this._tira = new St.BoxLayout({ vertical: true, reactive: true,
+                                        style: "background-color: rgba(8, 8, 12, 0.86); border-radius: 28px;"
+                                               + " padding: 20px 32px; spacing: 6px;" });
+        this._fila = new St.Widget({ width: 2 * (_centroDial(DIAL_LADO) + DIAL_CHICO / 2), height: DIAL_GRANDE,
+                                     clip_to_allocation: true });
+        this._nombre = new St.Label({ style: "font-size: 1.5em; font-weight: bold; color: #fff;",
+                                      x_align: Clutter.ActorAlign.CENTER });
+        this._pista = new St.Label({ style: "font-size: 1em; color: rgba(255,255,255,0.7);",
+                                     x_align: Clutter.ActorAlign.CENTER });
+        this._ayuda = new St.Label({ style: "font-size: 0.9em; color: rgba(255,255,255,0.55);",
+                                     x_align: Clutter.ActorAlign.CENTER });
+        for (const hijo of [this._fila, this._nombre, this._pista, this._ayuda]) this._tira.add_child(hijo);
+        this._fondo.add_child(this._tira);
+        this._fondo.opacity = 0;
+        Main.uiGroup.add_child(this._fondo);
+
+        this._fondo.connect("key-press-event", (actor, event) => this._alTecla(event));
+        this._fondo.connect("button-press-event", (actor, event) => {
+            if (event.get_source() === this._fondo) this.cerrar();
+            return Clutter.EVENT_STOP;
+        });
+        this._tira.connect("scroll-event", (actor, event) => {
+            const direccion = event.get_scroll_direction();
+            if (direccion === Clutter.ScrollDirection.UP) this._mover(-1);
+            else if (direccion === Clutter.ScrollDirection.DOWN) this._mover(+1);
+            return Clutter.EVENT_STOP;
+        });
+        this._modal = Main.pushModal(this._fondo);
+        this._fondo.grab_key_focus();
+        this._mostrarAviso("…");
+        this._fondo.ease({ opacity: 255, duration: DIAL_ANIMACION_MS, mode: Clutter.AnimationMode.EASE_OUT_QUAD });
+
+        applet._pedir("GET", "/estado", undefined, (r) => {
+            if (this._cerrado) return;
+            if (r.codigo !== 200) return this._avisarYCerrar("cassette-fm no responde");
+            if (r.datos.encendida) return this._empezar(r.datos);
+            // abrir el dial prende la radio (con el volumen en 0, la API la sube a 50)
+            applet._pedir("POST", "/encender", undefined, (e) => {
+                if (this._cerrado) return;
+                if (e.codigo !== 200)
+                    return this._avisarYCerrar(e.datos && e.datos.error ? e.datos.error : "cassette-fm no responde");
+                applet._aplicar(e.datos);
+                this._empezar(e.datos);
+            });
+        });
+    }
+
+    _empezar(estado) {
+        this._estado = estado;
+        this._actual = estado.estacion;
+        this._volumen = estado.volumen;
+        for (const nombre of estado.estaciones) {
+            const ruta = AppletDir.logic.iconoDe(nombre, estado.iconos, this._applet.generico);
+            const logo = new St.Icon({ gicon: Gio.FileIcon.new(Gio.File.new_for_path(ruta)),
+                                       icon_size: DIAL_GRANDE, reactive: true, opacity: 0 });
+            logo.set_pivot_point(0.5, 0.5);
+            logo.connect("button-press-event", () => {
+                this._elegir(nombre);
+                return Clutter.EVENT_STOP;
+            });
+            this._fila.add_child(logo);
+            this._logos.set(nombre, logo);
+        }
+        this._ubicar(false);
+        this._refrescarTextos();
+        this._reiniciarCierre();
+    }
+
+    // Lleva cada logo a su lugar según la emisora actual; los que dan la vuelta (de un extremo al otro) aparecen sin
+    // cruzar la fila.
+    _ubicar(animado) {
+        const fila = AppletDir.logic.filaDial(this._estado.estaciones, this._actual, DIAL_LADO);
+        const nuevos = new Map(fila.map((e) => [e.nombre, e.desplazamiento]));
+        const mitad = this._fila.width / 2;
+        for (const [nombre, logo] of this._logos) {
+            const antes = this._lugares.get(nombre);
+            const d = nuevos.get(nombre);
+            const visible = d !== undefined;
+            const destino = {
+                x: mitad + _centroDial(visible ? d : 0) - DIAL_GRANDE / 2,
+                scale_x: d === 0 ? 1 : DIAL_CHICO / DIAL_GRANDE,
+                scale_y: d === 0 ? 1 : DIAL_CHICO / DIAL_GRANDE,
+                opacity: !visible ? 0 : d === 0 ? 255 : 150,
+            };
+            const salta = antes === undefined || !visible || Math.abs(antes - d) > 1;
+            logo.remove_all_transitions();
+            if (!animado || salta) {
+                logo.set_position(destino.x, 0);
+                logo.set_scale(destino.scale_x, destino.scale_y);
+                if (animado && visible) {
+                    logo.opacity = 0;
+                    logo.ease({ opacity: destino.opacity, duration: DIAL_ANIMACION_MS,
+                                mode: Clutter.AnimationMode.EASE_OUT_QUAD });
+                } else {
+                    logo.opacity = destino.opacity;
+                }
+            } else {
+                logo.ease(Object.assign({ duration: DIAL_ANIMACION_MS, mode: Clutter.AnimationMode.EASE_OUT_QUAD },
+                                        destino));
+            }
+            logo.reactive = visible;
+        }
+        this._lugares = nuevos;
+    }
+
+    _refrescarTextos() {
+        this._nombre.text = this._actual || "";
+        const pista = this._estado.encendida && this._estado.estacion === this._actual ? this._estado.pista : null;
+        this._pista.text = pista || " ";
+        this._ayuda.text = "◀ ▶ emisora · ▲ ▼ volumen " + AppletDir.logic.barraVolumen(this._volumen) + " · Esc";
+        this._centrar();
+    }
+
+    _centrar() {
+        const monitor = Main.layoutManager.primaryMonitor;
+        const [, ancho] = this._tira.get_preferred_width(-1);
+        const [, alto] = this._tira.get_preferred_height(ancho);
+        this._tira.set_position(Math.round((monitor.width - ancho) / 2), Math.round(monitor.height / 3 - alto / 2));
+    }
+
+    _mostrarAviso(texto) {
+        this._nombre.text = texto;
+        this._pista.text = " ";
+        this._ayuda.text = " ";
+        this._centrar();
+    }
+
+    _avisarYCerrar(texto) {
+        this._mostrarAviso(texto);
+        this._reiniciarCierre(DIAL_AVISO_MS);
+    }
+
+    _reiniciarCierre(ms = DIAL_CIERRE_MS) {
+        if (this._vencimiento) Mainloop.source_remove(this._vencimiento);
+        this._vencimiento = Mainloop.timeout_add(ms, () => {
+            this._vencimiento = 0;
+            this.cerrar();
+            return false;
+        });
+    }
+
+    _alTecla(event) {
+        const accion = AppletDir.logic.teclaDial(Clutter.keyval_name(event.get_key_symbol()));
+        if (accion === "cerrar") this.cerrar();
+        else if (accion === "anterior") this._mover(-1);
+        else if (accion === "siguiente") this._mover(+1);
+        else if (accion === "subir") this._cambiarVolumen(+DIAL_PASO_VOLUMEN);
+        else if (accion === "bajar") this._cambiarVolumen(-DIAL_PASO_VOLUMEN);
+        return Clutter.EVENT_STOP;
+    }
+
+    _mover(paso) {
+        if (!this._estado || this._estado.estaciones.length === 0) return;
+        const lista = this._estado.estaciones;
+        const i = Math.max(0, lista.indexOf(this._actual));
+        this._elegir(lista[((i + paso) % lista.length + lista.length) % lista.length]);
+    }
+
+    // La tira se mueve en el acto; a la radio le llega de a un pedido (con la radio apagada, sintonizar la prende).
+    _elegir(nombre) {
+        if (!this._estado) return;
+        this._reiniciarCierre();
+        if (nombre === this._actual && this._estado.encendida) return;
+        this._actual = nombre;
+        this._ubicar(true);
+        this._refrescarTextos();
+        this._colaEmisora.pedir(nombre);
+    }
+
+    _cambiarVolumen(delta) {
+        if (!this._estado) return;
+        this._reiniciarCierre();
+        const nuevo = Math.max(0, Math.min(100, this._volumen + delta));
+        if (nuevo === this._volumen) return;
+        this._volumen = nuevo;          // en 0 la API apaga la radio; subir desde 0 la prende
+        this._refrescarTextos();
+        this._colaVolumen.pedir(nuevo);
+    }
+
+    _alResponder(r, cola) {
+        cola.listo();
+        if (this._cerrado || r.codigo !== 200) return;
+        this._applet._aplicar(r.datos);
+        this._estado = Object.assign({}, this._estado, r.datos, { iconos: this._estado.iconos });
+        if (this._volumen === 0) this._volumen = r.datos.volumen;     // sintonizar con la radio apagada la prende en 50
+        this._refrescarTextos();
+    }
+
+    cerrar() {
+        if (this._cerrado) return;
+        this._cerrado = true;
+        if (this._vencimiento) Mainloop.source_remove(this._vencimiento);
+        this._vencimiento = 0;
+        if (this._modal) Main.popModal(this._fondo);
+        this._modal = false;
+        if (this._applet._dial === this) this._applet._dial = null;
+        this._fondo.ease({ opacity: 0, duration: DIAL_ANIMACION_MS, mode: Clutter.AnimationMode.EASE_OUT_QUAD,
+                           onComplete: () => this._fondo.destroy() });
     }
 }
 
