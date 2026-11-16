@@ -466,6 +466,7 @@ import json
 from dataclasses import replace
 from pathlib import Path
 
+from cassette_fm.agenda import con_pedido
 from cassette_fm.biblioteca import Pedido
 
 
@@ -513,6 +514,40 @@ def en_marcha():
     sonando(r, control)
     r.manejar_evento(posicion_en(reloj, control.llamadas[0][1] / 1000))
     return r, control, reloj, e
+
+
+def test_sintonizar_el_tema_que_ya_estaba_sonando_lo_toma_sin_track_changed():
+    r, control, _, reloj, _ = armar()
+    e = estacion()
+    r.sintonizar(e)
+    uri, posicion_ms = control.llamadas[0][0][0], control.llamadas[0][1]
+    # Spotify ya estaba en ese tema (p. ej. se reinició la radio): salta a la posición sin avisar un cambio
+    r.manejar_evento({"type": "playback_state", "status": "playing", "item": {"uri": uri}})
+    r.manejar_evento(posicion_en(reloj, posicion_ms / 1000))
+    assert r.pista_actual is not None and r.pista_actual.uri == uri
+    assert r.eventos["linea"][-1][:2] == ("pista", uri)
+    _, fin = proximo(e, reloj())
+    r.manejar_evento(cola(item(AJENO)))
+    ((p, _, fin_actual),) = r.eventos["encolados"]
+    assert p.uri == AJENO and fin_actual == pytest.approx(fin)
+    r.manejar_evento(cambio(uri))                          # si igual llegara el aviso, no cambia nada
+    assert [x[0] for x in r.eventos["linea"]].count("pista") == 1 and len(control.llamadas) == 1
+
+
+def test_reiniciar_a_mitad_del_pedido_que_ya_estaba_sonando_lo_retoma():
+    r, control, _, reloj, _ = armar()
+    e = estacion()
+    pedido = Pista(None, 150.0, "Encolado", fuente="spotify", cancion="Encolado", uri=AJENO)
+    borde = proximo(e, reloj())[1]
+    e = con_pedido(e, pedido, borde)                       # los pedidos empiezan en un borde de tema
+    reloj.t = borde + 40
+    r.sintonizar(e)
+    assert control.llamadas[0][0][0] == AJENO
+    r.manejar_evento({"type": "playback_state", "status": "playing", "item": {"uri": AJENO}})
+    assert r.pista_actual == pedido and r._estacion.pedidos == e.pedidos
+    reloj.t += 110                                         # termina el pedido y sigue la agenda, sin re-sintonía
+    r.manejar_evento(cambio(control.llamadas[0][0][1]))
+    assert len(control.llamadas) == 1
 
 
 def test_encolar_avisa_con_metadata_y_fin_del_tema_actual():

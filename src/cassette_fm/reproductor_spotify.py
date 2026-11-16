@@ -260,6 +260,16 @@ class ReproductorSpotify:
                     self._esperando_sonido = False
                     self._cancelar_espera()
                     sonar = True
+                    if self.pista_actual is None:
+                        # Spotify ya estaba en ese tema (se reinició la radio): salta a la posición sin track_changed
+                        pista = self._por_clave.get(self._esperado) or next(
+                            (p.pista for p in estacion.pedidos if p.pista.clave == self._esperado), None)
+                        if pista is not None:
+                            self.pista_actual = pista
+                            self._primero_pendiente = False
+                            self._vistos += 1
+                            self._cambio_en = self._reloj()
+                            avisar = (pista, estacion)
             elif tipo == "device_changed":
                 if evento.get("is_active"):
                     self._activo = True
