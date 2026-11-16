@@ -256,7 +256,9 @@ alex_santa = "em_alex+em_santa"          # una mezcla de voces de Kokoro (promed
   `~/.local/share/cassette-dj/modelos/piper/`, cada una con su alias al lado si tiene. En Kokoro, la primera letra
   del nombre es el idioma de la voz (`a` inglés de EE. UU., `b` británico, `e` español, `f` francés, `h` hindi,
   `i` italiano, `j` japonés, `p` portugués de Brasil, `z` chino) y la segunda el género (`f` mujer, `m` hombre). Para escuchar una antes de elegirla:
-  `cassette-dj voz-prueba --voz daniela` vuelve a decir los últimos guiones con esa voz.
+  `cassette-dj voz-prueba --voz daniela` vuelve a decir los últimos guiones con esa voz, y
+  `mpv $(cassette-dj muestra --voz daniela --idioma es --radio "Sing")` le hace decir "Hola, soy daniela y estás
+  escuchando Sing" (la pide al servicio y la guarda; es lo que suena con ▶ en el modal de emisora nueva del applet).
 - Para sumar una voz de Piper, bajá su modelo a esa carpeta (las voces están en
   [rhasspy/piper-voices](https://huggingface.co/rhasspy/piper-voices)):
   `.venv/bin/python -m piper.download_voices --download-dir ~/.local/share/cassette-dj/modelos/piper es_MX-claude-high`.

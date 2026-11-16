@@ -74,6 +74,11 @@ class RutasDJ:
     def lexico(self) -> Path:
         return self.config.parent / "lexico.toml"
 
+    @property
+    def muestras(self) -> Path:
+        """Las frases de muestra de las voces (`cassette-dj muestra`), al lado de los clips."""
+        return self.clips.parent / "muestras"
+
 
 def _xdg(variable: str, por_defecto: Path) -> Path:
     valor = os.environ.get(variable)

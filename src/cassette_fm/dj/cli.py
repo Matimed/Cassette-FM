@@ -27,6 +27,10 @@ def _armar_parser() -> argparse.ArgumentParser:
     v.add_argument("--ultimos", type=int, default=5)
     v.add_argument("--salida", default="voz-prueba")
     v.add_argument("--idioma", choices=["es", "en"])
+    mu = sub.add_parser("muestra", help="la frase de muestra de una voz (la pide al servicio): imprime la ruta del WAV")
+    mu.add_argument("--voz", required=True, help="un alias o el nombre de una voz")
+    mu.add_argument("--idioma", required=True, choices=["es", "en", "en-gb"])
+    mu.add_argument("--radio", default="", help="el nombre de la emisora que dice la frase")
     mo = sub.add_parser("modo", help="muestra o cambia cómo redacta el DJ (plantillas o llm); no se guarda al reiniciar")
     mo.add_argument("nuevo", nargs="?", choices=["plantillas", "llm"])
     ll = sub.add_parser("llm", help="el servidor de LLM (Ollama): estado y modelo configurado")
@@ -139,6 +143,30 @@ def _llm(config, args) -> int:
     return 1
 
 
+def _muestra(config, rutas, args) -> int:
+    """Pide la frase de muestra al servicio y la deja en la caché (la misma voz con la misma radio no se vuelve a
+    pedir); imprime la ruta del WAV para reproducirla (el applet usa mpv)."""
+    import hashlib
+    import json
+    import os
+    from cassette_fm.cliente_dj import ClienteDJ, ErrorDJ
+    clave = hashlib.sha256(json.dumps([args.voz, args.idioma, args.radio.strip()]).encode()).hexdigest()[:32]
+    destino = rutas.muestras / f"{clave}.wav"
+    if not destino.exists():
+        host = "127.0.0.1" if config.host in ("0.0.0.0", "::") else config.host
+        try:
+            audio = ClienteDJ(f"http://{host}:{config.puerto}").muestra(args.voz, args.idioma, args.radio.strip())
+        except ErrorDJ as e:
+            print(e, file=sys.stderr)
+            return 1
+        destino.parent.mkdir(parents=True, exist_ok=True)
+        parcial = destino.with_name(destino.name + ".part")
+        parcial.write_bytes(audio)
+        os.replace(parcial, destino)
+    print(destino)
+    return 0
+
+
 def _modo(config, args) -> int:
     import json
     import urllib.error
@@ -247,6 +275,8 @@ def main(argv: list[str] | None = None, *, sintetizador=None, fonemizar=None, cl
         return _hechos(config, rutas, args, clientes)
     if args.comando == "modo":
         return _modo(config, args)
+    if args.comando == "muestra":
+        return _muestra(config, rutas, args)
     if args.comando == "llm":
         return _llm(config, args)
     return _voz_prueba(config, rutas, args, sintetizador, fonemizar)

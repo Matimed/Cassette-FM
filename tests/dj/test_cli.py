@@ -427,3 +427,25 @@ def test_cassette_dj_modo_avisa_si_falta_el_modelo(entorno, tmp_path, capsys, mo
     finally:
         parar.set()
         hilo.join(5)
+
+
+def test_muestra_guarda_e_imprime_la_ruta_y_la_segunda_vez_no_pide(entorno, monkeypatch, capsys):
+    from cassette_fm.cliente_dj import ClienteDJ
+    pedidos = []
+    monkeypatch.setattr(ClienteDJ, "muestra", lambda self, v, i, r: pedidos.append((v, i, r)) or b"RIFFwav")
+    assert cli.main(["muestra", "--voz", "dora", "--idioma", "es", "--radio", "Sing"]) == 0
+    ruta = Path(capsys.readouterr().out.strip())
+    assert ruta.read_bytes() == b"RIFFwav" and ruta.parent == entorno.muestras
+    assert cli.main(["muestra", "--voz", "dora", "--idioma", "es", "--radio", "Sing"]) == 0
+    assert capsys.readouterr().out.strip() == str(ruta) and pedidos == [("dora", "es", "Sing")]
+
+
+def test_muestra_con_el_servicio_caido_da_una_linea(entorno, monkeypatch, capsys):
+    from cassette_fm.cliente_dj import ClienteDJ, ErrorDJ
+
+    def caido(self, *a):
+        raise ErrorDJ("el servicio DJ no responde en http://127.0.0.1:7720 (Connection refused)")
+    monkeypatch.setattr(ClienteDJ, "muestra", caido)
+    assert cli.main(["muestra", "--voz", "dora", "--idioma", "es"]) == 1
+    error = capsys.readouterr().err
+    assert "no responde" in error and error.count("\n") == 1
