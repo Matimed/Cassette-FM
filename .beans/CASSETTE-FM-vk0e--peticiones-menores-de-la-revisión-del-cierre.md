@@ -1,11 +1,11 @@
 ---
 # CASSETTE-FM-vk0e
 title: 'Peticiones: menores de la revisión del cierre'
-status: todo
+status: scrapped
 type: task
 priority: low
 created_at: 2026-11-16T03:35:30Z
-updated_at: 2026-11-16T03:35:30Z
+updated_at: 2026-11-16T03:37:49Z
 parent: CASSETTE-FM-80sa
 ---
 
