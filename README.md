@@ -45,8 +45,8 @@ En el menú, **Nueva emisora…** abre un modal para crear una emisora de Spotif
 escucharla y logo con *Examinar…*).
 
 **El dial** (`Super+Alt+Espacio`): una tira con los logos de las emisoras, la que suena agrandada en el centro.
-◀ ▶ cambian de emisora, ▲ ▼ el volumen de a 5 (en 0 se apaga), Escape o el mismo atajo lo cierran, y se cierra solo
-a los 5 s sin tocar nada; con el mouse, clic en un logo sintoniza y la rueda cambia de emisora. Si la radio estaba
+◀ ▶ cambian de emisora, ▲ ▼ el volumen de a 5 (en 0 se apaga), Enter, Escape o el mismo atajo lo cierran, y se cierra solo
+a los 3 s sin tocar nada; con el mouse, clic en un logo sintoniza y la rueda cambia de emisora. Si la radio estaba
 apagada, abrir el dial la prende. Las emisoras sin logo (ver `cassette icono`) usan uno genérico.
 
 Si algo falla: `Alt+F2`, escribir `lg`, pestaña *Errors* (Looking Glass), y `journalctl --user -u cassette-fm -e`.

@@ -247,3 +247,7 @@ test("volumenTrasRespuesta: solo sintonizar con la radio apagada adopta el volum
   assert.equal(L.volumenTrasRespuesta(0, 5, false), 0);      // respuesta vieja de /volumen 5 con el 0 en camino
   assert.equal(L.volumenTrasRespuesta(30, 60, true), 30);    // lo local manda si no estaba en 0
 });
+
+test("teclaDial: Enter también cierra", () => {
+  assert.equal(L.teclaDial("Return"), "cerrar");
+});

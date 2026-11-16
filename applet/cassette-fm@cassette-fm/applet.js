@@ -510,7 +510,7 @@ const DIAL_CHICO = 96;              // los demás
 const DIAL_PASO = 120;              // distancia entre los centros de los logos chicos
 const DIAL_LADO = 3;                // logos a cada lado de la actual
 const DIAL_ANIMACION_MS = 150;
-const DIAL_CIERRE_MS = 5000;        // sin tocar nada, se cierra solo
+const DIAL_CIERRE_MS = 3000;        // sin tocar nada, se cierra solo
 const DIAL_AVISO_MS = 2000;         // lo que dura el aviso de "no responde"
 const DIAL_PASO_VOLUMEN = 5;
 const DIAL_ALTURA = 0.08;           // el borde de arriba de la tira, en fracción del alto del monitor
@@ -519,7 +519,8 @@ const DIAL_ANCHO_TEXTOS = 560;      // ancho fijo del recuadro de los textos (ce
 // El Clutter de Cinnamon no sabe dar el nombre de una tecla: los que entiende teclaDial, a mano.
 function _nombreDeTecla(simbolo) {
     const nombres = { [Clutter.KEY_Left]: "Left", [Clutter.KEY_Right]: "Right", [Clutter.KEY_Up]: "Up",
-                      [Clutter.KEY_Down]: "Down", [Clutter.KEY_Escape]: "Escape" };
+                      [Clutter.KEY_Down]: "Down", [Clutter.KEY_Escape]: "Escape", [Clutter.KEY_Return]: "Return",
+                      [Clutter.KEY_KP_Enter]: "Return" };
     return nombres[simbolo] || null;
 }
 

@@ -178,7 +178,8 @@ function filaDial(estaciones, actual, lado = 3) {
     return fila;
 }
 
-const _TECLAS_DIAL = { Left: "anterior", Right: "siguiente", Up: "subir", Down: "bajar", Escape: "cerrar" };
+const _TECLAS_DIAL = { Left: "anterior", Right: "siguiente", Up: "subir", Down: "bajar", Escape: "cerrar",
+                      Return: "cerrar" };
 
 function teclaDial(nombreTecla) {
     return _TECLAS_DIAL[nombreTecla] || null;
