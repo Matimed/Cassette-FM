@@ -47,7 +47,11 @@ con ▶ para escuchar la voz elegida ("Hola, soy dora y estás escuchando…": `
 ([`superpowers/specs/2026-11-16-borrar-emisora-design.md`](superpowers/specs/2026-11-16-borrar-emisora-design.md)),
 y `cassette renombrar "viejo" "nuevo"` le cambia el nombre (y con él el orden de los temas:
 [`superpowers/specs/2026-11-16-renombrar-emisora-design.md`](superpowers/specs/2026-11-16-renombrar-emisora-design.md)).
-Ojo al tocar el applet: `ReloadXlet` recarga `applet.js` pero no `logic.js` (queda en caché hasta reiniciar Cinnamon).
+Etapa 5 (CASSETTE-FM-qyz0): **el dial**, una tira de logos estilo GTA 4 que se abre con Super+Alt+Espacio desde el
+applet, y logos por emisora (campo `"icono"` en `estaciones.json`, `cassette icono`; los del usuario viven en
+`~/.config/cassette-fm/iconos/`, en el repo solo el genérico):
+[`superpowers/specs/2026-11-16-dial-de-emisoras-design.md`](superpowers/specs/2026-11-16-dial-de-emisoras-design.md).
+Prender desde volumen 0 sube a 50. Ojo al tocar el applet: `ReloadXlet` recarga `applet.js` pero no `logic.js` (queda en caché hasta reiniciar Cinnamon).
 
 ## Relevamiento previo (leer antes de diseñar)
 

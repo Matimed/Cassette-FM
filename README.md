@@ -39,7 +39,15 @@ Si solo querés el servicio y la CLI, sin el escritorio: `scripts/instalar.sh`.
 Un ícono en el panel con el nombre de la estación (vacío si está apagada). Rueda del mouse: hacia arriba pasa
 a la estación siguiente y hacia abajo a la anterior. Clic izquierdo: enciende o apaga. Clic derecho: lista de
 estaciones para elegir una. El tooltip muestra estación, tema y volumen; si el servicio no está, dice que no
-responde. En los ajustes del applet se cambia el puerto y si se muestra el nombre.
+responde. En los ajustes del applet se cambia el puerto, si se muestra el nombre y el atajo del dial.
+
+En el menú, **Nueva emisora…** abre un modal para crear una emisora de Spotify (nombre, link, idioma, voz con ▶ para
+escucharla y logo con *Examinar…*).
+
+**El dial** (`Super+Alt+Espacio`): una tira con los logos de las emisoras, la que suena agrandada en el centro.
+◀ ▶ cambian de emisora, ▲ ▼ el volumen de a 5 (en 0 se apaga), Escape o el mismo atajo lo cierran, y se cierra solo
+a los 5 s sin tocar nada; con el mouse, clic en un logo sintoniza y la rueda cambia de emisora. Si la radio estaba
+apagada, abrir el dial la prende. Las emisoras sin logo (ver `cassette icono`) usan uno genérico.
 
 Si algo falla: `Alt+F2`, escribir `lg`, pestaña *Errors* (Looking Glass), y `journalctl --user -u cassette-fm -e`.
 
