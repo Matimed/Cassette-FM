@@ -958,13 +958,18 @@ def test_sintonizar_suena_primero_por_soloist():
 
 def test_al_cargar_el_tema_local_salta_a_la_posicion():
     r, control, soloist, reloj, _ = armar()
-    r.sintonizar(estacion())
-    (uris, pos), = control.llamadas
-    reloj.t += 0.3
-    r.manejar_evento(cambio(uris[0]))
+    e = estacion()
+    primero = _primero(e, reloj)
+
+    def carga_mientras_viaja_la_api():           # el tema local carga en ~0,3 s; la Web API vuelve después
+        reloj.t += 0.3
+        r.manejar_evento(cambio(primero))
+    control.antes = carga_mientras_viaja_la_api
+    r.sintonizar(e)
+    (_, pos), = control.llamadas
     (seek,) = _seeks(soloist)
-    assert abs(seek - (pos + 300)) <= 1          # ms enteros: el redondeo puede comerse uno
-    r.manejar_evento(cambio(uris[0]))           # un segundo aviso del mismo comienzo no vuelve a saltar
+    assert abs(seek - pos) <= 1                  # ms enteros: el redondeo puede comerse uno
+    r.manejar_evento(cambio(primero))           # un segundo aviso del mismo comienzo no vuelve a saltar
     assert len(_seeks(soloist)) == 1
 
 
@@ -1033,4 +1038,31 @@ def test_spotify_medio_lento_no_corrige():
     r, control, soloist, reloj, _ = armar()
     control.antes = lambda: setattr(reloj, "t", reloj.t + 0.7)
     r.sintonizar(estacion())
+    assert _seeks(soloist) == []
+
+
+def test_la_recarga_de_la_api_no_es_un_tema_nuevo():
+    # con la Web API a más de 5 s, si Soloist avisa la recarga del tema como un track_changed no se re-sintoniza
+    r, control, soloist, reloj, _ = armar()
+    e = estacion()
+    primero = _primero(e, reloj)
+
+    def lenta():
+        reloj.t += 0.3
+        r.manejar_evento(cambio(primero))        # el tema local
+        reloj.t += 7
+        r.manejar_evento(cambio(primero))        # la recarga del play de la API
+    control.antes = lenta
+    r.sintonizar(e)
+    assert len(r.eventos["cambios"]) == 1 and len(control.llamadas) == 1
+
+
+def test_el_seek_pendiente_no_queda_colgado():
+    # el tema ya estaba cargado (sin track_changed) y la API volvió rápido: el seek no espera a que A vuelva a sonar
+    r, _, soloist, reloj, _ = armar()
+    e = estacion()
+    primero = _primero(e, reloj)
+    r.sintonizar(e)
+    reloj.t += 3600
+    r.manejar_evento(cambio(primero))
     assert _seeks(soloist) == []

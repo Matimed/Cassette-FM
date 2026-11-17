@@ -111,6 +111,9 @@ class ReproductorSpotify:
         self._por_anunciar: Pista | None = None   # el próximo encolado, esperando la posición para avisarlo
         # el play local de la sintonía espera su track_changed para saltar a la posición: (sintonía, uri, posición)
         self._seek_pendiente: tuple[int, str, Callable[[], int]] | None = None
+        # el play de la Web API recarga el tema que ya suena por Soloist: si Soloist lo avisa como un comienzo, no lo
+        # es (sintonía, uri, hasta cuándo vale: hasta 3 s después de que vuelve el pedido)
+        self._recarga: tuple[int, str, float] | None = None
 
     # --- sintonía ---
 
@@ -161,6 +164,8 @@ class ReproductorSpotify:
                     self._soloist.comando(orden, enabled=False)
                 if local:
                     self._tocar_local(n, uris[0], posicion_ms)
+                    with self._lock:
+                        self._recarga = (n, uris[0], float("inf"))
                 inicio = self._reloj()
                 self._control.reproducir(uris, posicion_ms)
             except ErrorSpotify as e:
@@ -193,10 +198,16 @@ class ReproductorSpotify:
         """La Web API volvió: si tardó, su play recargó el tema (que ya sonaba) en la posición de cuando se mandó;
         un seek local lo devuelve a la de ahora."""
         with self._lock:
-            vigente = n == self._sintonia and (self.pista_actual is None or self.pista_actual.clave == uri)
+            if n != self._sintonia:
+                return
+            # la API ya puso el tema en su posición (o la corrige el seek de abajo): el pendiente no espera más,
+            # si no, podría dispararse horas después, cuando ese tema vuelva a sonar
+            self._seek_pendiente = None
+            if self._recarga is not None and self._recarga[0] == n:
+                self._recarga = (n, uri, self._reloj() + 3.0)
+            vigente = self.pista_actual is None or self.pista_actual.clave == uri
             if not vigente or demora <= self.CORREGIR_SEGUNDOS:
                 return
-            self._seek_pendiente = None
         try:
             self._soloist.comando("seek", position_ms=posicion_ms())
         except ErrorSpotify:
@@ -283,6 +294,12 @@ class ReproductorSpotify:
                     return        # lo que sonaba antes en la cuenta o un evento de la sintonía anterior
                 if pista.clave == self._esperado:
                     self._visto_esperado = True
+                recarga = self._recarga
+                if (recarga is not None and recarga[0] == self._sintonia and recarga[1] == pista.clave
+                        and self.pista_actual is not None and self.pista_actual.clave == pista.clave
+                        and self._reloj() <= recarga[2]):
+                    self._recarga = None
+                    return        # el play de la Web API recargó el tema que ya sonaba por Soloist
                 pendiente = self._seek_pendiente
                 if pendiente is not None and pendiente[0] == self._sintonia and pendiente[1] == pista.clave:
                     self._seek_pendiente = None
