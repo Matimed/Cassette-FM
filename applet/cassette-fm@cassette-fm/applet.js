@@ -513,9 +513,9 @@ const DIAL_ANIMACION_MS = 150;
 const DIAL_CIERRE_MS = 3000;        // sin tocar nada, se cierra solo
 const DIAL_AVISO_MS = 2000;         // lo que dura el aviso de "no responde"
 const DIAL_PASO_VOLUMEN = 5;
-const DIAL_ESCALA = 0.85;           // tamaño de todo el dial (logos, textos y recuadro); 1 = el diseño original
+const DIAL_ESCALA = 1;           // tamaño de todo el dial (logos, textos y recuadro); 1 = el diseño original
 const DIAL_ALTURA = 0.08;           // el borde de arriba de la tira, en fracción del alto del monitor
-const DIAL_ANCHO_TEXTOS = 560;      // ancho fijo del recuadro de los textos (centrado bajo la fila)
+const DIAL_ANCHO_TEXTOS = 350;      // ancho fijo del recuadro de los textos (centrado bajo la fila)
 
 // El Clutter de Cinnamon no sabe dar el nombre de una tecla: los que entiende teclaDial, a mano.
 function _nombreDeTecla(simbolo) {
@@ -579,7 +579,7 @@ class Dial {
                                       x_expand: true });
         this._pista = new St.Label({ style: "font-size: 1em; color: rgba(255,255,255,0.7); text-align: center;",
                                      x_expand: true });
-        this._ayuda = new St.Label({ style: "font-size: 0.9em; color: rgba(255,255,255,0.55); text-align: center;",
+        this._ayuda = new St.Label({ style: "font-size: 1.25em; color: rgba(255,255,255,0.8); text-align: center;",
                                      x_expand: true });
         for (const hijo of [this._nombre, this._pista, this._ayuda]) this._textos.add_child(hijo);
         this._tira.add_child(this._fila);

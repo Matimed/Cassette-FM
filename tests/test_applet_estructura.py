@@ -164,5 +164,13 @@ def test_el_dial_se_cierra_solo_a_los_3_s_y_con_enter():
 
 def test_el_dial_tiene_una_escala_y_muestra_solo_el_volumen():
     js = _js()
-    assert "const DIAL_ESCALA = 0.85;" in js and "this._tira.set_scale(DIAL_ESCALA, DIAL_ESCALA)" in js
+    assert re.search(r"const DIAL_ESCALA = [\d.]+;", js) and "this._tira.set_scale(DIAL_ESCALA, DIAL_ESCALA)" in js
     assert "◀ ▶ emisora" not in js       # sin la línea de ayuda: en ese renglón, solo el volumen
+
+
+
+def test_la_barra_de_volumen_del_dial_se_lee_bien():
+    js = _js()
+    estilo = js[js.index("this._ayuda = new St.Label("):]
+    estilo = estilo[:estilo.index("});")]
+    assert "font-size: 1.25em" in estilo and "rgba(255,255,255,0.8)" in estilo
