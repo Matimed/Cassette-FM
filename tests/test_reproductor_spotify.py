@@ -1026,3 +1026,11 @@ def test_la_resintonia_no_usa_el_play_local():
     plays = [c for c in soloist.comandos if c[0] == "play"]
     r._resintonizar()
     assert [c for c in soloist.comandos if c[0] == "play"] == plays
+
+
+def test_spotify_medio_lento_no_corrige():
+    # con ~0,7 s el play de la API atrasa unas décimas: un seek más sería otro microcorte (medido en real)
+    r, control, soloist, reloj, _ = armar()
+    control.antes = lambda: setattr(reloj, "t", reloj.t + 0.7)
+    r.sintonizar(estacion())
+    assert _seeks(soloist) == []

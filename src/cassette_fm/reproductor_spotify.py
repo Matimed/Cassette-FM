@@ -61,7 +61,7 @@ class ReproductorSpotify:
     PASO_RAMPA = 0.05
     AVISO_REPETIDO_SEGUNDOS = 5.0     # Soloist a veces avisa dos veces el mismo comienzo, con milisegundos de diferencia
     SALTEO_SEGUNDOS = 2.0             # otro tema antes de esto: Soloist no pudo cargar el anterior (o lo saltearon)
-    CORREGIR_SEGUNDOS = 0.5           # la Web API tardó más que esto: el tema local ya sonaba y su play lo atrasó
+    CORREGIR_SEGUNDOS = 1.0           # la Web API tardó más que esto: su play atrasó el tema local lo que se oye
 
     pista_actual: Pista | None = None
     al_cambiar_pista: Callable[[Pista, Estacion], None] | None = None

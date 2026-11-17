@@ -16,7 +16,7 @@ de la Web API corrige la posición con otro `seek` si hizo falta.
 
 - Español rioplatense; commits en español con `Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>`.
 - Comandos de Soloist exactos: `comando("play", uri=<uri>)`, `comando("seek", position_ms=<int>)`.
-- Umbral de corrección: 0,5 s. Las re-sintonías no usan el `play` local.
+- Umbral de corrección: 1 s (era 0,5 s; subido tras la prueba real). Las re-sintonías no usan el `play` local.
 - Nunca mostrar los argumentos del proceso de Soloist (`ps`, `systemctl status`): la clave va ahí.
 
 ## Review Focus
