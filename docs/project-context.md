@@ -34,6 +34,8 @@ descartan al sacar de la cola o saltear) el 2026-11-16:
 (De paso se arregló que la sintonía de Spotify arrancaba 2–8 s atrasada: la posición se calcula justo antes del
 play.) El 2026-11-16 el cambio de emisora de Spotify bajó de ~1,8 s a ~0,45 s (shuffle y repeat por el WebSocket de
 Soloist: [`superpowers/specs/2026-11-16-sintonia-spotify-rapida-design.md`](superpowers/specs/2026-11-16-sintonia-spotify-rapida-design.md)),
+y desde la noche del 16/11 el primer tema sale directo por Soloist (~0,3–0,9 s aunque la Web API tarde 3–10 s:
+[`superpowers/specs/2026-11-16-sintonia-local-design.md`](superpowers/specs/2026-11-16-sintonia-local-design.md)),
 y la radio acepta los temas que Soloist no logra cargar y saltea, en vez de re-sintonizar en bucle (CASSETTE-FM-49ga,
 probado en real: [`superpowers/specs/2026-11-16-soloist-saltea-temas-design.md`](superpowers/specs/2026-11-16-soloist-saltea-temas-design.md)).
 La clave de Soloist sigue en la línea de comando (decisión de CASSETTE-FM-q2ry): nunca mostrar los argumentos del
