@@ -604,14 +604,14 @@ from dataclasses import replace as _replace
 
 
 @pytest.mark.parametrize("idioma,valor,linea", [
-    ("es", "antes", "Este tema es una petición especial del público: presentalo como tal."),
-    ("en", "antes", "This song is a special request from a listener: introduce it as such."),
+    ("es", "antes", "Este tema es una petición especial del público: presentalo como pedido de uno de los oyentes."),
+    ("en", "antes", "This song is a special request from a listener: introduce it as one of the listeners' requests."),
     ("es", "despues", "El tema anterior fue una petición especial del público: mencionalo y presentá el siguiente."),
     ("en", "despues", "The previous song was a special request from a listener: mention it and introduce the next one."),
     ("es", "seguidas", "El tema anterior fue una petición especial del público y este también: mencioná el anterior y "
-                       "presentá este como petición."),
+                       "presentá este como pedido de otro oyente."),
     ("en", "seguidas", "The previous song was a special request from a listener and so is this one: mention the "
-                       "previous one and introduce this one as a request."),
+                       "previous one and introduce this one as another listener's request."),
 ])
 def test_prompt_llm_marca_la_peticion(idioma, valor, linea):
     p = _replace(pedido(idioma=idioma), peticion=valor)

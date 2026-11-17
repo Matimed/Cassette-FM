@@ -504,47 +504,70 @@ def test_un_album_recopilatorio_no_es_ingrediente(album, recopilatorio):
 
 from dataclasses import replace as _replace
 
-_ANTES = {"es": ("Llega una petición especial del público.", "Tenemos una petición especial para ustedes."),
-          "en": ("Here comes a special request from a listener.", "We have a special request for you.")}
+def _texto(p, semilla, palabras=45):
+    r = redactar(p, Lexico(), random.Random(semilla), palabras, zona=ZONA)
+    return MARCA.sub(lambda m: m.group(2), r.marcado), r
 
 
 @pytest.mark.parametrize("idioma", ["es", "en"])
-def test_plantilla_antes_empieza_con_la_peticion(idioma):
+def test_plantilla_antes_presenta_el_tema_como_peticion(idioma):
+    from cassette_fm.dj.plantillas import _MARCOS_PETICION
     p = _replace(pedido(idioma=idioma), peticion="antes")
+    campos = {"titulo": "Waiting for a Girl Like You", "artista": "Foreigner"}
+    frases = [m.format(**campos) for m, _ in _MARCOS_PETICION[idioma]["antes"]]
     for semilla in range(20):
-        texto = MARCA.sub(lambda m: m.group(2), redactar(p, Lexico(), random.Random(semilla), 45, zona=ZONA).marcado)
-        assert texto.startswith(_ANTES[idioma]), texto
+        texto, r = _texto(p, semilla)
+        assert any(f in texto for f in frases), texto
+        assert texto.count("Waiting for a Girl Like You") == 1
+        assert not {"clima", "album"} & set(r.ingredientes)
 
 
-@pytest.mark.parametrize("idioma,inicio", [("es", "Eso fue una petición especial: Is This Love de Whitesnake."),
-                                           ("en", "That was a special request: Is This Love by Whitesnake.")])
-def test_plantilla_despues_nombra_el_tema_pedido(idioma, inicio):
+def test_ninguna_plantilla_dice_que_el_tema_es_para_quien_escucha():
+    from cassette_fm.dj.plantillas import _COMIENZOS, _EXTRAS, _MARCOS, _MARCOS_PETICION, _PETICION_ANTERIOR
+    for idioma in ("es", "en"):
+        textos = (_PETICION_ANTERIOR[idioma] + [m for m, _ in _MARCOS[idioma]]
+                  + [m for ms in _MARCOS_PETICION[idioma].values() for m, _ in ms]
+                  + [f for fs in _EXTRAS[idioma].values() for f in fs]
+                  + [f for fs in _COMIENZOS[idioma].values() for f in fs])
+        for t in textos:
+            assert not re.search(r"\b(para (vos|ustedes|todos ustedes)|for you)\b", t), t
+
+
+@pytest.mark.parametrize("idioma", ["es", "en"])
+def test_plantilla_despues_nombra_el_tema_pedido(idioma):
+    from cassette_fm.dj.plantillas import _PETICION_ANTERIOR
     p = _replace(pedido(idioma=idioma), peticion="despues")
+    campos = {"titulo_ant": "Is This Love", "artista_ant": "Whitesnake"}
+    inicios = tuple(f.format(**campos) for f in _PETICION_ANTERIOR[idioma])
     for semilla in range(20):
-        r = redactar(p, Lexico(), random.Random(semilla), 45, zona=ZONA)
-        texto = MARCA.sub(lambda m: m.group(2), r.marcado)
-        assert texto.startswith(inicio), texto
+        texto, r = _texto(p, semilla)
+        assert texto.startswith(inicios), texto
         assert texto.count("Whitesnake") == 1 and "anterior" not in r.ingredientes
         assert "Waiting for a Girl Like You" in texto
 
 
-@pytest.mark.parametrize("idioma,inicio,otra", [
-    ("es", "Eso fue una petición especial: Is This Love de Whitesnake.", "Y llega otra."),
-    ("en", "That was a special request: Is This Love by Whitesnake.", "And here comes another one.")])
-def test_plantilla_seguidas_cierra_el_pedido_anterior_y_abre_el_siguiente(idioma, inicio, otra):
+@pytest.mark.parametrize("idioma", ["es", "en"])
+def test_plantilla_seguidas_cierra_el_pedido_anterior_y_abre_el_siguiente(idioma):
+    from cassette_fm.dj.plantillas import _MARCOS_PETICION, _PETICION_ANTERIOR
     p = _replace(pedido(idioma=idioma), peticion="seguidas")
+    inicios = tuple(f.format(titulo_ant="Is This Love", artista_ant="Whitesnake") for f in _PETICION_ANTERIOR[idioma])
+    frases = [m.format(titulo="Waiting for a Girl Like You", artista="Foreigner")
+              for m, _ in _MARCOS_PETICION[idioma]["seguidas"]]
     for semilla in range(20):
-        r = redactar(p, Lexico(), random.Random(semilla), 45, zona=ZONA)
-        texto = MARCA.sub(lambda m: m.group(2), r.marcado)
-        assert texto.startswith(f"{inicio} {otra}"), texto
-        assert texto.count("Whitesnake") == 1 and "Waiting for a Girl Like You" in texto
+        texto, _ = _texto(p, semilla)
+        assert texto.startswith(inicios), texto
+        assert any(f in texto for f in frases), texto
+        assert texto.count("Whitesnake") == 1
 
 
 def test_plantilla_peticion_entra_aunque_falten_palabras():
+    from cassette_fm.dj.plantillas import _MARCOS_PETICION
     p = _replace(pedido(), peticion="antes")
+    frases = [m.format(titulo="Waiting for a Girl Like You", artista="Foreigner")
+              for m, _ in _MARCOS_PETICION["es"]["antes"]]
     for semilla in range(10):
-        texto = MARCA.sub(lambda m: m.group(2), redactar(p, Lexico(), random.Random(semilla), 12, zona=ZONA).marcado)
-        assert texto.startswith(_ANTES["es"]) and "Waiting for a Girl Like You" in texto
+        texto, _ = _texto(p, semilla, 12)
+        assert any(f in texto for f in frases), texto
 
 
 def test_cada_frase_suelta_es_una_oracion_completa():

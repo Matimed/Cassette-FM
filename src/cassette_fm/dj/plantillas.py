@@ -35,7 +35,7 @@ _DIAS_EN = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", 
 # (marco, nombre con el que termina: "artista", "titulo" o None si termina en un relleno)
 _MARCOS = {
     "es": [("Seguimos con {artista} y su tema {titulo} para acompañar este momento de la mejor manera", None),
-           ("Llega {titulo} de {artista} para vos", None),
+           ("Llega {titulo} de {artista} para seguir con la mejor música", None),
            ("Ahora suena {titulo} de {artista}", "artista"),
            ("Sigue {titulo} con {artista}", "artista"),
            ("Llega {titulo} de la mano de {artista}", "artista"),
@@ -43,6 +43,7 @@ _MARCOS = {
            ("De {artista} escuchamos ahora {titulo}", "titulo"),
            ("Sigue {artista} con {titulo}", "titulo")],
     "en": [("Coming up next we have {artista} with {titulo} to keep you company", None),
+           ("Coming up next we have {artista} with {titulo} to keep the music going", None),
            ("Now playing {titulo} by {artista}", "artista"),
            ("Up next is {titulo} by {artista}", "artista"),
            ("Here comes {titulo} from {artista}", "artista"),
@@ -54,7 +55,7 @@ _EXTRAS = {
         "hora": ["{son} {hora} y seguimos con vos.", "En este momento {son_min} {hora}.", "{son} {hora} en la radio."],
         "estacion": ["Estás escuchando {estacion} en vivo.", "Esto es {estacion} tu radio de siempre.",
                      "Acá en {estacion} seguimos con vos.", "Bienvenidos a {estacion} la radio que no para."],
-        "hora+estacion": ["En {estacion} {son_min} {hora} para vos.", "{son} {hora} acá en {estacion} con ustedes."],
+        "hora+estacion": ["Acá en {estacion} {son_min} {hora}.", "{son} {hora} acá en {estacion} con ustedes."],
         "momento": ["Seguimos {este_momento} juntos.", "Pasamos {este_momento} con la mejor música.",
                     "Qué lindo pasar {este_momento} con ustedes.", "Compartimos {este_dia} con todos ustedes.",
                     "Para disfrutar {este_dia} con buena música."],
@@ -93,14 +94,29 @@ _COLAS = {
     "en": [("anio", "titulo", "which came out in {anio}"), ("anio", "titulo", "from {anio}"),
            ("pais", "artista", "an artist from {pais}"), ("inicio", "artista", "a band that started in {inicio}")],
 }
-# la oración de una petición del público: va primero y nunca se descarta
-_PETICION = {
-    "es": {"antes": ["Llega una petición especial del público.", "Tenemos una petición especial para ustedes."],
-           "despues": ["Eso fue una petición especial: {titulo_ant} de {artista_ant}."],
-           "seguidas": ["Eso fue una petición especial: {titulo_ant} de {artista_ant}. Y llega otra."]},
-    "en": {"antes": ["Here comes a special request from a listener.", "We have a special request for you."],
-           "despues": ["That was a special request: {titulo_ant} by {artista_ant}."],
-           "seguidas": ["That was a special request: {titulo_ant} by {artista_ant}. And here comes another one."]},
+# el tema anterior fue una petición del público ("despues" y "seguidas"): va primero y nunca se descarta
+_PETICION_ANTERIOR = {
+    "es": ["Escuchábamos {titulo_ant} de {artista_ant} por petición especial de nuestro público.",
+           "Eso fue {titulo_ant} de {artista_ant}, a petición de uno de nuestros oyentes.",
+           "Recién sonó {titulo_ant} de {artista_ant}, un pedido especial del público."],
+    "en": ["We were listening to {titulo_ant} by {artista_ant}, a special request from our audience.",
+           "That was {titulo_ant} by {artista_ant}, requested by one of our listeners.",
+           "We just heard {titulo_ant} by {artista_ant}, a special request from the audience."],
+}
+# el tema que sigue es una petición ("antes" y "seguidas"): el marco mismo la anuncia, sin comienzo enganchado
+_MARCOS_PETICION = {
+    "es": {"antes": [("A petición de uno de nuestros oyentes llega {titulo} de {artista}", "artista"),
+                     ("Y ahora, a petición de uno de nuestros escuchas, tenemos {titulo} de {artista}", "artista"),
+                     ("Llega una petición especial del público: {titulo} de {artista}", "artista"),
+                     ("Por pedido de uno de nuestros oyentes suena {artista} con {titulo}", "titulo")],
+           "seguidas": [("Y llega otra petición especial: {titulo} de {artista}", "artista"),
+                        ("A petición de otro oyente llega {titulo} de {artista}", "artista"),
+                        ("Seguimos con los pedidos del público y ahora suena {artista} con {titulo}", "titulo")]},
+    "en": {"antes": [("At the request of one of our listeners here is {titulo} by {artista}", "artista"),
+                     ("And now, a special request from our audience: {titulo} by {artista}", "artista"),
+                     ("One of our listeners asked for {artista} and here is {titulo}", "titulo")],
+           "seguidas": [("And here comes another request: {titulo} by {artista}", "artista"),
+                        ("Another listener asked for {artista} and here is {titulo}", "titulo")]},
 }
 _DESCARTE = ("dato", "clima", "anterior", "album")        # lo primero que se saca si la frase no entra
 _SUELTOS = ("hora", "estacion", "momento", "anterior")
@@ -237,6 +253,9 @@ def redactar(pedido: Pedido, lexico: Lexico, azar: random.Random, palabras_maxim
         peticion = "antes" if peticion == "seguidas" else None      # sin el anterior no se lo puede nombrar
     if peticion in ("despues", "seguidas"):
         disponibles.discard("anterior")          # ya lo nombra la oración de la petición
+    if peticion in ("antes", "seguidas"):
+        disponibles -= {"clima", "album"}        # el marco de la petición no lleva comienzo enganchado
+    marcos = _MARCOS_PETICION[idioma][peticion] if peticion in ("antes", "seguidas") else _MARCOS[idioma]
     if "clima" in disponibles:
         c = hechos.clima
         campos["grados"] = _grados(c.temperatura, idioma)
@@ -286,13 +305,14 @@ def redactar(pedido: Pedido, lexico: Lexico, azar: random.Random, palabras_maxim
     prefijo = None
     for _ in range(10):
         # lo que se elige al azar una vez por intento: las oraciones sueltas, su fusión y los comienzos
-        prefijo = azar.choice(_PETICION[idioma][peticion]).format(**campos) if peticion else None
+        prefijo = (azar.choice(_PETICION_ANTERIOR[idioma]).format(**campos) if peticion in ("despues", "seguidas")
+                   else None)
         azar_sueltos = {i: azar.choice(_EXTRAS[idioma][i]).format(**campos) for i in _SUELTOS
                         if i != "anterior" or pedido.anterior is not None}
         fusion = (azar.choice(_EXTRAS[idioma]["hora+estacion"]).format(**campos) if azar.random() < 0.5 else None)
         azar_comienzos = {i: azar.choice(f) for i, f in _COMIENZOS[idioma].items()}
         cola = None
-        pool = _MARCOS[idioma]
+        pool = marcos
         if "dato" in elegidos:
             nombre, cola = azar.choice(_variantes_de_dato(hechos, idioma))
             pool = [mc for mc in pool if mc[1] == nombre]
@@ -300,7 +320,7 @@ def redactar(pedido: Pedido, lexico: Lexico, azar: random.Random, palabras_maxim
         r = ajustar(marco, cola)
         if r is not None:
             return r
-    marco = min((mc[0] for mc in _MARCOS[idioma]), key=lambda t: _palabras(t.format(**campos)))
+    marco = min((mc[0] for mc in marcos), key=lambda t: _palabras(t.format(**campos)))
     return Redaccion(" ".join(([prefijo] if prefijo else []) + [marco.format(**campos) + "."]), ("cancion",))
 
 

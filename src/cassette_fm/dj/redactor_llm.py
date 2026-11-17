@@ -124,17 +124,17 @@ def construir_peticion(pedido: Pedido, ingredientes: Sequence[str], hechos: Hech
     if "album" in ingredientes and pedido.siguiente.album:
         lineas.append(f"{'Álbum' if es else 'Album'}: {pedido.siguiente.album}")
     if pedido.peticion == "antes":
-        lineas.append("Este tema es una petición especial del público: presentalo como tal." if es
-                      else "This song is a special request from a listener: introduce it as such.")
+        lineas.append("Este tema es una petición especial del público: presentalo como pedido de uno de los oyentes." if es
+                      else "This song is a special request from a listener: introduce it as one of the listeners' requests.")
     elif pedido.peticion == "despues" and pedido.anterior is not None:
         lineas.append("El tema anterior fue una petición especial del público: mencionalo y presentá el siguiente."
                       if es else
                       "The previous song was a special request from a listener: mention it and introduce the next one.")
     elif pedido.peticion == "seguidas" and pedido.anterior is not None:
         lineas.append("El tema anterior fue una petición especial del público y este también: mencioná el anterior y "
-                      "presentá este como petición." if es else
+                      "presentá este como pedido de otro oyente." if es else
                       "The previous song was a special request from a listener and so is this one: mention the "
-                      "previous one and introduce this one as a request.")
+                      "previous one and introduce this one as another listener's request.")
     if (("anterior" in ingredientes or pedido.peticion in ("despues", "seguidas"))
             and pedido.anterior is not None):
         previo = " y ".join(artistas_del_tag(pedido.anterior.artista)) if es \
@@ -183,6 +183,7 @@ def construir_peticion(pedido: Pedido, ingredientes: Sequence[str], hechos: Hech
                    "- Nada de elogios vacíos (increíble, fantástico, hermoso, un temazo, un sonido único): decí algo "
                    "concreto o nada. No digas \"queridos oyentes\" ni que el tema está dando que hablar o es muy "
                    "escuchado.\n"
+                   "- No digas que el tema es para el que escucha (nada de \"para vos\" ni \"para ustedes\").\n"
                    "- Contá a lo sumo dos datos. No enumeres integrantes, nombres completos ni fechas de más.\n"
                    "- Escribí los años con cifras (por ejemplo 1984).\n"
                    "- Si hay un dato de Wikipedia, usá a lo sumo uno y decilo con tus palabras en una frase corta."
@@ -204,6 +205,7 @@ def construir_peticion(pedido: Pedido, ingredientes: Sequence[str], hechos: Hech
                    "listen to it: it is made up and boring. Talk about the song, the artist or the facts in the message.\n"
                    "- No empty praise (fantastic, amazing, beautiful, great track, distinctive sound): say something "
                    "concrete or nothing. Do not call the audience \"listeners\" and do not start with \"This track\".\n"
+                   "- Do not say the song is for the listener (no \"for you\").\n"
                    "- Mention at most two facts. Do not list band members, full birth names or extra dates.\n"
                    "- Write years as digits (for example 1984).\n"
                    "- If there is a Wikipedia fact, use at most one, in your own words, in one short sentence."
