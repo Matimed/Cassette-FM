@@ -383,7 +383,7 @@ se las da al último programa que las pidió.
 ```toml
 raiz_musica = "~/Música"   # solo para crear estaciones.json la primera vez (ver Emisoras)
 puerto = 7710              # la API escucha solo en 127.0.0.1
-avisos = true              # notificación de escritorio con estación y tema
+avisos = false             # true: notificación de escritorio con estación y tema al cambiar
 normalizar = true          # parejiza el volumen entre temas (filtro dynaudnorm de mpv)
 ```
 

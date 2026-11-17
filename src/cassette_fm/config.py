@@ -69,7 +69,7 @@ class ConfigSpotify:
 class Config:
     raiz_musica: Path = Path.home() / "Música"
     puerto: int = 7710
-    avisos: bool = True
+    avisos: bool = False                   # notificación al cambiar de emisora (el applet ya la muestra)
     normalizar: bool = True   # filtro dynaudnorm de mpv: parejiza el volumen entre temas
     dj: ConfigDJ = ConfigDJ()
     estaciones_dj: Mapping[str, ConfigDJ] = field(default_factory=dict)   # overrides ya fusionados

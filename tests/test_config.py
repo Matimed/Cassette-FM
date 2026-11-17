@@ -338,3 +338,8 @@ def test_peticion_margen_se_lee_del_toml(tmp_path):
     archivo.write_text('[dj]\npeticion_margen_segundos = 0\n')
     with pytest.raises(ErrorConfig):
         cargar_config(archivo)
+
+
+def test_la_notificacion_de_cambio_de_emisora_viene_apagada():
+    # alcanza con la emisora en el panel (el applet); se prende con `avisos = true`
+    assert Config().avisos is False

@@ -577,11 +577,9 @@ class Dial {
         // a lo ancho de la tira y centrados: si no, se quedan con la medida del primer texto ("…")
         this._nombre = new St.Label({ style: "font-size: 1.5em; font-weight: bold; color: #fff; text-align: center;",
                                       x_expand: true });
-        this._pista = new St.Label({ style: "font-size: 1em; color: rgba(255,255,255,0.7); text-align: center;",
-                                     x_expand: true });
         this._ayuda = new St.Label({ style: "font-size: 1.25em; color: rgba(255,255,255,0.8); text-align: center;",
                                      x_expand: true });
-        for (const hijo of [this._nombre, this._pista, this._ayuda]) this._textos.add_child(hijo);
+        for (const hijo of [this._nombre, this._ayuda]) this._textos.add_child(hijo);
         this._tira.add_child(this._fila);
         this._tira.add_child(this._textos);
         this._tira.set_pivot_point(0.5, 0);       // achica hacia el centro, sin mover el borde de arriba
@@ -682,8 +680,6 @@ class Dial {
 
     _refrescarTextos() {
         this._nombre.text = this._actual || "";
-        const pista = this._estado.encendida && this._estado.estacion === this._actual ? this._estado.pista : null;
-        this._pista.text = pista || " ";
         this._ayuda.text = AppletDir.logic.barraVolumen(this._volumen);
         this._centrar();
     }
@@ -698,7 +694,6 @@ class Dial {
 
     _mostrarAviso(texto) {
         this._nombre.text = texto;
-        this._pista.text = " ";
         this._ayuda.text = " ";
         this._centrar();
     }

@@ -174,3 +174,7 @@ def test_la_barra_de_volumen_del_dial_se_lee_bien():
     estilo = js[js.index("this._ayuda = new St.Label("):]
     estilo = estilo[:estilo.index("});")]
     assert "font-size: 1.25em" in estilo and "rgba(255,255,255,0.8)" in estilo
+
+
+def test_el_dial_no_muestra_la_cancion():
+    assert "this._pista" not in _js()
