@@ -313,7 +313,7 @@ APAGAR = [("set_shuffle", {"enabled": False}), ("set_repeat_context", {"enabled"
 
 
 def _ordenes(soloist):
-    return [c for c in soloist.comandos if c[0] != "set_volume"]
+    return [c for c in soloist.comandos if c[0] not in ("set_volume", "play", "seek")]    # play/seek: la sintonía local
 
 
 def test_sintonizar_apaga_shuffle_y_repeat_en_soloist_antes_del_play():
@@ -935,3 +935,94 @@ def test_actualizar_toma_las_pistas_nuevas_y_conserva_la_agenda_del_reproductor(
     r.soloist_reconectado()                                    # vuelve a mandar la agenda desde ahora
     esperado = list(islice(secuencia(replace(estacion(n=6), corrimiento=50.0), reloj()), 100))
     assert control.llamadas[-1] == ([p.uri for p, _ in esperado], int(esperado[0][1] * 1000))
+
+
+# --- sintonía instantánea: el primer tema por Soloist, la lista por la Web API ---
+
+def _primero(e, reloj):
+    return next(iter(islice(secuencia(e, reloj()), 1)))[0].uri
+
+
+def _seeks(soloist):
+    return [c["position_ms"] for nombre, c in soloist.comandos if nombre == "seek"]
+
+
+def test_sintonizar_suena_primero_por_soloist():
+    r, control, soloist, reloj, _ = armar()
+    e = estacion()
+    al_play_de_la_api = []
+    control.antes = lambda: al_play_de_la_api.extend(soloist.comandos)
+    r.sintonizar(e)
+    assert ("play", {"uri": _primero(e, reloj)}) in al_play_de_la_api
+
+
+def test_al_cargar_el_tema_local_salta_a_la_posicion():
+    r, control, soloist, reloj, _ = armar()
+    r.sintonizar(estacion())
+    (uris, pos), = control.llamadas
+    reloj.t += 0.3
+    r.manejar_evento(cambio(uris[0]))
+    (seek,) = _seeks(soloist)
+    assert abs(seek - (pos + 300)) <= 1          # ms enteros: el redondeo puede comerse uno
+    r.manejar_evento(cambio(uris[0]))           # un segundo aviso del mismo comienzo no vuelve a saltar
+    assert len(_seeks(soloist)) == 1
+
+
+def test_track_changed_de_otro_tema_no_salta():
+    r, _, soloist, _, _ = armar()
+    r.sintonizar(estacion())
+    r.manejar_evento(cambio("spotify:track:lo_que_sonaba_antes"))
+    assert _seeks(soloist) == []
+
+
+def test_spotify_lento_corrige_la_posicion_al_volver():
+    r, control, soloist, reloj, _ = armar()
+    control.antes = lambda: setattr(reloj, "t", reloj.t + 3)
+    r.sintonizar(estacion())
+    (_, pos), = control.llamadas
+    assert _seeks(soloist) == [pos]              # la posición de cuando volvió la Web API
+
+
+def test_spotify_rapido_no_agrega_otro_seek():
+    r, control, soloist, reloj, _ = armar()
+    e = estacion()
+    primero = _primero(e, reloj)
+
+    def carga_y_vuelve():
+        reloj.t += 0.2
+        r.manejar_evento(cambio(primero))
+    control.antes = carga_y_vuelve
+    r.sintonizar(e)
+    assert len(_seeks(soloist)) == 1
+
+
+def test_una_sintonia_nueva_anula_el_seek_de_la_vieja():
+    r, control, soloist, reloj, diferido = armar_diferido()
+    a = estacion("A")
+    primero_a = _primero(a, reloj)
+    r.sintonizar(a)
+    r.sintonizar(estacion("B", n=6))
+    diferido.correr()
+    r.manejar_evento(cambio(primero_a))
+    assert _seeks(soloist) == []
+
+
+def test_si_el_play_local_falla_sigue_por_la_api():
+    class SoloistSinPlay(SoloistFalso):
+        def comando(self, nombre, **campos):
+            if nombre == "play":
+                raise ErrorSpotify("Soloist rechazó el play")
+            super().comando(nombre, **campos)
+    r, control, soloist, _, _ = armar(soloist=SoloistSinPlay())
+    r.sintonizar(estacion())
+    (uris, _), = control.llamadas
+    r.manejar_evento(cambio(uris[0]))
+    assert r.eventos["fallas"] == [] and _seeks(soloist) == []
+
+
+def test_la_resintonia_no_usa_el_play_local():
+    r, _, soloist, _, _ = armar()
+    r.sintonizar(estacion())
+    plays = [c for c in soloist.comandos if c[0] == "play"]
+    r._resintonizar()
+    assert [c for c in soloist.comandos if c[0] == "play"] == plays

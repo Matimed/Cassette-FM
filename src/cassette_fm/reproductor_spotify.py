@@ -61,6 +61,7 @@ class ReproductorSpotify:
     PASO_RAMPA = 0.05
     AVISO_REPETIDO_SEGUNDOS = 5.0     # Soloist a veces avisa dos veces el mismo comienzo, con milisegundos de diferencia
     SALTEO_SEGUNDOS = 2.0             # otro tema antes de esto: Soloist no pudo cargar el anterior (o lo saltearon)
+    CORREGIR_SEGUNDOS = 0.5           # la Web API tardó más que esto: el tema local ya sonaba y su play lo atrasó
 
     pista_actual: Pista | None = None
     al_cambiar_pista: Callable[[Pista, Estacion], None] | None = None
@@ -108,6 +109,8 @@ class ReproductorSpotify:
         self._encolados: dict[str, Pista] = {}   # la cola de la app según el último queue_changed, por URI
         self._anunciado: str | None = None        # el encolado próximo que ya se avisó con al_encolado
         self._por_anunciar: Pista | None = None   # el próximo encolado, esperando la posición para avisarlo
+        # el play local de la sintonía espera su track_changed para saltar a la posición: (sintonía, uri, posición)
+        self._seek_pendiente: tuple[int, str, Callable[[], int]] | None = None
 
     # --- sintonía ---
 
@@ -127,7 +130,7 @@ class ReproductorSpotify:
             self._perdido = False
             self._cancelar_espera()
             self._espera_timer = self._temporizador(self._espera, lambda: self._no_sono(n))
-        self._en_segundo_plano(lambda: self._reproducir(n, estacion, uris, posicion_ms))
+        self._en_segundo_plano(lambda: self._reproducir(n, estacion, uris, posicion_ms, local=True))
 
     def _posicion_al_play(self, pista: Pista, segundo: float) -> Callable[[], int]:
         """La posición del primer tema cuando salga el play: `segundo` es la de ahora, y lo que tarden las órdenes
@@ -139,7 +142,10 @@ class ReproductorSpotify:
             return int(max(0.0, min(s, pista.duracion - 1.0)) * 1000)
         return posicion
 
-    def _reproducir(self, n: int, estacion: Estacion, uris: list[str], posicion_ms: Callable[[], int]) -> None:
+    def _reproducir(self, n: int, estacion: Estacion, uris: list[str], posicion_ms: Callable[[], int],
+                    local: bool = False) -> None:
+        """La orden a Spotify. Con `local` (una sintonía: alguien espera que suene), el primer tema sale antes por
+        Soloist (~0,3 s) y la lista completa por la Web API, que hay noches que tarda segundos."""
         with self._orden_lock:
             if n != self._sintonia:
                 return                            # ya se pidió otra cosa: esta orden no sale
@@ -153,10 +159,15 @@ class ReproductorSpotify:
                 # se apagan en milisegundos (por la Web API eran ~1,2 s en cada sintonía)
                 for orden in ("set_shuffle", "set_repeat_context", "set_repeat_track"):
                     self._soloist.comando(orden, enabled=False)
+                if local:
+                    self._tocar_local(n, uris[0], posicion_ms)
+                inicio = self._reloj()
                 self._control.reproducir(uris, posicion_ms)
             except ErrorSpotify as e:
                 self._fallar(n, estacion, str(e))
                 return
+            if local:
+                self._corregir_posicion(n, uris[0], posicion_ms, self._reloj() - inicio)
             with self._lock:
                 vieja, sin_emisora = n != self._sintonia, self._estacion is None
             if vieja and sin_emisora and not self._perdido:
@@ -165,6 +176,31 @@ class ReproductorSpotify:
                     self._soloist.comando("pause")
                 except ErrorSpotify:
                     pass
+
+    def _tocar_local(self, n: int, uri: str, posicion_ms: Callable[[], int]) -> None:
+        """El primer tema por Soloist: el WebSocket solo acepta un tema y sin posición, así que la posición sale con
+        un seek cuando llega su track_changed (antes, Soloist lo ignora). Si falla, queda la Web API sola."""
+        with self._lock:
+            self._seek_pendiente = (n, uri, posicion_ms)
+        try:
+            self._soloist.comando("play", uri=uri)
+        except ErrorSpotify as e:
+            _log.info("Soloist no tomó el play local (%s): la sintonía sigue por la Web API", e)
+            with self._lock:
+                self._seek_pendiente = None
+
+    def _corregir_posicion(self, n: int, uri: str, posicion_ms: Callable[[], int], demora: float) -> None:
+        """La Web API volvió: si tardó, su play recargó el tema (que ya sonaba) en la posición de cuando se mandó;
+        un seek local lo devuelve a la de ahora."""
+        with self._lock:
+            vigente = n == self._sintonia and (self.pista_actual is None or self.pista_actual.clave == uri)
+            if not vigente or demora <= self.CORREGIR_SEGUNDOS:
+                return
+            self._seek_pendiente = None
+        try:
+            self._soloist.comando("seek", position_ms=posicion_ms())
+        except ErrorSpotify:
+            pass
 
     def _resintonizar(self) -> None:
         """Vuelve a mandar la agenda desde ahora, en un borde de tema (sin estática ni `al_sonar`): corrige el
@@ -247,6 +283,13 @@ class ReproductorSpotify:
                     return        # lo que sonaba antes en la cuenta o un evento de la sintonía anterior
                 if pista.clave == self._esperado:
                     self._visto_esperado = True
+                pendiente = self._seek_pendiente
+                if pendiente is not None and pendiente[0] == self._sintonia and pendiente[1] == pista.clave:
+                    self._seek_pendiente = None
+                    try:
+                        self._soloist.comando("seek", position_ms=pendiente[2]())   # el tema local ya cargó
+                    except ErrorSpotify:
+                        pass
                 if (not self._primero_pendiente and self.pista_actual is not None
                         and pista.clave == self.pista_actual.clave
                         and self._reloj() - self._cambio_en < self.AVISO_REPETIDO_SEGUNDOS):

@@ -423,6 +423,9 @@ usar una de esas, copiala a una playlist propia.
 - Al sintonizar una emisora de Spotify suena un segundo de estática hasta que arranca la música. Los temas siguen la
   misma agenda que una emisora local (orden mezclado, se entra con el tema empezado) y Spotify los encadena sin cortes.
   El DJ habla igual, con la música bajada.
+- El cambio de emisora no espera a Spotify: el primer tema sale directo por Soloist (~0,3 s) y la lista de los que
+  siguen viaja en paralelo por la Web API. Si Spotify tarda (hay noches de 3–10 s), cuando llega la lista puede oírse
+  un microcorte de una décima.
 - A veces Soloist no logra cargar un tema (le pasa a algunos, de a ratos, aunque en la app de Spotify suenen) y pasa
   al siguiente en menos de un segundo; a veces toca otra versión del tema (otra edición del disco). La radio lo
   acepta: si cambia de tema a menos de 2 s del anterior, la agenda sigue desde lo que suena (en el log: «Soloist

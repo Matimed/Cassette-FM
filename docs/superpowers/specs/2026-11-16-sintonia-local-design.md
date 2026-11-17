@@ -34,8 +34,9 @@ desde los atajos y desde el dial por igual (medido: el pedido a la radio tarda 2
    siempre por la Web API con la lista.
 2. **Seek al cargar:** cuando llega `track_changed` del tema esperado con el seek pendiente de esa sintonía, se manda
    `seek` con la posición calculada en ese momento (`_posicion_al_play`), y el pendiente se borra.
-3. **Corrección después de la Web API:** cuando vuelve su `play`, si la sintonía sigue siendo la misma y (tardó más de
-   **0,5 s** o el seek pendiente no salió), un `seek` local a la posición de ese momento. Así lo atrasado del pedido
+3. **Corrección después de la Web API:** cuando vuelve su `play`, si la sintonía sigue siendo la misma y tardó más
+   de **0,5 s**, un `seek` local a la posición de ese momento (si volvió antes, el tema local quizá todavía no cargó y
+   un seek se ignoraría: para eso está el del `track_changed`). Así lo atrasado del pedido
    no se oye como un retroceso. *(Umbral: decisión propia.)*
 4. **Si el `play` local falla** (Soloist rechaza o se cortó), se sigue solo con la Web API, como hoy.
 5. **Las re-sintonías** (`_resintonizar`, en un borde de tema, para corregir el desfase o renovar la lista) siguen
