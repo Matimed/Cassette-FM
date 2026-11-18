@@ -35,7 +35,7 @@ def comando_gst(fuente: str, dispositivo: str = "radio_virtual.monitor", kbps: i
 def lanzar_gst(comando: list[str]) -> subprocess.Popen:
     try:
         return subprocess.Popen(comando, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE,
-                                stderr=subprocess.DEVNULL)
+                                stderr=subprocess.PIPE)
     except OSError as e:
         raise CodificadorNoDisponible(f"no se pudo lanzar {comando[0]} (paquete gstreamer1.0-tools): {e}")
 
@@ -53,7 +53,8 @@ def _cerrar_cola(cola: queue.Queue) -> None:
 class Difusor:
     def __init__(self, fuente_actual: Callable[[], str], lanzar: Callable[[list[str]], subprocess.Popen] = lanzar_gst,
                  max_oyentes: int = 4, gracia_segundos: float = 5.0, cola_max: int = 64,
-                 estabilidad_segundos: float = 2.0, reloj: Callable[[], float] = time.monotonic):
+                 estabilidad_segundos: float = 2.0, reloj: Callable[[], float] = time.monotonic,
+                 arranque_segundos: float = 1.0):
         self._fuente_actual = fuente_actual
         self._lanzar = lanzar
         self._max = max_oyentes
@@ -61,6 +62,9 @@ class Difusor:
         self._cola_max = cola_max
         self._estabilidad = estabilidad_segundos
         self._reloj = reloj
+        self._arranque = arranque_segundos
+        self._listo = threading.Event()               # el codificador dio su primer dato o murió
+        self._fallo: tuple | None = None             # (proceso, motivo) si murió antes de dar nada
         self._lock = threading.RLock()
         self._oyentes: list[queue.Queue] = []
         self._proceso = None
@@ -77,6 +81,7 @@ class Difusor:
                 raise SinCapacidad(f"ya hay {self._max} oyentes")
             if self._proceso is None:
                 self._arrancar()
+                self._esperar_arranque()
             cola = queue.Queue(maxsize=self._cola_max)
             self._oyentes.append(cola)
             self._sin_oyentes_desde = None
@@ -125,7 +130,18 @@ class Difusor:
         fuente = self._fuente_actual()
         proceso = self._lanzar(comando_gst(fuente))
         self._proceso, self._fuente_en_uso, self._candidata = proceso, fuente, None
-        threading.Thread(target=self._leer, args=(proceso,), daemon=True, name="lan-codificador").start()
+        self._listo, self._fallo = threading.Event(), None
+        threading.Thread(target=self._leer, args=(proceso, self._listo), daemon=True, name="lan-codificador").start()
+
+    def _esperar_arranque(self) -> None:
+        """Un codificador que muere al arrancar (no hay bus, falta un plugin) se avisa con su motivo en vez de
+        entregar un stream vacío; uno lento pero vivo no es un error."""
+        if self._arranque > 0:
+            self._listo.wait(self._arranque)
+        if self._fallo is not None and self._fallo[0] is self._proceso:
+            motivo = self._fallo[1]
+            self._detener()
+            raise CodificadorNoDisponible(motivo)
 
     def _detener(self) -> None:
         proceso, self._proceso, self._fuente_en_uso = self._proceso, None, None
@@ -146,8 +162,20 @@ class Difusor:
         self._oyentes = []
         self._sin_oyentes_desde = self._reloj()
 
-    def _leer(self, proceso) -> None:
+    @staticmethod
+    def _motivo_de_muerte(proceso) -> str:
+        try:
+            texto = proceso.stderr.read(2000).decode("utf-8", "replace")
+            lineas = [l.strip() for l in texto.splitlines() if l.strip()]
+            if lineas:
+                return f"el codificador terminó al arrancar: {lineas[-1][:200]}"
+        except (AttributeError, OSError, ValueError):
+            pass
+        return "el codificador terminó al arrancar (¿está el bus radio_virtual?)"
+
+    def _leer(self, proceso, listo: threading.Event) -> None:
         leer = getattr(proceso.stdout, "read1", proceso.stdout.read)
+        con_datos = False
         while True:
             try:
                 datos = leer(_BLOQUE)
@@ -155,7 +183,13 @@ class Difusor:
                 datos = b""
             if not datos:
                 break
+            if not con_datos:
+                con_datos = True
+                listo.set()
             self._repartir(proceso, datos)
+        if not con_datos:
+            self._fallo = (proceso, self._motivo_de_muerte(proceso))
+            listo.set()
         with self._lock:
             if self._proceso is proceso:        # murió solo (no lo paramos nosotros): se corta a los oyentes
                 _log.warning("el codificador del stream de la LAN terminó")

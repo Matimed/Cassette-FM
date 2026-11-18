@@ -1,3 +1,4 @@
+import io
 import os
 import queue
 import threading
@@ -12,8 +13,9 @@ from cassette_fm.lan_stream import (FUENTE_ESTATICA, FUENTE_MONITOR, Codificador
 class ProcesoFalso:
     """Hace de gst-launch: lo que se `emitir` sale por stdout; terminarlo (o `morir`) cierra el pipe."""
 
-    def __init__(self, comando):
+    def __init__(self, comando, error=b""):
         self.comando = comando
+        self.stderr = io.BytesIO(error)
         lectura, self._escritura = os.pipe()
         self.stdout = os.fdopen(lectura, "rb", buffering=0)
         self.terminado = False
@@ -48,6 +50,7 @@ class Banco:
     def difusor(self, **kw):
         kw.setdefault("gracia_segundos", 5.0)
         kw.setdefault("estabilidad_segundos", 2.0)
+        kw.setdefault("arranque_segundos", 0.0)
         return Difusor(lambda: self.fuente, lanzar=self.lanzar, reloj=lambda: self.ahora, **kw)
 
 
@@ -203,3 +206,27 @@ def test_lanzar_gst_sin_gstreamer_levanta_CodificadorNoDisponible(monkeypatch):
     monkeypatch.setenv("PATH", "/nonexistent")
     with pytest.raises(CodificadorNoDisponible):
         lanzar_gst(["gst-launch-1.0", "-q"])
+
+
+def test_si_el_codificador_muere_al_arrancar_el_primer_oyente_recibe_el_motivo(banco):
+    def lanzar(comando):
+        p = ProcesoFalso(comando, error=b"ERROR: no existe el dispositivo radio_virtual.monitor\n")
+        p.morir()
+        banco.procesos.append(p)
+        return p
+
+    d = Difusor(lambda: banco.fuente, lanzar=lanzar, arranque_segundos=2.0)
+    inicio = time.monotonic()
+    with pytest.raises(CodificadorNoDisponible, match="radio_virtual.monitor"):
+        d.suscribir()
+    assert time.monotonic() - inicio < 1.5          # no espera todo el plazo: se entera cuando el pipe se cierra
+    assert d._oyentes == [] and d._proceso is None
+    d.cerrar()
+
+
+def test_un_arranque_lento_pero_vivo_no_es_un_error(banco):
+    d = banco.difusor(arranque_segundos=0.2)
+    q = d.suscribir()                                  # no emite nada en 0,2 s pero el proceso sigue vivo
+    banco.procesos[0].emitir(b"tarde")
+    assert q.get(timeout=2) == b"tarde"
+    d.cerrar()

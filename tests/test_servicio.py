@@ -603,6 +603,7 @@ class DifusorDeServicioFalso:
     def suscribir(self): raise AssertionError("no se usa")
     def desuscribir(self, cola): pass
     def cerrar(self): self.cerrado = True
+    def cortar_oyentes(self): self.cortados = getattr(self, "cortados", 0) + 1
 
 
 class RadioDeLan:
@@ -704,3 +705,40 @@ def test_el_bind_que_falla_reintenta_en_vez_de_caerse(tmp_path):
         assert esperar(lambda: _intentar(lambda: _http(puerto)) == 401)
     finally:
         cerrar()
+
+
+def test_regenerar_la_clave_rige_sin_reiniciar_y_corta_a_los_oyentes(tmp_path):
+    from cassette_fm import lan_acceso
+    rutas, puerto, difusor = _rutas_lan(tmp_path), puerto_libre(), DifusorDeServicioFalso()
+    cerrar = servicio.iniciar_lan(_lan(puerto), rutas, RadioDeLan(), object(), crear_difusor=lambda *a, **k: difusor,
+                                  intervalo_revision=0.05)
+    try:
+        vieja = rutas.lan_token.read_text().strip()
+        assert esperar(lambda: _intentar(lambda: _http(puerto, token=vieja)) == 200)
+        nueva = lan_acceso.regenerar_token(rutas.lan_token)
+        assert esperar(lambda: _intentar(lambda: _http(puerto, token=nueva)) == 200)
+        assert _http(puerto, token=vieja) == 401
+        assert esperar(lambda: getattr(difusor, "cortados", 0) >= 1)
+    finally:
+        cerrar()
+
+
+def test_si_iniciar_lan_falla_el_servicio_local_sigue_andando(tmp_path, dir_corto, crear_mp3, monkeypatch):
+    def explota(*a, **k):
+        raise PermissionError("no se puede escribir lan.token")
+
+    monkeypatch.setattr(servicio, "iniciar_lan", explota)
+    musica = tmp_path / "musica"
+    crear_mp3(musica / "A" / "a.mp3", 30, titulo="Tema A")
+    rutas = Rutas(config=tmp_path / "config.toml", estado=tmp_path / "st" / "estado.json",
+                  cache=tmp_path / "cache" / "d.json", runtime=dir_corto)
+    puerto, parar = puerto_libre(), threading.Event()
+    hilo = threading.Thread(target=servir, kwargs=dict(
+        config=Config(raiz_musica=musica, puerto=puerto, avisos=False), rutas=rutas, parar=parar,
+        extra_args_mpv=["--ao=null"]), daemon=True)
+    hilo.start()
+    try:
+        assert esperar_servicio(puerto)["estaciones"] == ["A"]
+    finally:
+        parar.set()
+        hilo.join(3)

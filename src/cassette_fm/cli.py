@@ -239,7 +239,7 @@ def _lan(args, cfg, rutas) -> int:
     token = (lan_acceso.regenerar_token(rutas.lan_token) if args.accion == "regenerar"
              else lan_acceso.leer_o_crear_token(rutas.lan_token))
     if args.accion == "regenerar":
-        print("Clave nueva (los oyentes conectados se cortan al reiniciar el servicio).")
+        print("Clave nueva: rige enseguida y corta a los oyentes conectados (la vieja ya no sirve).")
     elif not cfg.lan.activo:
         print("La radio por la red está apagada: poné `activo = true` en la sección [lan] de config.toml y "
               "reiniciá el servicio.")

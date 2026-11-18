@@ -37,6 +37,7 @@ class ServidorFalso:
         self.con_logo = ["Pop Hits F.M.", "A"]
         self.version = "v1"
         self.stream_ok = True
+        self.motivo = None
         self.token = TOKEN
         servidor = self
 
@@ -73,9 +74,11 @@ class ServidorFalso:
                 elif self.path == "/stream":
                     servidor.pedidos_stream.append(self.headers.get("Authorization"))
                     if not servidor.stream_ok:
+                        cuerpo = json.dumps({"error": servidor.motivo}).encode() if servidor.motivo else b""
                         self.send_response(503)
-                        self.send_header("Content-Length", "0")
+                        self.send_header("Content-Length", str(len(cuerpo)))
                         self.end_headers()
+                        self.wfile.write(cuerpo)
                         return
                     self.send_response(200)
                     self.send_header("Content-Type", "audio/x-wav")
@@ -311,3 +314,51 @@ def test_icons_tolera_nombres_con_caracteres_raros_y_no_escribe_fuera_de_la_cach
     mapa = json.loads(iconos(entorno, capsys)[1])
     cache = Path(entorno["CASSETTE_LAN_CACHE"]).resolve()
     assert len(mapa) == 2 and all(Path(r).resolve().parent == cache for r in mapa.values())
+
+
+def test_status_no_dice_escuchando_si_el_stream_es_rechazado_y_cuenta_el_motivo(entorno, servidor, capsys):
+    servidor.stream_ok, servidor.motivo = False, "ya hay 4 oyentes"
+    lan_receiver.main(["on"], entorno)
+    assert esperar(lambda: len(servidor.pedidos_stream) >= 1)
+    assert esperar(lambda: "ya hay 4 oyentes" in (estado(entorno, capsys)["error"] or ""))
+    assert estado(entorno, capsys)["escuchando"] is False
+
+
+def test_status_con_stream_rechazado_sin_motivo_dice_que_el_servidor_lo_rechazo(entorno, servidor, capsys):
+    servidor.stream_ok = False
+    lan_receiver.main(["on"], entorno)
+    assert esperar(lambda: (estado(entorno, capsys)["error"] or "").startswith("stream"))
+    assert estado(entorno, capsys)["escuchando"] is False
+
+
+def test_on_con_un_mpv_colgado_lo_corta_y_deja_uno_solo(entorno):
+    import subprocess
+    import sys
+    runtime = Path(entorno["CASSETTE_LAN_RUNTIME"])
+    runtime.mkdir(parents=True, exist_ok=True)
+    socket_ipc = runtime / "mpv.sock"
+    colgado = subprocess.Popen([sys.executable, "-c",
+                                "import socket,sys,time;s=socket.socket(socket.AF_UNIX);s.bind(sys.argv[1]);s.listen();"
+                                "time.sleep(600)", str(socket_ipc)])
+    try:
+        assert esperar(lambda: socket_ipc.exists())
+        (runtime / "pid").write_text(str(colgado.pid))
+        assert lan_receiver.main(["on"], entorno) == 0
+        assert colgado.wait(timeout=5) is not None            # el viejo ya no existe
+        assert len(procesos_mpv(entorno)) == 1
+    finally:
+        colgado.kill()
+        colgado.wait()
+
+
+def test_on_con_otra_direccion_vuelve_a_cargar_el_stream_del_servidor_nuevo(entorno, servidor):
+    otro = ServidorFalso()
+    try:
+        assert lan_receiver.main(["on"], entorno) == 0
+        assert esperar(lambda: servidor.pedidos_stream)
+        entorno2 = dict(entorno, CASSETTE_LAN_URL=otro.url)
+        assert lan_receiver.main(["on"], entorno2) == 0
+        assert esperar(lambda: otro.pedidos_stream)
+        assert len(procesos_mpv(entorno)) == 1
+    finally:
+        otro.cerrar()

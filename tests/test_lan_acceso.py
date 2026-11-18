@@ -55,3 +55,24 @@ def test_direccion_para_mostrar_prefiere_tailscale_y_cae_a_la_ruta_por_defecto()
     assert direccion_para_mostrar("auto", lambda: None, lambda: "192.168.0.157") == "192.168.0.157"
     assert direccion_para_mostrar("auto", lambda: None, lambda: None) == "127.0.0.1"
     assert direccion_para_mostrar("10.0.0.9", lambda: "100.1.1.1", lambda: "1.2.3.4") == "10.0.0.9"
+
+
+def test_token_vivo_relee_el_archivo_cuando_cambia_y_avisa(tmp_path):
+    from cassette_fm.lan_acceso import TokenVivo
+    ruta, avisos = tmp_path / "lan.token", []
+    primero = leer_o_crear_token(ruta)
+    vivo = TokenVivo(ruta, al_cambiar=lambda: avisos.append(1))
+    assert vivo() == primero and vivo() == primero and avisos == []      # la primera lectura no es un cambio
+    nuevo = regenerar_token(ruta)
+    assert vivo() == nuevo and avisos == [1]
+    assert vivo() == nuevo and avisos == [1]
+
+
+def test_token_vivo_si_el_archivo_desaparece_conserva_el_ultimo(tmp_path):
+    from cassette_fm.lan_acceso import TokenVivo
+    ruta = tmp_path / "lan.token"
+    token = leer_o_crear_token(ruta)
+    vivo = TokenVivo(ruta)
+    assert vivo() == token
+    ruta.unlink()
+    assert vivo() == token

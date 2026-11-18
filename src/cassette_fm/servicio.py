@@ -77,9 +77,11 @@ def iniciar_lan(config: Config, rutas: Rutas, radio, router, crear_difusor=Difus
     if router is None:
         _log.error("[lan] necesita el bus de audio: el servidor de la red no se abre (poné `bus_audio = true`)")
         return None
-    token = lan_acceso.leer_o_crear_token(rutas.lan_token)
+    lan_acceso.leer_o_crear_token(rutas.lan_token)          # crea el archivo si falta
     difusor = crear_difusor(lambda: FUENTE_MONITOR if radio.encendida else FUENTE_ESTATICA,
                             max_oyentes=lan.max_oyentes)
+    token = lan_acceso.TokenVivo(rutas.lan_token, al_cambiar=difusor.cortar_oyentes)
+    token()
     parar = threading.Event()
     actual: list = []
     direccion = lambda: lan_acceso.direccion_de_escucha(
@@ -105,6 +107,7 @@ def iniciar_lan(config: Config, rutas: Rutas, radio, router, crear_difusor=Difus
     def revisar():
         while not parar.wait(intervalo_revision):
             try:
+                token()                       # una clave regenerada corta a los oyentes en un segundo
                 difusor.revisar_fuente()
             except Exception:
                 _log.exception("error al revisar el stream de la red")
@@ -191,7 +194,11 @@ def servir(config: Config, rutas: Rutas, avisar: Callable[[str, str], None] | No
     if planificador is not None:
         planificador.iniciar()
         _log.info("planificador del DJ activo (servicio en %s)", config.dj.url)
-    cerrar_lan = iniciar_lan(config, rutas, radio, router)
+    try:
+        cerrar_lan = iniciar_lan(config, rutas, radio, router)
+    except Exception:
+        _log.exception("la radio por la red no arrancó; la radio local sigue andando")
+        cerrar_lan = None
     servidor = crear_servidor(radio, "127.0.0.1", config.puerto, emisoras=rutas.emisoras)
     hilo = threading.Thread(target=lambda: servidor.serve_forever(poll_interval=0.05), daemon=True)
     hilo.start()

@@ -6,6 +6,7 @@ import secrets
 import shutil
 import socket
 import subprocess
+import threading
 from collections.abc import Callable
 from pathlib import Path
 
@@ -35,6 +36,29 @@ def regenerar_token(ruta: Path) -> str:
     token = secrets.token_urlsafe(32)
     _escribir(Path(ruta), token)
     return token
+
+
+class TokenVivo:
+    """La clave de oyente siempre al día: se vuelve a leer del archivo cuando cambia (`cassette lan regenerar`), así
+    la vieja deja de valer sin reiniciar el servicio. `al_cambiar` corre cuando cambia (no en la primera lectura)."""
+
+    def __init__(self, ruta: Path, al_cambiar: Callable[[], None] | None = None):
+        self._ruta = Path(ruta)
+        self._al_cambiar = al_cambiar
+        self._lock = threading.Lock()
+        self._token: str | None = None
+
+    def __call__(self) -> str:
+        with self._lock:
+            try:
+                nuevo = self._ruta.read_text().strip()     # 44 bytes: se lee siempre (el mtime puede no distinguir dos cambios)
+            except OSError:
+                return self._token or ""                   # si no se puede leer, rige la última clave conocida
+            if nuevo and nuevo != self._token:
+                previo, self._token = self._token, nuevo
+                if previo is not None and self._al_cambiar is not None:
+                    self._al_cambiar()
+            return self._token or ""
 
 
 def ip_tailscale(ejecutar: Callable = subprocess.run) -> str | None:

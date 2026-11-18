@@ -235,3 +235,18 @@ def test_icon_jpeg_y_otras_extensiones(servidor, tmp_path):
                                   "/icon/M%C3%A1s%20Gasolina%20F.M.", "/icon/", "/icon/Pop%20Hits%20F.M./x"])
 def test_icon_sirve_solo_los_logos_registrados_y_nunca_una_ruta_del_cliente(servidor, ruta):
     assert pedir(servidor, "GET", ruta)[0] == 404
+
+
+def test_la_clave_regenerada_rige_sin_reiniciar_y_la_vieja_deja_de_valer(servidor):
+    actual = {"token": TOKEN}
+    srv = crear_servidor_lan(servidor.radio, servidor.difusor, lambda: actual["token"], "127.0.0.1", 0)
+    threading.Thread(target=lambda: srv.serve_forever(poll_interval=0.05), daemon=True).start()
+    srv.puerto = srv.server_address[1]
+    try:
+        assert pedir(srv, "GET", "/status")[0] == 200
+        actual["token"] = "clave-nueva-456"
+        assert pedir(srv, "GET", "/status", token=TOKEN)[0] == 401
+        assert pedir(srv, "GET", "/status", token="clave-nueva-456")[0] == 200
+    finally:
+        srv.shutdown()
+        srv.server_close()

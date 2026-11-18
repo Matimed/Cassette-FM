@@ -54,8 +54,9 @@ def estado_publico(estado: dict, iconos: dict[str, str] | None = None) -> dict:
     return publico
 
 
-def crear_servidor_lan(radio, difusor, token: str, host: str, puerto: int) -> ThreadingHTTPServer:
-    esperado = f"Bearer {token}".encode()
+def crear_servidor_lan(radio, difusor, token, host: str, puerto: int) -> ThreadingHTTPServer:
+    """`token`: la clave (texto) o una función que la devuelve (así `cassette lan regenerar` rige sin reiniciar)."""
+    leer_token = token if callable(token) else (lambda: token)
 
     class Manejador(BaseHTTPRequestHandler):
         protocol_version = "HTTP/1.0"        # el stream termina al cerrar la conexión
@@ -64,8 +65,9 @@ def crear_servidor_lan(radio, difusor, token: str, host: str, puerto: int) -> Th
             _log.debug("lan %s", formato % args)
 
         def _autorizado(self) -> bool:
+            clave = leer_token()
             recibido = (self.headers.get("Authorization") or "").encode("utf-8", "replace")
-            return hmac.compare_digest(recibido, esperado)
+            return bool(clave) and hmac.compare_digest(recibido, f"Bearer {clave}".encode())
 
         def _responder(self, codigo: int, cuerpo: dict | None = None, extra: dict | None = None) -> None:
             datos = json.dumps(cuerpo if cuerpo is not None else {}, ensure_ascii=False).encode("utf-8")

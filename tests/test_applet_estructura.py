@@ -216,3 +216,13 @@ def test_en_modo_remoto_los_logos_se_bajan_con_el_receptor_cuando_cambia_la_list
     cuerpo = js[js.index("    _actualizarIconos("):]
     cuerpo = cuerpo[:cuerpo.index("\n    }\n")]
     assert "_firmaIconos" in cuerpo and "_iconosReintento" in cuerpo    # solo si cambió, y sin martillar si falla
+
+
+def test_al_cambiar_o_apagar_el_modo_remoto_se_corta_la_escucha_y_al_quitar_el_applet_tambien():
+    js = _js()
+    cambio = js[js.index("    _alCambiarRemoto() {"):]
+    cambio = cambio[:cambio.index("\n    }\n")]
+    assert '"off"' in cambio and "_receptor.escuchando" in cambio
+    quitado = js[js.index("    on_applet_removed_from_panel() {"):]
+    quitado = quitado[:quitado.index("\n    }\n")]
+    assert "this.is_remote" in quitado and '"off"' in quitado

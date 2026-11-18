@@ -83,6 +83,7 @@ def _cargar(socket_ipc: Path, url: str, token: str) -> None:
     """Le pasa la clave y el stream a mpv por IPC (así la clave no queda en su línea de comandos)."""
     ipc(socket_ipc, ["set_property", "http-header-fields", [f"Authorization: Bearer {token}"]])
     ipc(socket_ipc, ["loadfile", f"{url}/stream", "replace"])
+    socket_ipc.with_name("url").write_text(url)         # de dónde se está escuchando (la clave nunca se guarda)
 
 
 def _probar(url: str, token: str) -> str:
@@ -93,6 +94,24 @@ def _probar(url: str, token: str) -> str:
             return "ok"
     except urllib.error.HTTPError as e:
         return "clave rechazada" if e.code in (401, 403) else "sin conexión"
+    except (OSError, ValueError):
+        return "sin conexión"
+
+
+def _probar_stream(url: str, token: str) -> str | None:
+    """None si el servidor acepta el stream; si no, el motivo (el que dé el servidor, si lo da)."""
+    pedido = urllib.request.Request(f"{url}/stream", headers={"Authorization": f"Bearer {token}"})
+    try:
+        with urllib.request.urlopen(pedido, timeout=3):
+            return None
+    except urllib.error.HTTPError as e:
+        if e.code in (401, 403):
+            return "clave rechazada"
+        try:
+            motivo = str(json.loads(e.read(2000)).get("error", "")).strip()[:150]
+        except (OSError, ValueError, AttributeError):
+            motivo = ""
+        return f"stream: {motivo}" if motivo else f"stream rechazado por el servidor ({e.code})"
     except (OSError, ValueError):
         return "sin conexión"
 
@@ -133,9 +152,14 @@ def _on(env: Mapping[str, str]) -> int:
     socket_ipc = runtime / "mpv.sock"
     with _Candado(runtime):
         if _vivo(socket_ipc):
-            if _ocioso(socket_ipc):
+            try:
+                cargada = (runtime / "url").read_text().strip()
+            except OSError:
+                cargada = None
+            if _ocioso(socket_ipc) or cargada != url:      # otra dirección: se escucha la nueva
                 _cargar(socket_ipc, url, token)
             return 0
+        _matar_pid(runtime, socket_ipc)                     # un mpv que no contesta no se deja huérfano
         socket_ipc.unlink(missing_ok=True)
         extra = shlex.split(env.get("CASSETTE_LAN_MPV_ARGS", ""))
         try:
@@ -164,6 +188,24 @@ def _es_nuestro_mpv(pid: int, socket_ipc: Path) -> bool:
         return False
 
 
+def _matar_pid(runtime: Path, socket_ipc: Path) -> None:
+    """Si quedó un mpv nuestro que no contesta (según el pid guardado y su socket), se lo corta."""
+    try:
+        pid = int((runtime / "pid").read_text())
+    except (OSError, ValueError):
+        return
+    if not _es_nuestro_mpv(pid, socket_ipc):
+        return
+    for senal in (signal.SIGTERM, signal.SIGKILL):
+        try:
+            os.kill(pid, senal)
+        except OSError:
+            return
+        time.sleep(0.3)
+        if not _es_nuestro_mpv(pid, socket_ipc):
+            return
+
+
 def _off(env: Mapping[str, str]) -> int:
     runtime = _runtime(env)
     socket_ipc = runtime / "mpv.sock"
@@ -175,21 +217,10 @@ def _off(env: Mapping[str, str]) -> int:
         fin = time.monotonic() + 2.0
         while _vivo(socket_ipc) and time.monotonic() < fin:
             time.sleep(0.05)
-        try:
-            pid = int((runtime / "pid").read_text())
-        except (OSError, ValueError):
-            pid = None
-        if pid is not None and _es_nuestro_mpv(pid, socket_ipc):       # colgado: se lo corta
-            for senal in (signal.SIGTERM, signal.SIGKILL):
-                try:
-                    os.kill(pid, senal)
-                except OSError:
-                    break
-                time.sleep(0.3)
-                if not _es_nuestro_mpv(pid, socket_ipc):
-                    break
+        _matar_pid(runtime, socket_ipc)
         socket_ipc.unlink(missing_ok=True)
         (runtime / "pid").unlink(missing_ok=True)
+        (runtime / "url").unlink(missing_ok=True)
     return 0
 
 
@@ -223,7 +254,9 @@ def _status(env: Mapping[str, str], como_json: bool) -> int:
                 error = "sin conexión"
             else:
                 resultado = _probar(*credenciales)
-                if resultado == "ok":         # el servidor volvió: se vuelve a cargar el stream
+                if resultado == "ok":         # el servidor responde: ¿acepta el stream? (límite de oyentes, codificador)
+                    resultado = _probar_stream(*credenciales) or "ok"
+                if resultado == "ok":
                     try:
                         _cargar(socket_ipc, *credenciales)
                         escuchando = True

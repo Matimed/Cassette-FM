@@ -100,6 +100,7 @@ class CassetteApplet extends Applet.TextIconApplet {
     }
 
     on_applet_removed_from_panel() {
+        if (this.is_remote) this._correrReceptor(["off"], () => {});     // no queda un mpv sonando sin dueño
         Main.keybindingManager.removeHotKey(this._nombreAtajo);
         if (this._dial) this._dial.cerrar();
         if (this._temporizador) {
@@ -110,12 +111,26 @@ class CassetteApplet extends Applet.TextIconApplet {
     }
 
     _alCambiarRemoto() {
+        const escuchaba = this._receptor.escuchando;
         this._receptorTs = 0;
         this._ultimoStatus = null;
         this._iconosLocales = {};
         this._firmaIconos = null;
         this._iconosReintento = 0;
         this._firmaMenu = null;
+        if (escuchaba) {
+            // el receptor sigue sonando con la configuración vieja (otro servidor, o ya no es modo remoto): se corta y,
+            // si sigue en modo remoto, se vuelve a prender con la nueva
+            this._receptor = Object.assign({}, this._receptor, { escuchando: false });
+            this._correrReceptor(["off"], () => {
+                if (!this.is_remote || !AppletDir.logic.parsearUrlServidor(this.server_url)) return this._sondear();
+                this._correrReceptor(["on"], (r) => {
+                    if (!r.error && r.codigo === 0) this._receptor = Object.assign({}, this._receptor, { escuchando: true });
+                    this._sondear();
+                });
+            });
+            return;
+        }
         this._sondear();
     }
 
