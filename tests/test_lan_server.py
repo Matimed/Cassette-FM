@@ -23,7 +23,10 @@ class RadioFalsa:
     def estado(self):
         return {"encendida": True, "estacion": "Pop Hits F.M.", "pista": "Artista - Tema", "volumen": 70,
                 "monitor_local": True, "estaciones": list(NOMBRES), "fuente": "spotify", "segundo": 12.3,
-                "iconos": {"Pop Hits F.M.": "/home/usuario/logo.png"}}
+                "iconos": self.iconos()}
+
+    def iconos(self):
+        return {"Pop Hits F.M.": str(self.logo), "Más Gasolina F.M.": str(self.sin_logo)}
 
     def estaciones(self):
         return [SimpleNamespace(nombre=n, pistas=()) for n in NOMBRES]
@@ -50,8 +53,11 @@ class DifusorFalso:
 
 
 @pytest.fixture
-def servidor():
+def servidor(tmp_path):
     radio, difusor = RadioFalsa(), DifusorFalso()
+    radio.logo = tmp_path / "logo.png"
+    radio.logo.write_bytes(b"\x89PNG-de-prueba")
+    radio.sin_logo = tmp_path / "no-existe.png"
     srv = crear_servidor_lan(radio, difusor, TOKEN, "127.0.0.1", 0)
     hilo = threading.Thread(target=lambda: srv.serve_forever(poll_interval=0.05), daemon=True)
     hilo.start()
@@ -110,7 +116,7 @@ def test_status_trae_solo_los_campos_publicos(servidor):
     cuerpo = json.loads(datos)
     assert codigo == 200 and r.getheader("Content-Type").startswith("application/json")
     assert set(cuerpo) == {"encendida", "estacion", "pista", "estaciones", "fuente", "segundo", "iconos"}
-    assert cuerpo["iconos"] == {} and cuerpo["estaciones"] == NOMBRES
+    assert list(cuerpo["iconos"]) == ["Pop Hits F.M."] and cuerpo["estaciones"] == NOMBRES
     assert b"volumen" not in datos and b"monitor_local" not in datos and b"/home/usuario" not in datos
 
 
@@ -179,3 +185,53 @@ def test_la_clave_no_aparece_en_los_logs(servidor, caplog):
     pedir(servidor, "GET", "/status", token="otra-clave-secreta")
     pedir(servidor, "POST", "/station/Inexistente")
     assert TOKEN not in caplog.text and "otra-clave-secreta" not in caplog.text
+
+
+def test_status_trae_los_logos_como_urls_versionadas_sin_rutas_locales(servidor):
+    _, _, datos = pedir(servidor, "GET", "/status")
+    iconos = json.loads(datos)["iconos"]
+    assert list(iconos) == ["Pop Hits F.M."]                       # el archivo que no existe no se publica
+    assert iconos["Pop Hits F.M."].startswith("/icon/Pop%20Hits%20F.M.?v=") and len(iconos["Pop Hits F.M."]) > 30
+    assert str(servidor.radio.logo.parent).encode() not in datos
+
+
+def test_la_version_del_logo_cambia_cuando_cambia_el_archivo(servidor):
+    antes = json.loads(pedir(servidor, "GET", "/status")[2])["iconos"]["Pop Hits F.M."]
+    servidor.radio.logo.write_bytes(b"\x89PNG-otro-logo-mas-largo")
+    despues = json.loads(pedir(servidor, "GET", "/status")[2])["iconos"]["Pop Hits F.M."]
+    assert antes != despues
+
+
+def test_icon_content_type_etag_y_cuerpo(servidor):
+    codigo, r, datos = pedir(servidor, "GET", "/icon/Pop%20Hits%20F.M.")
+    assert codigo == 200 and datos == b"\x89PNG-de-prueba"
+    assert r.getheader("Content-Type") == "image/png" and r.getheader("ETag")
+    assert r.getheader("Content-Length") == str(len(datos))
+
+
+def test_icon_conditional_get_devuelve_304(servidor):
+    etag = pedir(servidor, "GET", "/icon/Pop%20Hits%20F.M.")[1].getheader("ETag")
+    conexion = http.client.HTTPConnection("127.0.0.1", servidor.puerto, timeout=5)
+    conexion.request("GET", "/icon/Pop%20Hits%20F.M.", headers={"Authorization": f"Bearer {TOKEN}", "If-None-Match": etag})
+    r = conexion.getresponse()
+    assert r.status == 304 and r.read() == b""
+    conexion.close()
+
+
+def test_icon_jpeg_y_otras_extensiones(servidor, tmp_path):
+    jpg = tmp_path / "foto.JPG"
+    jpg.write_bytes(b"\xff\xd8jpeg")
+    servidor.radio.iconos = lambda: {"Pop Hits F.M.": str(jpg)}
+    assert pedir(servidor, "GET", "/icon/Pop%20Hits%20F.M.")[1].getheader("Content-Type") == "image/jpeg"
+    texto = tmp_path / "secreto.txt"
+    texto.write_text("no es una imagen")
+    servidor.radio.iconos = lambda: {"Pop Hits F.M.": str(texto)}
+    assert pedir(servidor, "GET", "/icon/Pop%20Hits%20F.M.")[0] == 404          # solo se sirven imágenes
+    assert "iconos" in json.loads(pedir(servidor, "GET", "/status")[2]) and \
+        json.loads(pedir(servidor, "GET", "/status")[2])["iconos"] == {}
+
+
+@pytest.mark.parametrize("ruta", ["/icon/..%2F..%2Fetc%2Fpasswd", "/icon/%2Fetc%2Fpasswd", "/icon/Inexistente",
+                                  "/icon/M%C3%A1s%20Gasolina%20F.M.", "/icon/", "/icon/Pop%20Hits%20F.M./x"])
+def test_icon_sirve_solo_los_logos_registrados_y_nunca_una_ruta_del_cliente(servidor, ruta):
+    assert pedir(servidor, "GET", ruta)[0] == 404

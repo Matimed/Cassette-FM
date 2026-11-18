@@ -208,3 +208,11 @@ def test_en_modo_remoto_no_se_ofrece_nueva_emisora():
     menu = menu[:menu.index("\n    }\n")]
     assert "this.is_remote" in menu and "Nueva emisora…" in menu
     assert menu.index("this.is_remote") < menu.index("Nueva emisora…")
+
+
+def test_en_modo_remoto_los_logos_se_bajan_con_el_receptor_cuando_cambia_la_lista_y_no_antes():
+    js = _js()
+    assert '"icons"' in js and "parsearIconos" in js and "_iconosLocales" in js
+    cuerpo = js[js.index("    _actualizarIconos("):]
+    cuerpo = cuerpo[:cuerpo.index("\n    }\n")]
+    assert "_firmaIconos" in cuerpo and "_iconosReintento" in cuerpo    # solo si cambió, y sin martillar si falla

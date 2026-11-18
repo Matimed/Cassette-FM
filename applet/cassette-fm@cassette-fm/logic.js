@@ -287,7 +287,7 @@ function planRemoto(ruta, cuerpo, estado, receptor) {
 
 // El estado que el applet muestra en modo remoto: lo de la radio sale del servidor ({codigo, datos} de /status), el
 // encendido y el volumen del receptor local ({escuchando, volumen, error}); `aviso` dice por qué algo no anda.
-function estadoRemoto(status, receptor, host) {
+function estadoRemoto(status, receptor, host, iconosLocales) {
     const base = { encendida: !!receptor.escuchando, volumen: receptor.volumen, estacion: null, pista: null,
                    estaciones: [], fuente: null, segundo: null, iconos: {} };
     if (!status || status.codigo === 0 || !status.datos) {
@@ -297,10 +297,27 @@ function estadoRemoto(status, receptor, host) {
     if (status.codigo !== 200) return Object.assign(base, { aviso: "la radio en " + host + " respondió " + status.codigo });
     const d = status.datos;
     const estado = Object.assign(base, { estacion: d.estacion, pista: d.pista, estaciones: d.estaciones || [],
-                                         fuente: d.fuente, segundo: d.segundo, iconos: d.iconos || {} });
+                                         fuente: d.fuente, segundo: d.segundo, iconos: {} });
+    // los logos ya bajados a esta PC (lan_receiver.py icons), solo los que el servidor sigue publicando
+    for (const nombre of Object.keys(d.iconos || {})) {
+        if (iconosLocales && iconosLocales[nombre]) estado.iconos[nombre] = iconosLocales[nombre];
+    }
     if (receptor.error) estado.aviso = "audio: " + receptor.error;
     else if (!d.encendida && receptor.escuchando) estado.aviso = "la radio principal está apagada";
     return estado;
+}
+
+// La salida de `lan_receiver.py icons` => {emisora: ruta local}, o null si no se entiende.
+function parsearIconos(texto) {
+    if (typeof texto !== "string") return null;
+    try {
+        const d = JSON.parse(texto);
+        if (!d || typeof d !== "object" || Array.isArray(d)) return null;
+        for (const nombre of Object.keys(d)) if (typeof d[nombre] !== "string") return null;
+        return d;
+    } catch (e) {
+        return null;
+    }
 }
 
 // La salida de `lan_receiver.py status --json` => {escuchando, volumen, error}, o null si no se entiende.
@@ -331,6 +348,6 @@ if (typeof module !== "undefined") {
         parsearVoces, idiomaBase, vocesDelIdioma, etiquetaDeVoz, elegirVoz, elegirIdioma, faltante, argumentosNueva,
         mensajeDeError, argumentosMuestra, botonMuestra, rutaDeMuestra, argumentosExaminar, rutaElegida,
         filaDial, teclaDial, crearCola, barraVolumen, iconoDe, volumenTrasRespuesta,
-        parsearUrlServidor, idEstacion, planRemoto, estadoRemoto, parsearReceptor,
+        parsearUrlServidor, idEstacion, planRemoto, estadoRemoto, parsearReceptor, parsearIconos,
     };
 }

@@ -2,12 +2,15 @@
 
 Es un servidor aparte de la API de dueño (que sigue en loopback): expone solo `/status`, `/station/{id}`, `/stream` e
 `/icon/{id}`, todas con la clave de oyente (`Authorization: Bearer <clave>`)."""
+import hashlib
 import hmac
 import json
 import logging
 import queue
 import urllib.parse
+from collections.abc import Mapping
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from pathlib import Path
 
 from cassette_fm.lan_stream import CodificadorNoDisponible, SinCapacidad
 from cassette_fm.radio import SinEstaciones
@@ -15,6 +18,32 @@ from cassette_fm.radio import SinEstaciones
 _log = logging.getLogger("cassette_fm")
 
 _CAMPOS = ("encendida", "estacion", "pista", "estaciones", "fuente", "segundo")
+_TIPOS_IMAGEN = {".png": "image/png", ".jpg": "image/jpeg", ".jpeg": "image/jpeg", ".webp": "image/webp",
+                 ".gif": "image/gif"}
+_MAX_LOGO_BYTES = 4 * 1024 * 1024
+
+
+def _version_logo(ruta: Path) -> str | None:
+    """Cambia cuando cambia el archivo (tamaño y fecha); None si no es una imagen servible."""
+    try:
+        if ruta.suffix.lower() not in _TIPOS_IMAGEN or not ruta.is_file():
+            return None
+        info = ruta.stat()
+    except OSError:
+        return None
+    if info.st_size > _MAX_LOGO_BYTES:
+        return None
+    return hashlib.sha1(f"{info.st_size}:{info.st_mtime_ns}".encode()).hexdigest()[:12]
+
+
+def iconos_publicos(rutas: Mapping[str, str]) -> dict[str, str]:
+    """{emisora: "/icon/<id>?v=<versión>"} solo de los logos que existen; nunca rutas de esta PC."""
+    publicos = {}
+    for nombre, ruta in rutas.items():
+        version = _version_logo(Path(ruta))
+        if version:
+            publicos[nombre] = f"/icon/{urllib.parse.quote(nombre, safe='')}?v={version}"
+    return publicos
 
 
 def estado_publico(estado: dict, iconos: dict[str, str] | None = None) -> dict:
@@ -82,7 +111,8 @@ def crear_servidor_lan(radio, difusor, token: str, host: str, puerto: int) -> Th
             self._estacion()
 
         def _status(self) -> None:
-            self._responder(200, estado_publico(radio.estado()))
+            estado = radio.estado()
+            self._responder(200, estado_publico(estado, iconos_publicos(estado.get("iconos") or {})))
 
         def _estacion(self) -> None:
             largo = int(self.headers.get("Content-Length") or 0)
@@ -98,10 +128,34 @@ def crear_servidor_lan(radio, difusor, token: str, host: str, puerto: int) -> Th
             except Exception:
                 _log.exception("error al sintonizar %r desde la red", nombre)
                 return self._error(500, "error interno")
-            self._responder(200, estado_publico(radio.estado()))
+            estado = radio.estado()
+            self._responder(200, estado_publico(estado, iconos_publicos(estado.get("iconos") or {})))
 
         def _icono(self) -> None:
-            self._error(404, "esa emisora no tiene logo")
+            # el logo sale del mapa que tiene la propia radio, por nombre: el cliente nunca elige una ruta
+            nombre = urllib.parse.unquote(self._ruta()[len("/icon/"):])
+            ruta = (radio.estado().get("iconos") or {}).get(nombre)
+            version = _version_logo(Path(ruta)) if ruta else None
+            if version is None:
+                return self._error(404, "esa emisora no tiene logo")
+            ruta = Path(ruta)
+            etag = f'"{version}"'
+            if self.headers.get("If-None-Match") == etag:
+                self.send_response(304)
+                self.send_header("ETag", etag)
+                self.send_header("Content-Length", "0")
+                return self.end_headers()
+            try:
+                datos = ruta.read_bytes()
+            except OSError:
+                return self._error(404, "esa emisora no tiene logo")
+            self.send_response(200)
+            self.send_header("Content-Type", _TIPOS_IMAGEN[ruta.suffix.lower()])
+            self.send_header("Content-Length", str(len(datos)))
+            self.send_header("ETag", etag)
+            self.send_header("Cache-Control", "private, max-age=3600")
+            self.end_headers()
+            self.wfile.write(datos)
 
         def _stream(self) -> None:
             try:

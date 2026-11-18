@@ -4,6 +4,7 @@ import os
 import socket
 import threading
 import time
+import urllib.parse
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
@@ -32,6 +33,9 @@ def _wav_cabecera():
 class ServidorFalso:
     def __init__(self):
         self.pedidos_stream = []
+        self.pedidos_icono = []
+        self.con_logo = ["Pop Hits F.M.", "A"]
+        self.version = "v1"
         self.stream_ok = True
         self.token = TOKEN
         servidor = self
@@ -51,8 +55,17 @@ class ServidorFalso:
                     self.send_header("Content-Length", "0")
                     self.end_headers()
                     return
-                if self.path == "/status":
-                    cuerpo = json.dumps({"encendida": True, "estaciones": []}).encode()
+                if self.path.startswith("/icon/"):
+                    servidor.pedidos_icono.append(self.path)
+                    cuerpo = b"\x89PNG" + servidor.version.encode()
+                    self.send_response(200)
+                    self.send_header("Content-Type", "image/png")
+                    self.send_header("Content-Length", str(len(cuerpo)))
+                    self.end_headers()
+                    self.wfile.write(cuerpo)
+                elif self.path == "/status":
+                    iconos = {n: f"/icon/{urllib.parse.quote(n, safe='')}?v={servidor.version}" for n in servidor.con_logo}
+                    cuerpo = json.dumps({"encendida": True, "estaciones": [], "iconos": iconos}).encode()
                     self.send_response(200)
                     self.send_header("Content-Length", str(len(cuerpo)))
                     self.end_headers()
@@ -100,6 +113,7 @@ def servidor():
 def entorno(dir_corto, servidor):
     env = {"PATH": os.environ["PATH"], "HOME": os.environ.get("HOME", "/"), "CASSETTE_LAN_URL": servidor.url,
            "CASSETTE_LAN_TOKEN": TOKEN, "CASSETTE_LAN_RUNTIME": str(dir_corto / "lan"),
+           "CASSETTE_LAN_CACHE": str(dir_corto / "cache"),
            "CASSETTE_LAN_MPV_ARGS": "--ao=null"}
     yield env
     lan_receiver.main(["off"], env)
@@ -241,3 +255,59 @@ def test_sin_variables_de_entorno_falla_con_un_mensaje_claro(entorno, capsys):
     assert lan_receiver.main(["on"], vacio) == 1
     err = capsys.readouterr().err
     assert "CASSETTE_LAN_URL" in err and "CASSETTE_LAN_TOKEN" in err
+
+
+def iconos(env, capsys):
+    capsys.readouterr()
+    codigo = lan_receiver.main(["icons"], env)
+    return codigo, capsys.readouterr().out
+
+
+def test_icons_baja_los_logos_y_devuelve_las_rutas_locales(entorno, servidor, capsys):
+    codigo, salida = iconos(entorno, capsys)
+    mapa = json.loads(salida)
+    assert codigo == 0 and set(mapa) == {"Pop Hits F.M.", "A"}
+    for ruta in mapa.values():
+        assert Path(ruta).is_file() and Path(ruta).read_bytes().startswith(b"\x89PNG") and ruta.endswith(".png")
+    assert len(servidor.pedidos_icono) == 2
+
+
+def test_icons_no_vuelve_a_bajar_los_que_no_cambiaron(entorno, servidor, capsys):
+    iconos(entorno, capsys)
+    codigo, salida = iconos(entorno, capsys)
+    assert codigo == 0 and len(servidor.pedidos_icono) == 2 and len(json.loads(salida)) == 2
+
+
+def test_icons_baja_de_nuevo_solo_los_que_cambiaron_y_borra_la_version_vieja(entorno, servidor, capsys):
+    primero = json.loads(iconos(entorno, capsys)[1])
+    servidor.version = "v2"
+    segundo = json.loads(iconos(entorno, capsys)[1])
+    assert len(servidor.pedidos_icono) == 4 and segundo != primero
+    assert not Path(primero["A"]).exists() and Path(segundo["A"]).is_file()
+
+
+def test_icons_con_el_logo_sacado_del_servidor_lo_quita_del_mapa_y_de_la_cache(entorno, servidor, capsys):
+    primero = json.loads(iconos(entorno, capsys)[1])
+    servidor.con_logo = ["A"]
+    segundo = json.loads(iconos(entorno, capsys)[1])
+    assert set(segundo) == {"A"} and not Path(primero["Pop Hits F.M."]).exists()
+
+
+def test_icons_sin_logos_devuelve_un_mapa_vacio(entorno, servidor, capsys):
+    servidor.con_logo = []
+    assert iconos(entorno, capsys) == (0, "{}\n")
+
+
+def test_icons_con_clave_mala_o_servidor_caido_falla_sin_imprimir_un_mapa(entorno, capsys):
+    entorno["CASSETTE_LAN_TOKEN"] = "mala"
+    codigo, salida = iconos(entorno, capsys)
+    assert codigo == 1 and salida == ""
+    entorno["CASSETTE_LAN_URL"] = "http://127.0.0.1:1"
+    assert iconos(entorno, capsys)[0] == 1
+
+
+def test_icons_tolera_nombres_con_caracteres_raros_y_no_escribe_fuera_de_la_cache(entorno, servidor, capsys):
+    servidor.con_logo = ["../../../etc/x", "¿Qué?"]
+    mapa = json.loads(iconos(entorno, capsys)[1])
+    cache = Path(entorno["CASSETTE_LAN_CACHE"]).resolve()
+    assert len(mapa) == 2 and all(Path(r).resolve().parent == cache for r in mapa.values())

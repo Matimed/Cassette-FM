@@ -363,3 +363,18 @@ test("parsearReceptor: la salida de lan_receiver.py status --json", () => {
   for (const mala of ["", "no es json", "[]", '{"escuchando": "si"}', '{"escuchando": true}', null, undefined])
     assert.equal(L.parsearReceptor(mala), null, String(mala));
 });
+
+test("estadoRemoto: los logos locales reemplazan a las URLs y solo quedan los que el servidor sigue publicando", () => {
+  const conLogos = { codigo: 200, datos: { ...status.datos, iconos: { A: "/icon/A?v=1", B: "/icon/B?v=1" } } };
+  const locales = { A: "/cache/a.png", B: "/cache/b.png", Vieja: "/cache/v.png" };
+  const e = L.estadoRemoto(conLogos, receptor, "h", locales);
+  assert.deepEqual(e.iconos, { A: "/cache/a.png", B: "/cache/b.png" });
+  assert.deepEqual(L.estadoRemoto(conLogos, receptor, "h").iconos, {});
+  assert.deepEqual(L.estadoRemoto({ codigo: 0, datos: null }, receptor, "h", locales).iconos, {});
+});
+
+test("parsearIconos: la salida de lan_receiver.py icons", () => {
+  assert.deepEqual(L.parsearIconos('{"A": "/cache/a.png"}\n'), { A: "/cache/a.png" });
+  assert.deepEqual(L.parsearIconos("{}"), {});
+  for (const mala of ["", "x", "[]", '{"A": 3}', "null", null, undefined]) assert.equal(L.parsearIconos(mala), null, String(mala));
+});

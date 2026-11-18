@@ -4,13 +4,14 @@
 Sin demonio y sin depender de cassette_fm: el proceso que suena es un `mpv` con socket IPC; cada subcomando es un
 programa corto que lo prende, lo apaga, le mueve el volumen o cuenta cómo está.
 
-    lan_receiver.py on | off | volume N|+N|-N | status [--json]
+    lan_receiver.py on | off | volume N|+N|-N | status [--json] | icons
 
 Entorno: CASSETTE_LAN_URL (por ejemplo http://100.104.222.41:8765) y CASSETTE_LAN_TOKEN (la clave de oyente; llega a
 mpv por IPC, nunca por su línea de comandos). Para pruebas: CASSETTE_LAN_RUNTIME (dónde guardar socket y estado) y
-CASSETTE_LAN_MPV_ARGS (argumentos extra para mpv)."""
+CASSETTE_LAN_MPV_ARGS (argumentos extra para mpv) y CASSETTE_LAN_CACHE (dónde guardar los logos)."""
 import argparse
 import fcntl
+import hashlib
 import json
 import os
 import re
@@ -21,6 +22,7 @@ import subprocess
 import sys
 import time
 import urllib.error
+import urllib.parse
 import urllib.request
 from collections.abc import Mapping
 from pathlib import Path
@@ -238,6 +240,68 @@ def _status(env: Mapping[str, str], como_json: bool) -> int:
     return 0
 
 
+_EXTENSIONES = {"image/png": ".png", "image/jpeg": ".jpg", "image/webp": ".webp", "image/gif": ".gif"}
+
+
+def _cache(env: Mapping[str, str]) -> Path:
+    if env.get("CASSETTE_LAN_CACHE"):
+        return Path(env["CASSETTE_LAN_CACHE"])
+    base = env.get("XDG_CACHE_HOME") or str(Path.home() / ".cache")
+    return Path(base) / "cassette-fm" / "lan-iconos"
+
+
+def _pedir(url: str, token: str, ruta: str, timeout: float = 5.0):
+    pedido = urllib.request.Request(url + ruta, headers={"Authorization": f"Bearer {token}"})
+    return urllib.request.urlopen(pedido, timeout=timeout)
+
+
+def _icons(env: Mapping[str, str]) -> int:
+    """Baja a una caché local los logos que publica la radio y devuelve {emisora: ruta local} (JSON)."""
+    credenciales = _credenciales(env)
+    if credenciales is None:
+        return _error("faltan CASSETTE_LAN_URL y CASSETTE_LAN_TOKEN (la dirección y la clave de la radio)")
+    url, token = credenciales
+    try:
+        with _pedir(url, token, "/status") as r:
+            publicados = json.load(r).get("iconos") or {}
+    except (OSError, ValueError, AttributeError) as e:
+        return _error(f"no pude consultar la radio: {type(e).__name__}")
+    cache = _cache(env)
+    cache.mkdir(parents=True, exist_ok=True)
+    mapa, vigentes = {}, set()
+    for nombre, relativa in publicados.items():
+        if not isinstance(nombre, str) or not isinstance(relativa, str) or not relativa.startswith("/icon/"):
+            continue
+        base = hashlib.sha1(nombre.encode()).hexdigest()[:16]          # el nombre real nunca llega al disco
+        version = urllib.parse.parse_qs(urllib.parse.urlsplit(relativa).query).get("v", [""])[0]
+        version = re.sub(r"[^A-Za-z0-9]", "", version)[:32] or "0"
+        vigentes.add(base)
+        existente = next(iter(sorted(cache.glob(f"{base}-{version}.*"))), None)
+        if existente is None:
+            try:
+                with _pedir(url, token, relativa) as r:
+                    extension = _EXTENSIONES.get(r.headers.get_content_type())
+                    datos = r.read(5 * 1024 * 1024)
+            except (OSError, ValueError):
+                print(f"no pude bajar el logo de una emisora", file=sys.stderr)
+                continue
+            if extension is None:
+                continue
+            existente = cache / f"{base}-{version}{extension}"
+            tmp = existente.with_name(existente.name + ".tmp")
+            tmp.write_bytes(datos)
+            os.replace(tmp, existente)
+        for viejo in cache.glob(f"{base}-*"):                           # versiones anteriores del mismo logo
+            if viejo != existente:
+                viejo.unlink(missing_ok=True)
+        mapa[nombre] = str(existente)
+    for archivo in cache.iterdir():                                      # logos que la radio ya no publica
+        if archivo.name.split("-", 1)[0] not in vigentes:
+            archivo.unlink(missing_ok=True)
+    print(json.dumps(mapa, ensure_ascii=False))
+    return 0
+
+
 def main(argv: list[str] | None = None, env: Mapping[str, str] | None = None) -> int:
     env = os.environ if env is None else env
     parser = argparse.ArgumentParser(prog="lan_receiver", description="Receptor de la radio de cassette-fm por la red")
@@ -246,6 +310,7 @@ def main(argv: list[str] | None = None, env: Mapping[str, str] | None = None) ->
     sub.add_parser("off", help="deja de escuchar")
     vol = sub.add_parser("volume", help="volumen local: N, +N o -N")
     vol.add_argument("pedido")
+    sub.add_parser("icons", help="baja los logos de las emisoras y devuelve sus rutas locales (JSON)")
     estado = sub.add_parser("status", help="cómo está")
     estado.add_argument("--json", action="store_true")
     args = parser.parse_args(argv)
@@ -255,6 +320,8 @@ def main(argv: list[str] | None = None, env: Mapping[str, str] | None = None) ->
         return _off(env)
     if args.comando == "volume":
         return _volume(env, args.pedido)
+    if args.comando == "icons":
+        return _icons(env)
     return _status(env, args.json)
 
 

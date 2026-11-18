@@ -25,6 +25,7 @@ const LIMITE_NUEVA_SEGUNDOS = 180;
 const LIMITE_MUESTRA_SEGUNDOS = 60;         // la primera muestra espera que el servicio DJ cargue el modelo
 const LIMITE_SONANDO_SEGUNDOS = 120;
 const LIMITE_RECEPTOR_SEGUNDOS = 10;          // lan_receiver.py (modo remoto): prender, apagar, volumen, estado
+const ICONOS_REINTENTO_MS = 30000;          // si bajar los logos falla, no se reintenta antes
 const RECEPTOR_AL_DIA_MS = 10000;           // cada cuánto se le pregunta cómo está (se entera de que mpv murió)
 const LIMITE_EXAMINAR_SEGUNDOS = 600;       // lo que tarda la persona en elegir la imagen
 
@@ -46,6 +47,9 @@ class CassetteApplet extends Applet.TextIconApplet {
         this._receptor = { escuchando: false, volumen: 70, error: null };
         this._receptorTs = 0;
         this._ultimoStatus = null;
+        this._iconosLocales = {};       // {emisora: ruta local} de los logos que publicó la radio remota
+        this._firmaIconos = null;
+        this._iconosReintento = 0;
         this.settings.bind("is_remote", "is_remote", () => this._alCambiarRemoto());
         this.settings.bind("server_url", "server_url", () => this._alCambiarRemoto());
         this.settings.bind("server_token", "server_token", () => this._alCambiarRemoto());
@@ -108,6 +112,9 @@ class CassetteApplet extends Applet.TextIconApplet {
     _alCambiarRemoto() {
         this._receptorTs = 0;
         this._ultimoStatus = null;
+        this._iconosLocales = {};
+        this._firmaIconos = null;
+        this._iconosReintento = 0;
         this._firmaMenu = null;
         this._sondear();
     }
@@ -225,7 +232,7 @@ class CassetteApplet extends Applet.TextIconApplet {
     // --- modo remoto ---
 
     _estadoRemoto(status, host) {
-        return AppletDir.logic.estadoRemoto(status, this._receptor, host);
+        return AppletDir.logic.estadoRemoto(status, this._receptor, host, this._iconosLocales);
     }
 
     // lan_receiver.py en esta PC (la escucha: prender, apagar, volumen); la dirección y la clave van por el entorno.
@@ -233,6 +240,32 @@ class CassetteApplet extends Applet.TextIconApplet {
         const entorno = { CASSETTE_LAN_URL: (this.server_url || "").trim(), CASSETTE_LAN_TOKEN: (this.server_token || "").trim() };
         return this._correr("python3", [this._dirApplet + "/lan_receiver.py", ...argumentos],
                             LIMITE_RECEPTOR_SEGUNDOS, callback, entorno);
+    }
+
+    // Baja los logos con el receptor solo cuando cambia la lista que publica la radio (y, si falla, no antes de 30 s).
+    _actualizarIconos(publicados) {
+        const firma = JSON.stringify(publicados);
+        if (firma === this._firmaIconos || Date.now() < this._iconosReintento) return;
+        this._firmaIconos = firma;
+        if (firma === "{}") {
+            this._iconosLocales = {};
+            return;
+        }
+        this._correrReceptor(["icons"], (r) => {
+            const locales = r.error || r.codigo !== 0 ? null : AppletDir.logic.parsearIconos(r.stdout);
+            if (locales === null) {
+                this._firmaIconos = null;
+                this._iconosReintento = Date.now() + ICONOS_REINTENTO_MS;
+                return;
+            }
+            this._iconosLocales = locales;
+            if (this._ultimoStatus) this._aplicar(this._estadoRemoto(this._ultimoStatus, this._hostRemoto()));
+        });
+    }
+
+    _hostRemoto() {
+        const servidor = AppletDir.logic.parsearUrlServidor(this.server_url);
+        return servidor ? servidor.host : (this.server_url || "");
     }
 
     // Se entera de cómo está la escucha local (¿murió mpv?, ¿se cortó el stream?) cada tanto, no en cada sondeo.
@@ -253,6 +286,7 @@ class CassetteApplet extends Applet.TextIconApplet {
         const host = servidor ? servidor.host : (this.server_url || "");
         const responder = (status) => {
             this._ultimoStatus = status;
+            if (status.codigo === 200 && status.datos) this._actualizarIconos(status.datos.iconos || {});
             callback({ codigo: 200, datos: this._estadoRemoto(status, host) });
         };
         const ultimo = () => this._ultimoStatus || { codigo: 0, datos: null };
