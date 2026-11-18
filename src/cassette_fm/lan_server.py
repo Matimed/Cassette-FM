@@ -4,6 +4,7 @@ Es un servidor aparte de la API de dueño (que sigue en loopback): expone solo `
 `/icon/{id}`, todas con la clave de oyente (`Authorization: Bearer <clave>`)."""
 import hashlib
 import hmac
+import socket
 import json
 import logging
 import queue
@@ -21,6 +22,7 @@ _CAMPOS = ("encendida", "estacion", "pista", "estaciones", "fuente", "segundo")
 _TIPOS_IMAGEN = {".png": "image/png", ".jpg": "image/jpeg", ".jpeg": "image/jpeg", ".webp": "image/webp",
                  ".gif": "image/gif"}
 _MAX_LOGO_BYTES = 4 * 1024 * 1024
+_BUFFER_ENVIO_BYTES = 8192      # ~0,4 s de audio (el kernel lo duplica): con uno grande el atraso de un oyente se esconde ahí
 
 
 def _version_logo(ruta: Path) -> str | None:
@@ -60,6 +62,10 @@ def crear_servidor_lan(radio, difusor, token, host: str, puerto: int) -> Threadi
 
     class Manejador(BaseHTTPRequestHandler):
         protocol_version = "HTTP/1.0"        # el stream termina al cerrar la conexión
+
+        def setup(self):
+            super().setup()
+            self.request.setsockopt(socket.SOL_SOCKET, socket.SO_SNDBUF, _BUFFER_ENVIO_BYTES)
 
         def log_message(self, formato, *args):
             _log.debug("lan %s", formato % args)

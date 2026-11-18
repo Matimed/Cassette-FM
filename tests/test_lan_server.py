@@ -250,3 +250,19 @@ def test_la_clave_regenerada_rige_sin_reiniciar_y_la_vieja_deja_de_valer(servido
     finally:
         srv.shutdown()
         srv.server_close()
+
+
+def test_el_socket_de_cada_oyente_tiene_un_buffer_de_envio_chico(servidor, monkeypatch):
+    import socket
+    ajustes = []
+    original = socket.socket.setsockopt
+
+    def espiar(self, nivel, opcion, valor, *resto):
+        ajustes.append((nivel, opcion, valor))
+        return original(self, nivel, opcion, valor, *resto)
+
+    monkeypatch.setattr(socket.socket, "setsockopt", espiar)
+    assert pedir(servidor, "GET", "/status")[0] == 200
+    enviados = [v for n, o, v in ajustes if n == socket.SOL_SOCKET and o == socket.SO_SNDBUF]
+    # un buffer grande del lado del servidor es retraso permanente para un oyente que se atrasó
+    assert enviados and max(enviados) <= 16384

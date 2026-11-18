@@ -230,3 +230,9 @@ def test_un_arranque_lento_pero_vivo_no_es_un_error(banco):
     banco.procesos[0].emitir(b"tarde")
     assert q.get(timeout=2) == b"tarde"
     d.cerrar()
+
+
+def test_la_cola_de_cada_oyente_es_corta_para_que_un_atraso_no_se_acumule():
+    # a 160 kbps un bloque de 4096 bytes son ~0,2 s: más de ~2 s de cola es retraso permanente para el oyente
+    d = Difusor(lambda: FUENTE_MONITOR)
+    assert d._cola_max * 4096 * 8 / 160_000 <= 2.0

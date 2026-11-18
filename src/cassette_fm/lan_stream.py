@@ -14,6 +14,9 @@ _log = logging.getLogger("cassette_fm")
 FUENTE_MONITOR = "monitor"
 FUENTE_ESTATICA = "estatica"
 _BLOQUE = 4096
+# A 160 kbps un bloque son ~0,2 s. Un oyente que se atrasa (corte de red, pico de CPU) no recupera ese atraso solo: el
+# reproductor consume a tiempo real, así que cada segundo acumulado queda como retraso permanente. Por eso la cola es
+# corta: pasados ~1 s sin leer se lo descarta y su reproductor vuelve a conectarse al "ahora".
 
 
 class SinCapacidad(Exception):
@@ -52,7 +55,7 @@ def _cerrar_cola(cola: queue.Queue) -> None:
 
 class Difusor:
     def __init__(self, fuente_actual: Callable[[], str], lanzar: Callable[[list[str]], subprocess.Popen] = lanzar_gst,
-                 max_oyentes: int = 4, gracia_segundos: float = 5.0, cola_max: int = 64,
+                 max_oyentes: int = 4, gracia_segundos: float = 5.0, cola_max: int = 6,
                  estabilidad_segundos: float = 2.0, reloj: Callable[[], float] = time.monotonic,
                  arranque_segundos: float = 1.0):
         self._fuente_actual = fuente_actual

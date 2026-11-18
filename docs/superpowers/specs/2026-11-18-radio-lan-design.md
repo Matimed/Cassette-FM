@@ -104,7 +104,11 @@ decisión*: MP3 por compatibilidad con cualquier reproductor; Opus en Ogg es la 
 un reparto a los oyentes por colas acotadas. **Si la radio principal está apagada, el codificador toma estática** (ruido blanco filtrado a bajo nivel, de carácter parecido al
 sonido de sintonía) **en vez del monitor**, y vuelve al monitor cuando se prende; cambiar de fuente reinicia el
 codificador (un corte de ~medio segundo con los oyentes conectados; los reproductores toleran MP3 concatenados). Arranca con el
-primer oyente y se detiene unos segundos después del último (sin oyentes no hay CPU). Un oyente que no consume se descarta sin frenar a los demás. Máximo de oyentes simultáneos
+primer oyente y se detiene unos segundos después del último (sin oyentes no hay CPU). Un oyente que no consume se descarta sin frenar a los demás. **El retraso del oyente está acotado a propósito** (medido el 18/11 con un bip inyectado en el bus: 0,74 s de punta a punta
+sin cortes): el reproductor consume a tiempo real, así que el audio que se acumula durante un corte (Wi-Fi, pico de CPU)
+sería retraso permanente (un corte de 8 s dejaba 8,6 s). Por eso la cola por oyente es de 6 bloques (~1,2 s), el buffer
+de envío del socket es de 8 KB, `mpv` pide `recv_buffer_size=8192` y `reconnect_at_eof=1`: un oyente que se atrasa se
+descarta y su reproductor vuelve a conectarse al "ahora". Con esto el peor caso medido es ~2,1 s. Máximo de oyentes simultáneos
 configurable (por defecto 4; el siguiente recibe 503). Sin `gst-launch-1.0`, sin bus o con falla del proceso, 503 con el
 motivo.
 

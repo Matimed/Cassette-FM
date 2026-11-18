@@ -362,3 +362,11 @@ def test_on_con_otra_direccion_vuelve_a_cargar_el_stream_del_servidor_nuevo(ento
         assert len(procesos_mpv(entorno)) == 1
     finally:
         otro.cerrar()
+
+
+def test_mpv_se_lanza_con_buffers_de_red_chicos_y_reconexion_al_cortar_el_servidor(entorno, servidor):
+    lan_receiver.main(["on"], entorno)
+    (pid, linea), = procesos_mpv(entorno)
+    # un atraso acumulado (cortes de red, picos de CPU) no se recupera solo: se acota con buffers chicos y, si el
+    # servidor descarta al oyente atrasado, mpv vuelve a conectarse al "ahora"
+    assert "recv_buffer_size=" in linea and "reconnect_at_eof=1" in linea

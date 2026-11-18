@@ -166,7 +166,8 @@ def _on(env: Mapping[str, str]) -> int:
             proceso = subprocess.Popen(
                 ["mpv", "--no-config", "--idle=yes", "--no-video", "--no-terminal", f"--input-ipc-server={socket_ipc}",
                  f"--volume={_volumen_guardado(runtime)}", "--cache=no", "--audio-buffer=0.1",
-                 "--stream-lavf-o=reconnect=1,reconnect_streamed=1,reconnect_delay_max=5", *extra],
+                 "--stream-lavf-o=reconnect=1,reconnect_streamed=1,reconnect_at_eof=1,reconnect_delay_max=5,"
+                 "recv_buffer_size=8192", *extra],
                 stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
                 start_new_session=True, env=dict(env))
         except OSError as e:
