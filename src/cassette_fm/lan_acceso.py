@@ -3,6 +3,7 @@ import ipaddress
 import json
 import os
 import secrets
+import shutil
 import socket
 import subprocess
 from collections.abc import Callable
@@ -62,15 +63,22 @@ def ip_ruta_por_defecto() -> str | None:
         return None
 
 
-def direccion_de_escucha(escuchar: str, ip_ts: Callable[[], str | None] = ip_tailscale) -> str:
+def tailscale_instalado() -> bool:
+    return shutil.which("tailscale") is not None
+
+
+def direccion_de_escucha(escuchar: str, ip_ts: Callable[[], str | None] = ip_tailscale,
+                         instalado: Callable[[], bool] = tailscale_instalado) -> str | None:
+    """Dónde escucha el servidor. "auto" = la IP de Tailscale; sin Tailscale instalado, todas las interfaces. Con
+    Tailscale instalado pero sin IP todavía (arranque temprano) devuelve None: hay que esperar, no abrirse a la LAN."""
     if escuchar != "auto":
         return escuchar
-    return ip_ts() or "0.0.0.0"
+    return ip_ts() or (None if instalado() else "0.0.0.0")
 
 
-def direccion_para_mostrar(escuchar: str, ip_ts: Callable[[], str | None] = ip_tailscale,
-                           ip_ruta: Callable[[], str | None] = ip_ruta_por_defecto) -> str:
+def direccion_para_mostrar(escuchar: str, ip_ts: Callable[[], str | None] | None = None,
+                           ip_ruta: Callable[[], str | None] | None = None) -> str:
     """La dirección que se le da a la otra PC: la de Tailscale si existe (es fija), si no la de la ruta por defecto."""
     if escuchar not in ("auto", "0.0.0.0"):
         return escuchar
-    return ip_ts() or ip_ruta() or "127.0.0.1"
+    return (ip_ts or ip_tailscale)() or (ip_ruta or ip_ruta_por_defecto)() or "127.0.0.1"

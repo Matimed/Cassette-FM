@@ -839,3 +839,40 @@ def test_icono_con_la_radio_apagada(tmp_path, monkeypatch, capsys, servidor_http
     monkeypatch.setattr(cli, "_llamar", caido)
     assert main(["icono", "Sing", "--quitar"]) == 0
     assert "La radio no está corriendo: el cambio se ve al prenderla." in capsys.readouterr().out
+
+
+def _rutas_lan(tmp_path, monkeypatch, toml=""):
+    from cassette_fm import config
+    from cassette_fm.config import Rutas
+    r = Rutas(tmp_path / "c" / "config.toml", tmp_path / "e.json", tmp_path / "d.json", tmp_path)
+    r.config.parent.mkdir(parents=True)
+    r.config.write_text(toml)
+    monkeypatch.setattr(config, "rutas", lambda: r)
+    return r
+
+
+def test_cassette_lan_muestra_la_direccion_y_crea_la_clave(tmp_path, monkeypatch, capsys):
+    from cassette_fm import lan_acceso
+    r = _rutas_lan(tmp_path, monkeypatch, "[lan]\nactivo = true\n")
+    monkeypatch.setattr(lan_acceso, "ip_tailscale", lambda *a, **k: "100.104.222.41")
+    assert main(["lan"]) == 0
+    salida = capsys.readouterr().out
+    token = r.lan_token.read_text().strip()
+    assert "http://100.104.222.41:8765" in salida and token in salida
+
+
+def test_cassette_lan_regenerar_cambia_la_clave(tmp_path, monkeypatch, capsys):
+    r = _rutas_lan(tmp_path, monkeypatch, "[lan]\nactivo = true\n")
+    main(["lan"])
+    viejo = r.lan_token.read_text().strip()
+    capsys.readouterr()
+    assert main(["lan", "regenerar"]) == 0
+    nuevo = r.lan_token.read_text().strip()
+    assert nuevo != viejo and nuevo in capsys.readouterr().out
+
+
+def test_cassette_lan_con_lan_apagado_avisa_como_activarlo_y_igual_muestra_los_datos(tmp_path, monkeypatch, capsys):
+    _rutas_lan(tmp_path, monkeypatch)
+    assert main(["lan"]) == 0
+    salida = capsys.readouterr().out
+    assert "[lan]" in salida and "activo = true" in salida and "http://" in salida

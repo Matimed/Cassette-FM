@@ -11,6 +11,9 @@ from cassette_fm.cliente_dj import ClienteDJ
 from cassette_fm.config import Config, Rutas, cargar_estado, guardar_estado
 from cassette_fm.emisoras import Catalogo
 from cassette_fm.intervenciones import RegistroIntervenciones
+from cassette_fm import lan_acceso
+from cassette_fm.lan_server import crear_servidor_lan
+from cassette_fm.lan_stream import FUENTE_ESTATICA, FUENTE_MONITOR, Difusor
 from cassette_fm.locutor import Locutor
 from cassette_fm.mpris import ServicioMpris
 from cassette_fm.mpv import ClienteMpv
@@ -60,6 +63,63 @@ def reproductor_spotify(config: Config, rutas: Rutas, cliente):
                                   tolerancia_resync_segundos=c.tolerancia_resync_segundos))
     soloist.iniciar()
     return rep[0], soloist
+
+
+def iniciar_lan(config: Config, rutas: Rutas, radio, router, crear_difusor=Difusor, ip_ts=None,
+                tailscale_instalado=None, intervalo_reintento: float = 30.0,
+                intervalo_revision: float = 1.0) -> Callable[[], None] | None:
+    """Levanta el servidor de la radio por la red (`[lan] activo`). Devuelve la función que lo cierra, o None si no
+    corresponde (apagado o sin bus de audio). Si la IP de Tailscale todavía no está o el puerto no se puede abrir,
+    reintenta en segundo plano en vez de caerse."""
+    lan = config.lan
+    if not lan.activo:
+        return None
+    if router is None:
+        _log.error("[lan] necesita el bus de audio: el servidor de la red no se abre (poné `bus_audio = true`)")
+        return None
+    token = lan_acceso.leer_o_crear_token(rutas.lan_token)
+    difusor = crear_difusor(lambda: FUENTE_MONITOR if radio.encendida else FUENTE_ESTATICA,
+                            max_oyentes=lan.max_oyentes)
+    parar = threading.Event()
+    actual: list = []
+    direccion = lambda: lan_acceso.direccion_de_escucha(
+        lan.escuchar, ip_ts or lan_acceso.ip_tailscale, tailscale_instalado or lan_acceso.tailscale_instalado)
+
+    def servir_lan():
+        while not parar.is_set():
+            host = direccion()
+            if host is None:
+                _log.info("la radio por la red espera la IP de Tailscale")
+            else:
+                try:
+                    servidor = crear_servidor_lan(radio, difusor, token, host, lan.puerto)
+                except OSError as e:
+                    _log.warning("la radio por la red no pudo abrir %s:%d (%s); se reintenta", host, lan.puerto, e)
+                else:
+                    actual.append(servidor)
+                    _log.info("la radio por la red escucha en %s:%d", host, lan.puerto)
+                    servidor.serve_forever(poll_interval=0.05)
+                    return
+            parar.wait(intervalo_reintento)
+
+    def revisar():
+        while not parar.wait(intervalo_revision):
+            try:
+                difusor.revisar_fuente()
+            except Exception:
+                _log.exception("error al revisar el stream de la red")
+
+    threading.Thread(target=servir_lan, daemon=True, name="lan-servidor").start()
+    threading.Thread(target=revisar, daemon=True, name="lan-revision").start()
+
+    def cerrar() -> None:
+        parar.set()
+        for servidor in actual:
+            servidor.shutdown()
+            servidor.server_close()
+        difusor.cerrar()
+
+    return cerrar
 
 
 def servir(config: Config, rutas: Rutas, avisar: Callable[[str, str], None] | None = None,
@@ -131,6 +191,7 @@ def servir(config: Config, rutas: Rutas, avisar: Callable[[str, str], None] | No
     if planificador is not None:
         planificador.iniciar()
         _log.info("planificador del DJ activo (servicio en %s)", config.dj.url)
+    cerrar_lan = iniciar_lan(config, rutas, radio, router)
     servidor = crear_servidor(radio, "127.0.0.1", config.puerto, emisoras=rutas.emisoras)
     hilo = threading.Thread(target=lambda: servidor.serve_forever(poll_interval=0.05), daemon=True)
     hilo.start()
@@ -139,6 +200,8 @@ def servir(config: Config, rutas: Rutas, avisar: Callable[[str, str], None] | No
         parar.wait()
     finally:
         pasos = [servidor.shutdown, servidor.server_close, mpris.cerrar]
+        if cerrar_lan is not None:
+            pasos.insert(0, cerrar_lan)
         if planificador is not None:
             pasos.append(planificador.cerrar)     # antes de apagar la radio y de cerrar el locutor y mpv
         pasos.append(radio.apagar)

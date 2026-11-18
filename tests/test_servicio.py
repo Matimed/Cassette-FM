@@ -590,3 +590,117 @@ def test_servir_sin_pactl_arranca_igual_sin_bus(tmp_path, dir_corto, crear_mp3, 
     finally:
         parar.set()
         hilo.join(3)
+
+
+# --- radio por la LAN ---
+
+class DifusorDeServicioFalso:
+    def __init__(self):
+        self.revisiones = 0
+        self.cerrado = False
+
+    def revisar_fuente(self): self.revisiones += 1
+    def suscribir(self): raise AssertionError("no se usa")
+    def desuscribir(self, cola): pass
+    def cerrar(self): self.cerrado = True
+
+
+class RadioDeLan:
+    encendida = True
+
+    def estado(self): return {"encendida": True, "estacion": "A", "estaciones": ["A"]}
+    def estaciones(self): return []
+
+
+def _rutas_lan(tmp_path):
+    return Rutas(config=tmp_path / "c" / "config.toml", estado=tmp_path / "e.json", cache=tmp_path / "d.json",
+                 runtime=tmp_path)
+
+
+def _http(puerto, ruta="/status", token=None):
+    import http.client
+    c = http.client.HTTPConnection("127.0.0.1", puerto, timeout=3)
+    c.request("GET", ruta, headers={"Authorization": f"Bearer {token}"} if token else {})
+    r = c.getresponse()
+    r.read()
+    c.close()
+    return r.status
+
+
+def _lan(puerto, **kw):
+    from cassette_fm.config import ConfigLan
+    return Config(bus_audio=True, lan=ConfigLan(activo=True, puerto=puerto, escuchar=kw.pop("escuchar", "127.0.0.1"), **kw))
+
+
+def test_lan_apagado_no_abre_ningun_puerto(tmp_path):
+    assert servicio.iniciar_lan(Config(), _rutas_lan(tmp_path), RadioDeLan(), object()) is None
+
+
+def test_lan_con_bus_arranca_en_el_puerto_y_exige_la_clave(tmp_path):
+    rutas, puerto, difusor = _rutas_lan(tmp_path), puerto_libre(), DifusorDeServicioFalso()
+    cerrar = servicio.iniciar_lan(_lan(puerto), rutas, RadioDeLan(), object(), crear_difusor=lambda *a, **k: difusor)
+    try:
+        assert esperar(lambda: _intentar(lambda: _http(puerto)) == 401)
+        token = rutas.lan_token.read_text().strip()
+        assert _http(puerto, token=token) == 200
+        assert esperar(lambda: difusor.revisiones >= 1, 3)
+    finally:
+        cerrar()
+    assert difusor.cerrado
+    with pytest.raises(OSError):
+        _http(puerto)
+
+
+def _intentar(f):
+    try:
+        return f()
+    except OSError:
+        return None
+
+
+def esperar(condicion, timeout=3.0):
+    fin = time.monotonic() + timeout
+    while time.monotonic() < fin:
+        if condicion():
+            return True
+        time.sleep(0.02)
+    return False
+
+
+def test_lan_sin_bus_no_abre_el_puerto_y_deja_el_error_en_el_log(tmp_path, caplog):
+    puerto = puerto_libre()
+    assert servicio.iniciar_lan(_lan(puerto), _rutas_lan(tmp_path), RadioDeLan(), None) is None
+    assert "bus_audio" in caplog.text and _intentar(lambda: _http(puerto)) is None
+
+
+def test_si_la_ip_de_tailscale_aparece_despues_el_servidor_reintenta(tmp_path):
+    puerto, difusor, llamadas = puerto_libre(), DifusorDeServicioFalso(), []
+
+    def ip_ts():
+        llamadas.append(1)
+        return "127.0.0.1" if len(llamadas) > 3 else None
+
+    cerrar = servicio.iniciar_lan(_lan(puerto, escuchar="auto"), _rutas_lan(tmp_path), RadioDeLan(), object(),
+                                  crear_difusor=lambda *a, **k: difusor, ip_ts=ip_ts, tailscale_instalado=lambda: True,
+                                  intervalo_reintento=0.05)
+    try:
+        assert esperar(lambda: _intentar(lambda: _http(puerto)) == 401)
+        assert len(llamadas) > 3
+    finally:
+        cerrar()
+
+
+def test_el_bind_que_falla_reintenta_en_vez_de_caerse(tmp_path):
+    import socket as _s
+    puerto, difusor = puerto_libre(), DifusorDeServicioFalso()
+    ocupado = _s.socket()
+    ocupado.bind(("127.0.0.1", puerto))
+    ocupado.listen()
+    cerrar = servicio.iniciar_lan(_lan(puerto), _rutas_lan(tmp_path), RadioDeLan(), object(),
+                                  crear_difusor=lambda *a, **k: difusor, intervalo_reintento=0.05)
+    try:
+        time.sleep(0.3)
+        ocupado.close()
+        assert esperar(lambda: _intentar(lambda: _http(puerto)) == 401)
+    finally:
+        cerrar()

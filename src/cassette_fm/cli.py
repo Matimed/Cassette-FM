@@ -95,6 +95,8 @@ def _armar_parser() -> argparse.ArgumentParser:
     icono.add_argument("--quitar", action="store_true", help="sacarle el logo (el archivo no se borra)")
     voces = sub.add_parser("voces", help="las voces con alias que puede usar una emisora nueva")
     voces.add_argument("--json", action="store_true", help="en JSON (para el applet)")
+    lan = sub.add_parser("lan", help="la radio por la red: dirección y clave para otra PC (o `regenerar` la clave)")
+    lan.add_argument("accion", nargs="?", choices=["regenerar"])
     spotify = sub.add_parser("spotify", help="Spotify como fuente de emisoras: sesión y estado")
     spotify_sub = spotify.add_subparsers(dest="accion", required=True)
     spotify_sub.add_parser("login", help="abre el navegador para darle permiso a cassette-fm en tu cuenta")
@@ -229,6 +231,21 @@ def _instalar_applet() -> int:
     except (OSError, subprocess.CalledProcessError) as e:
         print(f"no se pudo instalar el applet: {e}", file=sys.stderr)
         return 1
+    return 0
+
+
+def _lan(args, cfg, rutas) -> int:
+    from cassette_fm import lan_acceso
+    token = (lan_acceso.regenerar_token(rutas.lan_token) if args.accion == "regenerar"
+             else lan_acceso.leer_o_crear_token(rutas.lan_token))
+    if args.accion == "regenerar":
+        print("Clave nueva (los oyentes conectados se cortan al reiniciar el servicio).")
+    elif not cfg.lan.activo:
+        print("La radio por la red está apagada: poné `activo = true` en la sección [lan] de config.toml y "
+              "reiniciá el servicio.")
+    direccion = lan_acceso.direccion_para_mostrar(cfg.lan.escuchar)
+    print(f"Dirección: http://{direccion}:{cfg.lan.puerto}")
+    print(f"Clave:     {token}")
     return 0
 
 
@@ -515,6 +532,8 @@ def main(argv: list[str] | None = None) -> int:
         return 1
     if args.comando == "spotify":
         return _spotify(args, cfg, rutas)
+    if args.comando == "lan":
+        return _lan(args, cfg, rutas)
     if args.comando == "serve":
         from cassette_fm import servicio
         logging.basicConfig(level=logging.INFO, format="%(levelname)s %(name)s: %(message)s")

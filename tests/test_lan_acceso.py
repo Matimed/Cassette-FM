@@ -41,9 +41,13 @@ def test_ip_tailscale_fuera_de_rango_o_sin_interfaz_es_none():
 
 
 def test_auto_usa_tailscale_y_sin_el_todas_las_interfaces():
-    assert direccion_de_escucha("auto", lambda: "100.104.222.41") == "100.104.222.41"
-    assert direccion_de_escucha("auto", lambda: None) == "0.0.0.0"
-    assert direccion_de_escucha("192.168.0.157", lambda: "100.1.1.1") == "192.168.0.157"
+    assert direccion_de_escucha("auto", lambda: "100.104.222.41", lambda: True) == "100.104.222.41"
+    assert direccion_de_escucha("auto", lambda: None, lambda: False) == "0.0.0.0"
+    assert direccion_de_escucha("192.168.0.157", lambda: "100.1.1.1", lambda: True) == "192.168.0.157"
+
+
+def test_auto_con_tailscale_instalado_pero_sin_ip_todavia_espera_en_vez_de_abrirse_a_la_lan():
+    assert direccion_de_escucha("auto", lambda: None, lambda: True) is None
 
 
 def test_direccion_para_mostrar_prefiere_tailscale_y_cae_a_la_ruta_por_defecto():
