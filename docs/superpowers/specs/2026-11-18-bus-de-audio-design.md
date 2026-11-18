@@ -18,7 +18,7 @@ monitor y recibe siempre la señal completa: **cada monitor tiene su propio volu
 - Config: `bus_audio` (por defecto `true`). Sin `pactl` el servicio arranca igual sin bus y deja un error en el log que
   recomienda `bus_audio = false`. `Estado.monitor_local` recuerda si el monitor estaba prendido.
 - **Abstracción de volumen** (`Radio._poner_volumen`): el volumen de la radio es el del monitor local. Las fuentes
-  (mpv, voz, Soloist) quedan al 100 % —0 si el volumen es 0— y solo se mueven para el ducking del DJ y la calibración de
+  (mpv, voz, Soloist) quedan siempre al 100 % y solo se mueven para el ducking del DJ y la calibración de
   Spotify (`ajuste_volumen_db`), que siguen dentro de la señal del bus.
 - **Apagar vs. silenciar** (decidido el 18/11 con el usuario): con el bus la radio es una transmisión que sigue sonando en
   `radio_virtual` aunque nadie la escuche en esta PC. Todo lo que antes "apagaba" ahora solo **silencia el monitor**
