@@ -120,6 +120,8 @@ def entorno(dir_corto, servidor):
            "CASSETTE_LAN_MPV_ARGS": "--ao=null"}
     yield env
     lan_receiver.main(["off"], env)
+    # la estática del resync dura ~1 s y sigue sonando aunque termine el test: que no contamine al siguiente
+    esperar(lambda: not procesos_con("estatica.wav"), 5)
 
 
 def esperar(condicion, timeout=8.0):
@@ -393,7 +395,7 @@ def procesos_con(texto):
                 linea = Path(f"/proc/{pid}/cmdline").read_bytes().decode(errors="replace")
             except OSError:
                 continue
-            if texto in linea:
+            if texto in linea and Path(linea.split("\x00", 1)[0]).name == "mpv":     # solo mpv, no quien lo mencione
                 encontrados.append((int(pid), linea))
     return encontrados
 
