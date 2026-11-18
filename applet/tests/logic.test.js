@@ -354,3 +354,12 @@ test("tooltip: agrega el aviso como última línea", () => {
   assert.equal(L.tooltip({ ...apagada, aviso: "no alcanzo a la radio en h" }),
                "Apagada · volumen 70\nno alcanzo a la radio en h");
 });
+
+test("parsearReceptor: la salida de lan_receiver.py status --json", () => {
+  assert.deepEqual(L.parsearReceptor('{"escuchando": true, "volumen": 40, "error": null}\n'),
+                   { escuchando: true, volumen: 40, error: null });
+  assert.deepEqual(L.parsearReceptor('{"escuchando": false, "volumen": 0, "error": "clave rechazada"}'),
+                   { escuchando: false, volumen: 0, error: "clave rechazada" });
+  for (const mala of ["", "no es json", "[]", '{"escuchando": "si"}', '{"escuchando": true}', null, undefined])
+    assert.equal(L.parsearReceptor(mala), null, String(mala));
+});

@@ -148,7 +148,7 @@ def test_el_dial_arma_el_cierre_antes_de_pedir_el_estado():
 
 
 def test_pedir_no_se_traga_los_errores_del_callback():
-    assert "global.logError(" in _cuerpo(_js(), "_pedir(metodo, ruta, cuerpo, callback)")
+    assert "global.logError(" in _cuerpo(_js(), "_pedirHttp(host, puerto, token, metodo, ruta, cuerpo, callback)")
 
 
 def test_la_fila_del_dial_se_difumina_hacia_los_costados():
@@ -178,3 +178,33 @@ def test_la_barra_de_volumen_del_dial_se_lee_bien():
 
 def test_el_dial_no_muestra_la_cancion():
     assert "this._pista" not in _js()
+
+
+def test_el_applet_tiene_los_ajustes_del_modo_remoto():
+    schema = json.loads((CARPETA / "settings-schema.json").read_text(encoding="utf-8"))
+    assert schema["is_remote"]["type"] == "switch" and schema["is_remote"]["default"] is False
+    assert schema["server_url"]["type"] == "entry" and schema["server_url"]["default"] == ""
+    assert schema["server_token"]["type"] == "entry" and schema["server_token"]["default"] == ""
+
+
+def test_el_receptor_viaja_con_el_applet_y_se_corre_con_python3_y_la_clave_por_entorno():
+    js = _js()
+    assert (CARPETA / "lan_receiver.py").is_file()
+    assert "lan_receiver.py" in js and '"python3"' in js
+    assert "setenv" in js and "CASSETTE_LAN_TOKEN" in js
+    assert "--token" not in js and "Bearer" not in js          # la clave no va por argumentos ni se arma acá
+
+
+def test_pedir_decide_entre_el_servicio_local_y_la_radio_remota():
+    js = _js()
+    cuerpo = js[js.index("    _pedir(metodo, ruta, cuerpo, callback) {"):]
+    cuerpo = cuerpo[:cuerpo.index("\n    }\n")]
+    assert "this.is_remote" in cuerpo and "_pedirRemoto" in cuerpo
+
+
+def test_en_modo_remoto_no_se_ofrece_nueva_emisora():
+    js = _js()
+    menu = js[js.index("    _reconstruirMenu() {"):]
+    menu = menu[:menu.index("\n    }\n")]
+    assert "this.is_remote" in menu and "Nueva emisora…" in menu
+    assert menu.index("this.is_remote") < menu.index("Nueva emisora…")

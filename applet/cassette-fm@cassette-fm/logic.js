@@ -303,6 +303,18 @@ function estadoRemoto(status, receptor, host) {
     return estado;
 }
 
+// La salida de `lan_receiver.py status --json` => {escuchando, volumen, error}, o null si no se entiende.
+function parsearReceptor(texto) {
+    if (typeof texto !== "string") return null;
+    try {
+        const d = JSON.parse(texto);
+        if (!d || typeof d.escuchando !== "boolean" || typeof d.volumen !== "number") return null;
+        return { escuchando: d.escuchando, volumen: d.volumen, error: typeof d.error === "string" ? d.error : null };
+    } catch (e) {
+        return null;
+    }
+}
+
 function iconoDe(nombre, iconos, generico) {
     return (iconos && iconos[nombre]) || generico;
 }
@@ -319,6 +331,6 @@ if (typeof module !== "undefined") {
         parsearVoces, idiomaBase, vocesDelIdioma, etiquetaDeVoz, elegirVoz, elegirIdioma, faltante, argumentosNueva,
         mensajeDeError, argumentosMuestra, botonMuestra, rutaDeMuestra, argumentosExaminar, rutaElegida,
         filaDial, teclaDial, crearCola, barraVolumen, iconoDe, volumenTrasRespuesta,
-        parsearUrlServidor, idEstacion, planRemoto, estadoRemoto,
+        parsearUrlServidor, idEstacion, planRemoto, estadoRemoto, parsearReceptor,
     };
 }

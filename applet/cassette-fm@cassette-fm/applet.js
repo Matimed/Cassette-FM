@@ -24,6 +24,8 @@ const LIMITE_VOCES_SEGUNDOS = 30;
 const LIMITE_NUEVA_SEGUNDOS = 180;
 const LIMITE_MUESTRA_SEGUNDOS = 60;         // la primera muestra espera que el servicio DJ cargue el modelo
 const LIMITE_SONANDO_SEGUNDOS = 120;
+const LIMITE_RECEPTOR_SEGUNDOS = 10;          // lan_receiver.py (modo remoto): prender, apagar, volumen, estado
+const RECEPTOR_AL_DIA_MS = 10000;           // cada cuánto se le pregunta cómo está (se entera de que mpv murió)
 const LIMITE_EXAMINAR_SEGUNDOS = 600;       // lo que tarda la persona en elegir la imagen
 
 class CassetteApplet extends Applet.TextIconApplet {
@@ -39,6 +41,14 @@ class CassetteApplet extends Applet.TextIconApplet {
 
         this.settings = new Settings.AppletSettings(this, metadata.uuid, instanceId);
         this.settings.bind("puerto", "puerto", () => this._sondear());
+        // modo remoto: la radio está en otra PC; acá solo se escucha (lan_receiver.py) y se elige la emisora
+        this._dirApplet = metadata.path;
+        this._receptor = { escuchando: false, volumen: 70, error: null };
+        this._receptorTs = 0;
+        this._ultimoStatus = null;
+        this.settings.bind("is_remote", "is_remote", () => this._alCambiarRemoto());
+        this.settings.bind("server_url", "server_url", () => this._alCambiarRemoto());
+        this.settings.bind("server_token", "server_token", () => this._alCambiarRemoto());
         this.settings.bind("mostrar_estacion", "mostrar_estacion", () => this._aplicar(this.estado));
         this._dial = null;
         this._nombreAtajo = "cassette-fm-dial-" + instanceId;
@@ -95,6 +105,13 @@ class CassetteApplet extends Applet.TextIconApplet {
         this.settings.finalize();
     }
 
+    _alCambiarRemoto() {
+        this._receptorTs = 0;
+        this._ultimoStatus = null;
+        this._firmaMenu = null;
+        this._sondear();
+    }
+
     _sondear() {
         if (this._sondeando) return;
         this._sondeando = true;
@@ -124,7 +141,7 @@ class CassetteApplet extends Applet.TextIconApplet {
 
     _reconstruirMenu() {
         const estado = this.estado;
-        const firma = estado ? JSON.stringify([estado.estaciones, estado.estacion, estado.encendida]) : "";
+        const firma = estado ? JSON.stringify([estado.estaciones, estado.estacion, estado.encendida, this.is_remote]) : "";
         if (firma === this._firmaMenu) return;
         this._firmaMenu = firma;
         this._seccionEstaciones.removeAll();
@@ -135,9 +152,11 @@ class CassetteApplet extends Applet.TextIconApplet {
             item.connect("activate", () => this._accion("/sintonizar", { estacion: nombre }));
             this._seccionEstaciones.addMenuItem(item);
         }
-        const nueva = new PopupMenu.PopupMenuItem("    Nueva emisora…");
-        nueva.connect("activate", () => new DialogoEmisora(this).abrir());
-        this._seccionEstaciones.addMenuItem(nueva);
+        if (!this.is_remote) {      // en modo remoto no se edita nada: las emisoras son de la otra PC
+            const nueva = new PopupMenu.PopupMenuItem("    Nueva emisora…");
+            nueva.connect("activate", () => new DialogoEmisora(this).abrir());
+            this._seccionEstaciones.addMenuItem(nueva);
+        }
         if (estado.encendida) {
             // el único que corta la transmisión: el clic izquierdo, la pausa y el volumen en 0 solo silencian
             const apagar = new PopupMenu.PopupMenuItem("Apagar");
@@ -147,8 +166,14 @@ class CassetteApplet extends Applet.TextIconApplet {
         this._seccionEstaciones.addMenuItem(new PopupMenu.PopupSeparatorMenuItem());
     }
 
-    // HTTP por un socket de GIO, todo asíncrono; cualquier error termina en callback({codigo: 0}).
+    // Al servicio local, o a la radio remota si `is_remote`.
     _pedir(metodo, ruta, cuerpo, callback) {
+        if (this.is_remote) return this._pedirRemoto(metodo, ruta, cuerpo, callback);
+        this._pedirHttp("127.0.0.1", this.puerto, null, metodo, ruta, cuerpo, callback);
+    }
+
+    // HTTP por un socket de GIO, todo asíncrono; cualquier error termina en callback({codigo: 0}).
+    _pedirHttp(host, puerto, token, metodo, ruta, cuerpo, callback) {
         const cancelable = new Gio.Cancellable();
         let terminado = false;
         const terminar = (texto, vencio) => {
@@ -168,13 +193,13 @@ class CassetteApplet extends Applet.TextIconApplet {
             return false;
         });
         try {
-            new Gio.SocketClient().connect_to_host_async("127.0.0.1:" + this.puerto, 0, cancelable,
+            new Gio.SocketClient().connect_to_host_async(host + ":" + puerto, 0, cancelable,
                 (cliente, resultado) => {
                     try {
                         const conexion = cliente.connect_to_host_finish(resultado);
                         const entrada = conexion.get_input_stream();
                         const salida = new Gio.DataOutputStream({ base_stream: conexion.get_output_stream() });
-                        salida.put_string(AppletDir.logic.pedidoHttp(metodo, ruta, cuerpo), cancelable);
+                        salida.put_string(AppletDir.logic.pedidoHttp(metodo, ruta, cuerpo, host, token), cancelable);
                         salida.flush(cancelable);
                         const memoria = Gio.MemoryOutputStream.new_resizable();
                         memoria.splice_async(entrada,
@@ -197,10 +222,79 @@ class CassetteApplet extends Applet.TextIconApplet {
         }
     }
 
+    // --- modo remoto ---
+
+    _estadoRemoto(status, host) {
+        return AppletDir.logic.estadoRemoto(status, this._receptor, host);
+    }
+
+    // lan_receiver.py en esta PC (la escucha: prender, apagar, volumen); la dirección y la clave van por el entorno.
+    _correrReceptor(argumentos, callback) {
+        const entorno = { CASSETTE_LAN_URL: (this.server_url || "").trim(), CASSETTE_LAN_TOKEN: (this.server_token || "").trim() };
+        return this._correr("python3", [this._dirApplet + "/lan_receiver.py", ...argumentos],
+                            LIMITE_RECEPTOR_SEGUNDOS, callback, entorno);
+    }
+
+    // Se entera de cómo está la escucha local (¿murió mpv?, ¿se cortó el stream?) cada tanto, no en cada sondeo.
+    _receptorAlDia(callback) {
+        if (Date.now() - this._receptorTs < RECEPTOR_AL_DIA_MS) return callback();
+        this._correrReceptor(["status", "--json"], (r) => {
+            const estado = r.error ? null : AppletDir.logic.parsearReceptor(r.stdout);
+            if (estado) this._receptor = estado;
+            this._receptorTs = Date.now();
+            callback();
+        });
+    }
+
+    // Traduce un pedido al servicio local a la radio remota (logic.planRemoto): la emisora y el estado son de la API de
+    // la PC principal; el encendido y el volumen, del receptor de esta PC. Siempre responde 200 con un estado.
+    _pedirRemoto(metodo, ruta, cuerpo, callback) {
+        const servidor = AppletDir.logic.parsearUrlServidor(this.server_url);
+        const host = servidor ? servidor.host : (this.server_url || "");
+        const responder = (status) => {
+            this._ultimoStatus = status;
+            callback({ codigo: 200, datos: this._estadoRemoto(status, host) });
+        };
+        const ultimo = () => this._ultimoStatus || { codigo: 0, datos: null };
+        if (!servidor) {
+            const estado = this._estadoRemoto({ codigo: 0, datos: null }, host);
+            estado.aviso = "falta la dirección de la radio (ajustes del applet)";
+            return callback({ codigo: 200, datos: estado });
+        }
+        const estadoActual = this._ultimoStatus && this._ultimoStatus.datos ? this._ultimoStatus.datos : null;
+        const plan = AppletDir.logic.planRemoto(ruta, cuerpo, estadoActual, this._receptor);
+        if (plan.destino === "servidor") {
+            const pedir = (m, r, despues) => this._pedirHttp(servidor.host, servidor.puerto, this.server_token, m, r,
+                                                             undefined, despues);
+            if (plan.ruta === "/status") {
+                this._receptorAlDia(() => pedir("GET", "/status", responder));
+            } else {
+                pedir(plan.metodo, plan.ruta, (r) => {
+                    // 404: la lista cambió en la otra PC; se vuelve a pedir el estado y el menú se refresca
+                    if (r.codigo === 404) pedir("GET", "/status", responder);
+                    else responder(r);
+                });
+            }
+        } else if (plan.destino === "receptor") {
+            this._correrReceptor(plan.argumentos, (r) => {
+                if (r.error || r.codigo !== 0) {
+                    return callback({ codigo: 500, datos: { error: r.error || (r.stderr || "").trim() || "lan_receiver.py falló" } });
+                }
+                if (plan.argumentos[0] === "on") this._receptor = Object.assign({}, this._receptor, { escuchando: true, error: null });
+                else if (plan.argumentos[0] === "off") this._receptor = Object.assign({}, this._receptor, { escuchando: false });
+                else if (plan.argumentos[0] === "volume") this._receptor = Object.assign({}, this._receptor, { volumen: parseInt(r.stdout, 10) });
+                this._receptorTs = Date.now();
+                responder(ultimo());
+            });
+        } else {
+            responder(ultimo());
+        }
+    }
+
     // Corre `<programa> <argumentos>` sin shell y sin bloquear el panel; callback({codigo, stdout, stderr}) o
     // callback({error}) si no se encuentra, no arranca o pasa el límite (y entonces se lo corta). Devuelve el
     // proceso (para cortarlo con force_exit) o null si no arrancó.
-    _correr(programa, argumentos, segundos, callback) {
+    _correr(programa, argumentos, segundos, callback, entorno) {
         let ruta = GLib.find_program_in_path(programa);
         const local = GLib.get_home_dir() + "/.local/bin/" + programa;
         if (!ruta && GLib.file_test(local, GLib.FileTest.IS_EXECUTABLE)) ruta = local;
@@ -218,8 +312,14 @@ class CassetteApplet extends Applet.TextIconApplet {
         };
         let proceso;
         try {
-            proceso = Gio.Subprocess.new([ruta, ...argumentos],
-                Gio.SubprocessFlags.STDOUT_PIPE | Gio.SubprocessFlags.STDERR_PIPE);
+            const banderas = Gio.SubprocessFlags.STDOUT_PIPE | Gio.SubprocessFlags.STDERR_PIPE;
+            if (entorno) {          // variables extra (la clave del modo remoto): no van por argumentos
+                const lanzador = new Gio.SubprocessLauncher({ flags: banderas });
+                for (const nombre of Object.keys(entorno)) lanzador.setenv(nombre, entorno[nombre], true);
+                proceso = lanzador.spawnv([ruta, ...argumentos]);
+            } else {
+                proceso = Gio.Subprocess.new([ruta, ...argumentos], banderas);
+            }
         } catch (e) {
             callback({ error: "No pude correr " + programa + ": " + e.message });
             return null;

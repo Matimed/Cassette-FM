@@ -17,5 +17,22 @@
     "type": "keybinding",
     "default": "<Super><Alt>space",
     "description": "Atajo para abrir el dial de emisoras"
+  },
+  "is_remote": {
+    "type": "switch",
+    "default": false,
+    "description": "Modo remoto: escuchar la radio de otra PC (cassette-fm en esa PC)"
+  },
+  "server_url": {
+    "type": "entry",
+    "default": "",
+    "description": "Dirección de la radio remota (http://IP:8765)",
+    "dependency": "is_remote"
+  },
+  "server_token": {
+    "type": "entry",
+    "default": "",
+    "description": "Clave de oyente (la muestra `cassette lan` en la otra PC)",
+    "dependency": "is_remote"
   }
 }
