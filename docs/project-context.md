@@ -53,6 +53,10 @@ Etapa 5 (CASSETTE-FM-qyz0): **el dial**, una tira de logos estilo GTA 4 que se a
 applet, y logos por emisora (campo `"icono"` en `estaciones.json`, `cassette icono`; los del usuario viven en
 `~/.config/cassette-fm/iconos/`, en el repo solo el genérico):
 [`superpowers/specs/2026-11-16-dial-de-emisoras-design.md`](superpowers/specs/2026-11-16-dial-de-emisoras-design.md).
+Etapa 6 (diseño aprobado el 2026-11-18, sin implementar): **radio en red**, escuchar las mismas emisoras desde otros
+dispositivos con esta PC como servidor y clientes livianos; primero la notebook igual que esta PC (CASSETTE-FM-5as8,
+prioridad) y después compartir con amigos (CASSETTE-FM-3m6b, diferible):
+[`superpowers/specs/2026-11-18-radio-en-red-design.md`](superpowers/specs/2026-11-18-radio-en-red-design.md).
 Prender desde volumen 0 sube a 50. Ojo al tocar el applet: `ReloadXlet` recarga `applet.js` pero no `logic.js` (queda en caché hasta reiniciar Cinnamon).
 
 ## Relevamiento previo (leer antes de diseñar)
