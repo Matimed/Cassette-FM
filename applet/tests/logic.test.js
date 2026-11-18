@@ -252,3 +252,105 @@ test("volumenTrasRespuesta: solo sintonizar con la radio apagada adopta el volum
 test("teclaDial: Enter también cierra", () => {
   assert.equal(L.teclaDial("Return"), "cerrar");
 });
+
+// --- modo remoto ---
+
+const status = { codigo: 200, datos: { encendida: true, estacion: "B", pista: "Artista - Tema", estaciones: ["A", "B", "C"],
+                                       fuente: "spotify", segundo: 3.5, iconos: {} } };
+const receptor = { escuchando: true, volumen: 5, error: null };
+
+test("pedidoHttp: sin host ni clave queda igual que siempre", () => {
+  assert.equal(L.pedidoHttp("GET", "/estado"), "GET /estado HTTP/1.0\r\nHost: 127.0.0.1\r\n\r\n");
+});
+
+test("pedidoHttp: con host y clave agrega Host y Authorization", () => {
+  const p = L.pedidoHttp("POST", "/station/A", undefined, "100.104.222.41", "secreta");
+  assert.equal(p, "POST /station/A HTTP/1.0\r\nHost: 100.104.222.41\r\nAuthorization: Bearer secreta\r\n\r\n");
+});
+
+test("parsearUrlServidor", () => {
+  assert.deepEqual(L.parsearUrlServidor("http://100.104.222.41:8765"), { host: "100.104.222.41", puerto: 8765 });
+  assert.deepEqual(L.parsearUrlServidor("http://100.104.222.41:9000/"), { host: "100.104.222.41", puerto: 9000 });
+  assert.deepEqual(L.parsearUrlServidor(" http://mi-pc "), { host: "mi-pc", puerto: 8765 });
+  for (const mala of ["https://x:8765", "100.1.1.1:8765", "", "http://", "http://a b:1", "http://x:99999", null, undefined])
+    assert.equal(L.parsearUrlServidor(mala), null, String(mala));
+});
+
+test("idEstacion codifica para la URL", () => {
+  assert.equal(L.idEstacion("Más Gasolina F.M."), "M%C3%A1s%20Gasolina%20F.M.");
+  assert.equal(L.idEstacion("A/B"), "A%2FB");
+  assert.equal(L.idEstacion("100%"), "100%25");
+  assert.equal(L.idEstacion("¿Qué?"), "%C2%BFQu%C3%A9%3F");
+});
+
+test("planRemoto: estado y sintonía van al servidor", () => {
+  assert.deepEqual(L.planRemoto("/estado", undefined, status.datos, receptor),
+                   { destino: "servidor", metodo: "GET", ruta: "/status" });
+  assert.deepEqual(L.planRemoto("/sintonizar", { estacion: "A/B" }, status.datos, receptor),
+                   { destino: "servidor", metodo: "POST", ruta: "/station/A%2FB" });
+  assert.deepEqual(L.planRemoto("/sintonizar", {}, status.datos, receptor), { destino: "ninguno" });
+});
+
+test("planRemoto: siguiente y anterior circulan con la lista", () => {
+  const e = status.datos;                      // actual: B
+  assert.equal(L.planRemoto("/siguiente", undefined, e, receptor).ruta, "/station/C");
+  assert.equal(L.planRemoto("/anterior", undefined, e, receptor).ruta, "/station/A");
+  assert.equal(L.planRemoto("/siguiente", undefined, { ...e, estacion: "C" }, receptor).ruta, "/station/A");
+  assert.equal(L.planRemoto("/anterior", undefined, { ...e, estacion: "A" }, receptor).ruta, "/station/C");
+  assert.equal(L.planRemoto("/siguiente", undefined, { ...e, estacion: "Borrada" }, receptor).ruta, "/station/A");
+  assert.equal(L.planRemoto("/anterior", undefined, { ...e, estacion: "Borrada" }, receptor).ruta, "/station/C");
+  assert.deepEqual(L.planRemoto("/siguiente", undefined, { estaciones: [] }, receptor), { destino: "ninguno" });
+  assert.deepEqual(L.planRemoto("/siguiente", undefined, null, receptor), { destino: "ninguno" });
+});
+
+test("planRemoto: encendido y volumen van al receptor local", () => {
+  const args = (ruta, cuerpo, r = receptor) => L.planRemoto(ruta, cuerpo, status.datos, r).argumentos;
+  assert.equal(L.planRemoto("/alternar", undefined, status.datos, receptor).destino, "receptor");
+  assert.deepEqual(args("/alternar"), ["off"]);
+  assert.deepEqual(args("/alternar", undefined, { escuchando: false, volumen: 5 }), ["on"]);
+  assert.deepEqual(args("/encender"), ["on"]);
+  assert.deepEqual(args("/apagar"), ["off"]);
+  assert.deepEqual(args("/volumen", { delta: -10 }), ["volume", "0"]);
+  assert.deepEqual(args("/volumen", { delta: 200 }), ["volume", "100"]);
+  assert.deepEqual(args("/volumen", { valor: 40 }), ["volume", "40"]);
+  assert.deepEqual(args("/volumen", { valor: 400 }), ["volume", "100"]);
+  assert.deepEqual(L.planRemoto("/volumen", {}, status.datos, receptor), { destino: "ninguno" });
+});
+
+test("planRemoto: lo que edita o no existe no hace nada", () => {
+  for (const r of ["/dj/modo", "/rescan", "/monitor", "/silenciar", "/otra"])
+    assert.deepEqual(L.planRemoto(r, {}, status.datos, receptor), { destino: "ninguno" }, r);
+});
+
+test("estadoRemoto: lo local manda en encendido y volumen, lo demás es del servidor", () => {
+  const e = L.estadoRemoto(status, receptor, "100.104.222.41");
+  assert.equal(e.encendida, true);
+  assert.equal(e.volumen, 5);
+  assert.equal(e.estacion, "B");
+  assert.deepEqual(e.estaciones, ["A", "B", "C"]);
+  assert.equal(e.aviso, undefined);
+});
+
+test("estadoRemoto: la radio principal apagada se avisa solo si se está escuchando", () => {
+  const apagadaLejos = { codigo: 200, datos: { ...status.datos, encendida: false } };
+  assert.match(L.estadoRemoto(apagadaLejos, receptor, "h").aviso, /principal está apagada/);
+  assert.equal(L.estadoRemoto(apagadaLejos, { escuchando: false, volumen: 5 }, "h").aviso, undefined);
+});
+
+test("estadoRemoto: clave rechazada, servidor inalcanzable y error del audio", () => {
+  const sinClave = L.estadoRemoto({ codigo: 401, datos: { error: "no autorizado" } }, receptor, "100.1.1.1");
+  assert.equal(sinClave.aviso, "clave rechazada");
+  assert.deepEqual(sinClave.estaciones, []);
+  const caido = L.estadoRemoto({ codigo: 0, datos: null }, receptor, "100.1.1.1");
+  assert.equal(caido.aviso, "no alcanzo a la radio en 100.1.1.1");
+  assert.deepEqual(caido.estaciones, []);
+  const sinAudio = L.estadoRemoto(status, { escuchando: false, volumen: 5, error: "sin conexión" }, "h");
+  assert.match(sinAudio.aviso, /audio: sin conexión/);
+});
+
+test("tooltip: agrega el aviso como última línea", () => {
+  assert.equal(L.tooltip({ ...encendida, aviso: "clave rechazada" }),
+               "Regueton 2000\nZion & Lennox - Ahora\nVolumen 70\nclave rechazada");
+  assert.equal(L.tooltip({ ...apagada, aviso: "no alcanzo a la radio en h" }),
+               "Apagada · volumen 70\nno alcanzo a la radio en h");
+});
