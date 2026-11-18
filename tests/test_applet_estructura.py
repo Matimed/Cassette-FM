@@ -226,3 +226,13 @@ def test_al_cambiar_o_apagar_el_modo_remoto_se_corta_la_escucha_y_al_quitar_el_a
     quitado = js[js.index("    on_applet_removed_from_panel() {"):]
     quitado = quitado[:quitado.index("\n    }\n")]
     assert "this.is_remote" in quitado and '"off"' in quitado
+
+
+def test_el_dial_entiende_las_flechas_del_teclado_numerico():
+    js = _js()
+    cuerpo = js[js.index("function _nombreDeTecla"):]
+    cuerpo = cuerpo[:cuerpo.index("\n}\n")]
+    # con NumLock apagado el teclado numérico manda KP_Left/KP_Right/KP_Up/KP_Down; con NumLock prendido, 4/6/8/2
+    for tecla, nombre in (("KP_Left", "Left"), ("KP_Right", "Right"), ("KP_Up", "Up"), ("KP_Down", "Down"),
+                          ("KP_4", "Left"), ("KP_6", "Right"), ("KP_8", "Up"), ("KP_2", "Down")):
+        assert re.search(rf'\[Clutter\.KEY_{tecla}\]: "{nombre}"', cuerpo), tecla

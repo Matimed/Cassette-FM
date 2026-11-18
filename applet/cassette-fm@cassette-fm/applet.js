@@ -671,7 +671,11 @@ const DIAL_ANCHO_TEXTOS = 350;      // ancho fijo del recuadro de los textos (ce
 function _nombreDeTecla(simbolo) {
     const nombres = { [Clutter.KEY_Left]: "Left", [Clutter.KEY_Right]: "Right", [Clutter.KEY_Up]: "Up",
                       [Clutter.KEY_Down]: "Down", [Clutter.KEY_Escape]: "Escape", [Clutter.KEY_Return]: "Return",
-                      [Clutter.KEY_KP_Enter]: "Return" };
+                      [Clutter.KEY_KP_Enter]: "Return",
+                      // teclado numérico: sin NumLock manda KP_Left/…; con NumLock, los dígitos 4/6/8/2
+                      [Clutter.KEY_KP_Left]: "Left", [Clutter.KEY_KP_Right]: "Right", [Clutter.KEY_KP_Up]: "Up",
+                      [Clutter.KEY_KP_Down]: "Down", [Clutter.KEY_KP_4]: "Left", [Clutter.KEY_KP_6]: "Right",
+                      [Clutter.KEY_KP_8]: "Up", [Clutter.KEY_KP_2]: "Down" };
     return nombres[simbolo] || null;
 }
 
