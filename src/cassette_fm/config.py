@@ -66,6 +66,15 @@ class ConfigSpotify:
 
 
 @dataclass(frozen=True)
+class ConfigLan:
+    """Escuchar la radio desde otra PC propia (lan_server.py): apagado por defecto."""
+    activo: bool = False
+    puerto: int = 8765
+    escuchar: str = "auto"      # "auto" = la IP de Tailscale si existe, si no todas las interfaces; o una IP concreta
+    max_oyentes: int = 4
+
+
+@dataclass(frozen=True)
 class Config:
     raiz_musica: Path = Path.home() / "Música"
     puerto: int = 7710
@@ -75,6 +84,7 @@ class Config:
     dj: ConfigDJ = ConfigDJ()
     estaciones_dj: Mapping[str, ConfigDJ] = field(default_factory=dict)   # overrides ya fusionados
     spotify: ConfigSpotify = ConfigSpotify()
+    lan: ConfigLan = ConfigLan()
 
 
 def configuracion_dj(config: Config, estacion: str) -> ConfigDJ:
@@ -131,6 +141,10 @@ class Rutas:
         return self.cache.parent / "dj"
 
     @property
+    def lan_token(self) -> Path:
+        return self.config.with_name("lan.token")
+
+    @property
     def planificador(self) -> Path:
         return self.estado.parent / "planificador.json"
 
@@ -165,6 +179,7 @@ def cargar_config(archivo: Path) -> Config:
         raise ErrorConfig(f"{archivo}: {e}")
     tabla_dj = datos.pop("dj", None)
     spotify = _leer_spotify(archivo, datos.pop("spotify", None))
+    lan = _leer_lan(archivo, datos.pop("lan", None))
     conocidas = {"raiz_musica", "puerto", "avisos", "normalizar", "bus_audio"}
     datos = {k: v for k, v in datos.items() if k in conocidas}
     for clave, valor in datos.items():
@@ -177,7 +192,31 @@ def cargar_config(archivo: Path) -> Config:
     if "raiz_musica" in datos:
         datos["raiz_musica"] = Path(datos["raiz_musica"]).expanduser()
     dj, por_estacion = _leer_dj(archivo, tabla_dj)
-    return Config(**datos, dj=dj, estaciones_dj=por_estacion, spotify=spotify)
+    return Config(**datos, dj=dj, estaciones_dj=por_estacion, spotify=spotify, lan=lan)
+
+
+def _leer_lan(archivo: Path, tabla) -> ConfigLan:
+    if tabla is None:
+        return ConfigLan()
+    if not isinstance(tabla, dict):
+        raise ErrorConfig(f"{archivo}: 'lan' tiene que ser una tabla")
+    campos = {}
+    if "activo" in tabla:
+        if not isinstance(tabla["activo"], bool):
+            raise ErrorConfig(f"{archivo}: 'lan.activo' tiene que ser true o false")
+        campos["activo"] = tabla["activo"]
+    for clave, maximo in (("puerto", 65535), ("max_oyentes", 100)):
+        if clave in tabla:
+            valor = tabla[clave]
+            if isinstance(valor, bool) or not isinstance(valor, int) or not 1 <= valor <= maximo:
+                raise ErrorConfig(f"{archivo}: 'lan.{clave}' tiene que ser un número entero entre 1 y {maximo}")
+            campos[clave] = valor
+    if "escuchar" in tabla:
+        valor = _texto(archivo, "lan.escuchar", tabla["escuchar"]).strip()
+        if not valor:
+            raise ErrorConfig(f"{archivo}: 'lan.escuchar' no puede quedar vacío (\"auto\" o una IP)")
+        campos["escuchar"] = valor
+    return ConfigLan(**campos)
 
 
 def _leer_spotify(archivo: Path, tabla) -> "ConfigSpotify":

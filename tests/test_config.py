@@ -360,3 +360,32 @@ def test_el_monitor_local_se_guarda_en_el_estado(tmp_path):
     assert cargar_estado(archivo).monitor_local is True
     guardar_estado(archivo, Estado(monitor_local=False))
     assert cargar_estado(archivo).monitor_local is False
+
+
+def test_lan_apagado_por_defecto(tmp_path):
+    from cassette_fm.config import ConfigLan
+    assert cargar_config(tmp_path / "config.toml").lan == ConfigLan()
+    assert ConfigLan().activo is False and ConfigLan().puerto == 8765 and ConfigLan().escuchar == "auto"
+
+
+def test_lan_configurable(tmp_path):
+    archivo = tmp_path / "config.toml"
+    archivo.write_text('[lan]\nactivo = true\npuerto = 9000\nescuchar = "100.1.2.3"\nmax_oyentes = 2\n')
+    lan = cargar_config(archivo).lan
+    assert (lan.activo, lan.puerto, lan.escuchar, lan.max_oyentes) == (True, 9000, "100.1.2.3", 2)
+
+
+@pytest.mark.parametrize("linea, clave", [
+    ('activo = "si"', "lan.activo"), ("puerto = 70000", "lan.puerto"), ("puerto = true", "lan.puerto"),
+    ("max_oyentes = 0", "lan.max_oyentes"), ('escuchar = ""', "lan.escuchar"), ("escuchar = 5", "lan.escuchar")])
+def test_lan_invalido(tmp_path, linea, clave):
+    archivo = tmp_path / "config.toml"
+    archivo.write_text(f"[lan]\n{linea}\n")
+    with pytest.raises(ErrorConfig, match=clave):
+        cargar_config(archivo)
+
+
+def test_la_clave_de_la_lan_vive_junto_a_la_config(tmp_path):
+    r = Rutas(config=tmp_path / "c" / "config.toml", estado=tmp_path / "e.json", cache=tmp_path / "d.json",
+              runtime=tmp_path)
+    assert r.lan_token == tmp_path / "c" / "lan.token"
