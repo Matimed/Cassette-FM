@@ -226,3 +226,20 @@ def bus_privado(dir_corto):
     yield direccion
     proceso.terminate()
     proceso.wait(5)
+
+
+class _AudioRouterInerte:
+    """Con `bus_audio` prendido por defecto, ningún test debe tocar el audio real de quien lo corre."""
+    local_monitor_enabled = False
+
+    def create_bus(self): pass
+    def env(self): return None
+    def set_local_volume(self, percent): pass
+    def enable_local_monitor(self): self.local_monitor_enabled = True
+    def disable_local_monitor(self): self.local_monitor_enabled = False
+    def close(self): pass
+
+
+@pytest.fixture(autouse=True)
+def _sin_audio_real(monkeypatch):
+    monkeypatch.setattr("cassette_fm.servicio.AudioRouter", _AudioRouterInerte)

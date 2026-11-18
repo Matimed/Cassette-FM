@@ -57,6 +57,11 @@ Etapa 6 (diseño aprobado el 2026-11-18, sin implementar): **radio en red**, esc
 dispositivos con esta PC como servidor y clientes livianos; primero la notebook igual que esta PC (CASSETTE-FM-5as8,
 prioridad) y después compartir con amigos (CASSETTE-FM-3m6b, diferible):
 [`superpowers/specs/2026-11-18-radio-en-red-design.md`](superpowers/specs/2026-11-18-radio-en-red-design.md).
+Bus de audio (CASSETTE-FM-r80e, 18/11): todo el audio sale al sink virtual `radio_virtual` y lo que se oye en esta PC es un
+monitor local con volumen propio (el volumen de la radio es el del monitor; las fuentes quedan al 100 % salvo ducking y
+calibración), base de la retransmisión por red; `bus_audio` en `config.toml` (por defecto `true`), `POST /monitor`,
+interruptor en el applet y `scripts/instalar-bus.sh` para Soloist (cliente PipeWire nativo: `PIPEWIRE_NODE`, no `PULSE_SINK`):
+[`superpowers/specs/2026-11-18-bus-de-audio-design.md`](superpowers/specs/2026-11-18-bus-de-audio-design.md).
 Prender desde volumen 0 sube a 50. Ojo al tocar el applet: `ReloadXlet` recarga `applet.js` pero no `logic.js` (queda en caché hasta reiniciar Cinnamon).
 
 ## Relevamiento previo (leer antes de diseñar)

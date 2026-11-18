@@ -6,7 +6,8 @@ import pytest
 
 from cassette_fm.biblioteca import Estacion, Pista
 from cassette_fm.config import Estado
-from cassette_fm.radio import EstacionInexistente, Radio, SinEstaciones
+from cassette_fm.audio_router import AudioRouterError
+from cassette_fm.radio import BusInactivo, EstacionInexistente, Radio, SinEstaciones
 
 
 class ReproductorFalso:
@@ -827,3 +828,84 @@ def test_estado_trae_los_iconos():
     assert radio.estado()["iconos"] == {"A": "/x.png"}
     sin, _, _, _ = crear()
     assert sin.estado()["iconos"] == {}
+
+
+class RouterFalso:
+    def __init__(self):
+        self.volumenes = []
+        self.local_monitor_enabled = False
+        self.error = None
+
+    def set_local_volume(self, percent):
+        if self.error:
+            raise self.error
+        self.volumenes.append(percent)
+
+    def enable_local_monitor(self):
+        self.local_monitor_enabled = True
+
+    def disable_local_monitor(self):
+        self.local_monitor_enabled = False
+
+
+def test_con_bus_el_volumen_de_la_radio_es_el_del_monitor_y_las_fuentes_quedan_al_100():
+    router = RouterFalso()
+    radio, rep, _, _ = crear(estado=Estado(volumen=55), router=router)
+    assert router.volumenes == [55]
+    assert rep.llamadas == [("volumen", 100)]
+    assert radio.volumen(valor=30) == 30
+    assert router.volumenes == [55, 30] and rep.llamadas[-1] == ("volumen", 100)
+    assert radio.estado()["volumen"] == 30
+
+
+def test_con_bus_el_volumen_se_acota_a_0_100():
+    router = RouterFalso()
+    radio, _, _, _ = crear(estado=Estado(volumen=70), router=router)
+    assert radio.volumen(delta=500) == 100
+    assert radio.volumen(delta=-500) == 0
+    assert router.volumenes[-2:] == [100, 0]
+
+
+def test_con_bus_volumen_0_mutea_tambien_las_fuentes_y_apaga():
+    router = RouterFalso()
+    radio, rep, _, _ = crear(estado=Estado(volumen=10), router=router)
+    radio.encender()
+    radio.volumen(valor=0)
+    assert router.volumenes[-1] == 0 and rep.llamadas[-2] == ("volumen", 0)
+    assert radio.encendida is False
+
+
+def test_con_bus_un_error_del_router_no_rompe_el_volumen_de_la_radio():
+    router = RouterFalso()
+    radio, _, guardados, estado = crear(estado=Estado(volumen=70), router=router)
+    router.error = AudioRouterError("sin sink-input")
+    assert radio.volumen(valor=20) == 20
+    assert estado.volumen == 20
+
+
+def test_sin_bus_el_estado_no_trae_monitor_y_el_volumen_va_a_las_fuentes():
+    radio, rep, _, _ = crear(estado=Estado(volumen=55))
+    assert "monitor_local" not in radio.estado()
+    assert rep.llamadas == [("volumen", 55)]
+    with pytest.raises(BusInactivo):
+        radio.monitor(True)
+
+
+def test_el_monitor_se_prende_y_apaga_y_se_recuerda():
+    router = RouterFalso()
+    radio, _, guardados, estado = crear(router=router, estado=Estado(monitor_local=False))
+    assert radio.estado()["monitor_local"] is False and router.local_monitor_enabled is False
+    assert radio.monitor(True) is True
+    assert router.local_monitor_enabled and estado.monitor_local is True
+    assert radio.estado()["monitor_local"] is True
+    assert radio.monitor(False) is False and not router.local_monitor_enabled
+    assert estado.monitor_local is False
+
+
+def test_al_nacer_la_radio_respeta_el_monitor_guardado():
+    router = RouterFalso()
+    crear(router=router, estado=Estado(monitor_local=True))
+    assert router.local_monitor_enabled is True
+    router2 = RouterFalso()
+    crear(router=router2, estado=Estado(monitor_local=False))
+    assert router2.local_monitor_enabled is False

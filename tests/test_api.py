@@ -9,7 +9,8 @@ import pytest
 
 from cassette_fm.api import crear_servidor
 from cassette_fm.mpv import ErrorMpv
-from cassette_fm.radio import DJInactivo, RadioApagada, EstacionInexistente, SinEstaciones
+from cassette_fm.audio_router import AudioRouterError
+from cassette_fm.radio import BusInactivo, DJInactivo, RadioApagada, EstacionInexistente, SinEstaciones
 
 
 class RadioFalsa:
@@ -52,6 +53,10 @@ class RadioFalsa:
     def apagar(self): self._hacer("apagar")
     def alternar(self): self._hacer("alternar")
     def rescan(self): self._hacer("rescan")
+
+    def monitor(self, activo):
+        self._hacer("monitor", activo)
+        return activo
 
     def volumen(self, valor=None, delta=None):
         self._hacer("volumen", valor=valor, delta=delta)
@@ -280,3 +285,27 @@ def test_dj_modo_valueerror_400(servidor):
 def test_post_dj_modo_invalido_400(servidor, cuerpo):
     assert pedir(servidor, "POST", "/dj/modo", cuerpo)[0] == 400
     assert servidor.radio.llamadas == []
+
+
+def test_post_monitor_prende_y_apaga(servidor):
+    assert pedir(servidor, "POST", "/monitor", {"activo": True})[0] == 200
+    assert pedir(servidor, "POST", "/monitor", {"activo": False})[0] == 200
+    assert [l[1] for l in servidor.radio.llamadas] == [(True,), (False,)]
+
+
+@pytest.mark.parametrize("cuerpo", [{}, {"activo": "si"}, {"activo": 1}, {"activo": None}])
+def test_post_monitor_invalido_400(servidor, cuerpo):
+    assert pedir(servidor, "POST", "/monitor", cuerpo)[0] == 400
+    assert servidor.radio.llamadas == []
+
+
+def test_monitor_sin_bus_409(servidor):
+    servidor.radio.error = BusInactivo("sin bus")
+    codigo, resp = pedir(servidor, "POST", "/monitor", {"activo": True})
+    assert codigo == 409 and "bus" in resp["error"]
+
+
+def test_monitor_con_falla_de_pactl_503(servidor):
+    servidor.radio.error = AudioRouterError("no se encontró `pactl`")
+    codigo, resp = pedir(servidor, "POST", "/monitor", {"activo": True})
+    assert codigo == 503 and "pactl" in resp["error"]

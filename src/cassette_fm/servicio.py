@@ -5,6 +5,7 @@ import time
 from collections.abc import Callable, Sequence
 
 from cassette_fm.api import crear_servidor
+from cassette_fm.audio_router import AudioRouter, AudioRouterError
 from cassette_fm.avisos import Notificador
 from cassette_fm.cliente_dj import ClienteDJ
 from cassette_fm.config import Config, Rutas, cargar_estado, guardar_estado
@@ -79,9 +80,22 @@ def servir(config: Config, rutas: Rutas, avisar: Callable[[str, str], None] | No
                         reproduce_spotify=config.spotify.activo)
     escanear = catalogo.escanear
 
+    router = env_audio = None
+    if config.bus_audio:
+        try:
+            router = AudioRouter()
+            router.create_bus()
+            env_audio = router.env()
+            # mpv en PipeWire usa por defecto su salida nativa, que ignora PULSE_SINK; los args del usuario van después
+            extra_args_mpv = ["--ao=pulse", *extra_args_mpv]
+        except AudioRouterError as e:
+            _log.error("no se pudo crear el bus de audio (%s); la radio suena sin él. Si no lo necesitás, poné "
+                       "`bus_audio = false` en config.toml (y corré scripts/instalar-bus.sh quitar)", e)
+            router = env_audio = None
+
     estado = cargar_estado(rutas.estado)
     args_mpv = (["--af=dynaudnorm"] if config.normalizar else []) + list(extra_args_mpv)
-    mpv = ClienteMpv(rutas.runtime / "mpv.sock", extra_args=args_mpv)
+    mpv = ClienteMpv(rutas.runtime / "mpv.sock", extra_args=args_mpv, env=env_audio)
     estaciones = escanear()
     _log.info("%d estaciones (de %s)", len(estaciones), rutas.emisoras)
     spotify = soloist = estatica = None
@@ -94,7 +108,7 @@ def servir(config: Config, rutas: Rutas, avisar: Callable[[str, str], None] | No
     extra_radio = {}
     if config.dj.activo:
         # el segundo mpv (la voz) no arranca hasta el primer clip y no lleva el filtro de volumen
-        voz = ClienteMpv(rutas.runtime / "voz.sock", extra_args=argumentos_voz(config.dj, extra_args_mpv))
+        voz = ClienteMpv(rutas.runtime / "voz.sock", extra_args=argumentos_voz(config.dj, extra_args_mpv), env=env_audio)
         registro = RegistroIntervenciones(rutas.intervenciones, rutas.clips,
                                           gracia_segundos=config.dj.tolerancia_desfase_segundos)
         locutor = Locutor(voz, reproductor, registro, catalogo.configuracion_dj)
@@ -109,7 +123,7 @@ def servir(config: Config, rutas: Rutas, avisar: Callable[[str, str], None] | No
             extra_radio["planificador"] = planificador
     radio = Radio(reproductor, estaciones, estado,
                   guardar=lambda e: guardar_estado(rutas.estado, e),
-                  escanear=escanear, avisar=avisar, iconos=catalogo.iconos, **extra_radio)
+                  escanear=escanear, avisar=avisar, iconos=catalogo.iconos, router=router, **extra_radio)
     # teclas multimedia y botones del parlante; sin bus de sesión la radio anda igual
     mpris = ServicioMpris(radio, direccion=bus_mpris)
     radio.al_cambiar = mpris.cambio
@@ -133,6 +147,8 @@ def servir(config: Config, rutas: Rutas, avisar: Callable[[str, str], None] | No
         if soloist is not None:
             pasos.append(soloist.cerrar)
         pasos.append(mpv.cerrar)
+        if router is not None:
+            pasos.append(router.close)     # al final: con el bus ya vacío
         for paso in pasos:
             try:
                 paso()

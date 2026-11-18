@@ -139,3 +139,30 @@ def test_excepcion_en_el_manejador_se_loguea(mpv, caplog):
     mpv.al_evento = malo
     mpv.comando("loadfile", url="/no/existe.mp3", flags="replace")
     assert esperar(lambda: "boom" in caplog.text or "manejador" in caplog.text, 3)
+
+
+def test_el_entorno_se_pasa_al_proceso_de_mpv(dir_corto, monkeypatch):
+    capturado = {}
+
+    def popen_falso(comando, **kw):
+        capturado.update(kw)
+        raise OSError("no se lanza de verdad")
+
+    monkeypatch.setattr("cassette_fm.mpv.subprocess.Popen", popen_falso)
+    entorno = {"PULSE_SINK": "radio_virtual"}
+    with pytest.raises(OSError):
+        ClienteMpv(dir_corto / "mpv.sock", env=entorno).iniciar()
+    assert capturado["env"] == entorno
+
+
+def test_sin_entorno_mpv_hereda_el_del_servicio(dir_corto, monkeypatch):
+    capturado = {}
+
+    def popen_falso(comando, **kw):
+        capturado.update(kw)
+        raise OSError("no se lanza de verdad")
+
+    monkeypatch.setattr("cassette_fm.mpv.subprocess.Popen", popen_falso)
+    with pytest.raises(OSError):
+        ClienteMpv(dir_corto / "mpv.sock").iniciar()
+    assert capturado["env"] is None

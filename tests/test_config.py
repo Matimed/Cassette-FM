@@ -343,3 +343,20 @@ def test_peticion_margen_se_lee_del_toml(tmp_path):
 def test_la_notificacion_de_cambio_de_emisora_viene_apagada():
     # alcanza con la emisora en el panel (el applet); se prende con `avisos = true`
     assert Config().avisos is False
+
+
+def test_bus_de_audio_prendido_por_defecto_y_configurable(tmp_path):
+    archivo = tmp_path / "config.toml"
+    assert cargar_config(archivo).bus_audio is True
+    archivo.write_text("bus_audio = false\n")
+    assert cargar_config(archivo).bus_audio is False
+    archivo.write_text('bus_audio = "si"\n')
+    with pytest.raises(ErrorConfig, match="bus_audio"):
+        cargar_config(archivo)
+
+
+def test_el_monitor_local_se_guarda_en_el_estado(tmp_path):
+    archivo = tmp_path / "estado.json"
+    assert cargar_estado(archivo).monitor_local is True
+    guardar_estado(archivo, Estado(monitor_local=False))
+    assert cargar_estado(archivo).monitor_local is False

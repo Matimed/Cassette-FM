@@ -525,3 +525,68 @@ def test_servir_sin_bus_igual_arranca(tmp_path, dir_corto, caplog):
             parar.set()
             hilo.join(5)
     assert not hilo.is_alive()
+
+
+class RouterDeServicioFalso:
+    instancias = []
+
+    def __init__(self):
+        self.llamadas = []
+        self.local_monitor_enabled = False
+        RouterDeServicioFalso.instancias.append(self)
+
+    def create_bus(self): self.llamadas.append("bus")
+    def env(self): return {"PULSE_SINK": "radio_virtual"}
+    def set_local_volume(self, p): self.llamadas.append(f"vol {p}")
+    def enable_local_monitor(self): self.local_monitor_enabled = True; self.llamadas.append("on")
+    def disable_local_monitor(self): self.local_monitor_enabled = False; self.llamadas.append("off")
+    def close(self): self.llamadas.append("close")
+
+
+def test_servir_con_bus_de_audio_crea_el_bus_expone_el_monitor_y_lo_cierra(tmp_path, dir_corto, crear_mp3, monkeypatch):
+    RouterDeServicioFalso.instancias.clear()
+    monkeypatch.setattr(servicio, "AudioRouter", RouterDeServicioFalso)
+    musica = tmp_path / "musica"
+    crear_mp3(musica / "A" / "a.mp3", 30, titulo="Tema A")
+    rutas = Rutas(config=tmp_path / "config.toml", estado=tmp_path / "st" / "estado.json",
+                  cache=tmp_path / "cache" / "d.json", runtime=dir_corto)
+    puerto = puerto_libre()
+    parar = threading.Event()
+    hilo = threading.Thread(target=servir, kwargs=dict(
+        config=Config(raiz_musica=musica, puerto=puerto, avisos=False, bus_audio=True), rutas=rutas,
+        parar=parar, extra_args_mpv=["--ao=null"]), daemon=True)
+    hilo.start()
+    try:
+        assert esperar_servicio(puerto)["monitor_local"] is True
+        assert llamar(puerto, "POST", "/monitor", {"activo": False})["monitor_local"] is False
+        assert json.loads(rutas.estado.read_text())["monitor_local"] is False
+    finally:
+        parar.set()
+        hilo.join(3)
+    (router,) = RouterDeServicioFalso.instancias
+    assert router.llamadas[0] == "bus" and router.llamadas[-1] == "close"
+
+
+def test_servir_sin_pactl_arranca_igual_sin_bus(tmp_path, dir_corto, crear_mp3, monkeypatch, caplog):
+    from cassette_fm.audio_router import AudioRouterError
+
+    class SinPactl(RouterDeServicioFalso):
+        def create_bus(self): raise AudioRouterError("no se encontró `pactl`")
+
+    monkeypatch.setattr(servicio, "AudioRouter", SinPactl)
+    musica = tmp_path / "musica"
+    crear_mp3(musica / "A" / "a.mp3", 30, titulo="Tema A")
+    rutas = Rutas(config=tmp_path / "config.toml", estado=tmp_path / "st" / "estado.json",
+                  cache=tmp_path / "cache" / "d.json", runtime=dir_corto)
+    puerto = puerto_libre()
+    parar = threading.Event()
+    hilo = threading.Thread(target=servir, kwargs=dict(
+        config=Config(raiz_musica=musica, puerto=puerto, avisos=False, bus_audio=True), rutas=rutas,
+        parar=parar, extra_args_mpv=["--ao=null"]), daemon=True)
+    hilo.start()
+    try:
+        assert "monitor_local" not in esperar_servicio(puerto)
+        assert "bus_audio = false" in caplog.text      # el error recomienda cómo apagarlo
+    finally:
+        parar.set()
+        hilo.join(3)

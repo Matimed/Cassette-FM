@@ -6,7 +6,7 @@ import socket as socket_mod
 import subprocess
 import threading
 import time
-from collections.abc import Callable, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from pathlib import Path
 from typing import Any
 
@@ -110,10 +110,12 @@ class ClienteMpv:
     al_perder: Callable[[], None] | None = None   # mpv murió sin que lo cerráramos
     generacion: int = 0                           # sube cada vez que se (re)lanza mpv
 
-    def __init__(self, socket: Path, extra_args: Sequence[str] = (), ejecutable: str = "mpv"):
+    def __init__(self, socket: Path, extra_args: Sequence[str] = (), ejecutable: str = "mpv",
+                 env: Mapping[str, str] | None = None):
         self._socket = Path(socket)
         self._extra_args = list(extra_args)
         self._ejecutable = ejecutable
+        self._env = dict(env) if env is not None else None   # None = el del servicio
         self._proceso: subprocess.Popen | None = None
         self._conexion: _Conexion | None = None
         self._ids = itertools.count(1)
@@ -128,7 +130,7 @@ class ClienteMpv:
             self._proceso = subprocess.Popen(
                 [self._ejecutable, "--no-config", "--idle=yes", "--no-video", "--no-terminal",
                  f"--input-ipc-server={self._socket}", *self._extra_args],
-                stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                env=self._env, stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
             sock = self._conectar()
             conexion = _Conexion(sock, lambda: self.al_evento, lambda: self.al_perder,
                                  lambda c: c is self._conexion)

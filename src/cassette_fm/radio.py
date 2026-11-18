@@ -11,6 +11,7 @@ from pathlib import Path
 
 import mutagen
 
+from cassette_fm.audio_router import AudioRouterError
 from cassette_fm.agenda import desfase, plegar_vencidos, transiciones
 from cassette_fm.biblioteca import Estacion, Pedido, Pista
 from cassette_fm.clips import generar_clip_de_prueba
@@ -71,6 +72,10 @@ class DJInactivo(Exception):
     """El DJ está apagado en la configuración."""
 
 
+class BusInactivo(Exception):
+    """El bus de audio virtual está apagado en la configuración (`bus_audio`)."""
+
+
 class RadioApagada(Exception):
     """No hay una estación sintonizada."""
 
@@ -81,8 +86,9 @@ class Radio:
                  avisar: Callable[[str, str], None] | None = None, dj=None,
                  configuracion_dj: Callable[[str], ConfigDJ] | None = None, dir_clips: Path | None = None,
                  reloj: Callable[[], float] = time.time, planificador=None,
-                 iconos: Callable[[], dict[str, str]] | None = None):
+                 iconos: Callable[[], dict[str, str]] | None = None, router=None):
         self._iconos = iconos
+        self._router = router
         self._dj = dj
         self._planificador = planificador
         self._configuracion_dj = configuracion_dj or (lambda nombre: ConfigDJ())
@@ -107,6 +113,11 @@ class Radio:
         reproductor.al_encolado = self._al_encolado
         reproductor.al_desencolado = self._al_desencolado
         self._poner_volumen(estado.volumen)
+        if router is not None:
+            try:
+                self._aplicar_monitor(estado.monitor_local)
+            except AudioRouterError as e:      # sin pactl la radio anda igual, solo que sin monitor
+                _log.warning("no se pudo prender el monitor local: %s", e)
 
     def estaciones(self) -> list[Estacion]:
         with self._lock:
@@ -155,6 +166,16 @@ class Radio:
                 self.encender()
             return self._estado.volumen
 
+    def monitor(self, activo: bool) -> bool:
+        """Prende o apaga la escucha en los parlantes de esta PC (el bus sigue sonando para otros)."""
+        with self._lock:
+            if self._router is None:
+                raise BusInactivo("el bus de audio está apagado: poné `bus_audio = true` en config.toml")
+            self._aplicar_monitor(activo)
+            self._estado.monitor_local = activo
+            self._guardar(self._estado)
+            return activo
+
     def rescan(self) -> None:
         nuevas = list(self._escanear())   # fuera del lock: puede tardar con bibliotecas grandes
         with self._lock:
@@ -184,7 +205,7 @@ class Radio:
                 "fuente": self._fuente_actual() if self.encendida else None,
                 "segundo": round(segundo, 1) if segundo is not None else None,
                 "iconos": self._iconos() if self._iconos is not None else {},
-            }
+            } | ({"monitor_local": self._router.local_monitor_enabled} if self._router is not None else {})
 
     def sonando(self) -> tuple[str, Pista] | None:
         """(emisora, pista) de lo que está sonando, o None si está apagada o todavía sin tema."""
@@ -260,8 +281,24 @@ class Radio:
             self._planificador.al_sintonizar(estacion)
         self._avisar_cambio()
 
+    def _aplicar_monitor(self, activo: bool) -> None:
+        if activo:
+            self._router.enable_local_monitor()
+        else:
+            self._router.disable_local_monitor()
+
     def _poner_volumen(self, valor: int) -> int:
-        valor = self._reproductor.volumen(valor)
+        if self._router is None:
+            valor = self._reproductor.volumen(valor)
+        else:
+            # el volumen de la radio es el del monitor local: la señal del bus (y la de otros oyentes) no cambia,
+            # así que las fuentes quedan al 100 % (salvo mute, el ducking y la calibración, que siguen en ellas)
+            valor = max(0, min(100, int(valor)))
+            self._reproductor.volumen(100 if valor else 0)
+            try:
+                self._router.set_local_volume(valor)
+            except AudioRouterError as e:
+                _log.warning("no se pudo ajustar el volumen del monitor local: %s", e)
         if self._dj is not None:
             self._dj.volumen(valor)
         return valor

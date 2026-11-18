@@ -3,9 +3,10 @@ import logging
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
+from cassette_fm.audio_router import AudioRouterError
 from cassette_fm.config import ErrorConfig
 from cassette_fm.mpv import ErrorMpv
-from cassette_fm.radio import DJInactivo, EstacionInexistente, RadioApagada, SinEstaciones
+from cassette_fm.radio import BusInactivo, DJInactivo, EstacionInexistente, RadioApagada, SinEstaciones
 
 _log = logging.getLogger("cassette_fm")
 
@@ -76,7 +77,7 @@ def crear_servidor(radio, host: str = "127.0.0.1", puerto: int = 7710,
 
         def do_POST(self):
             ruta = self.path.lstrip("/")
-            if ruta not in ACCIONES + ("sintonizar", "volumen", "dj/probar", "dj/pedir", "dj/modo"):
+            if ruta not in ACCIONES + ("sintonizar", "volumen", "monitor", "dj/probar", "dj/pedir", "dj/modo"):
                 self._error(404, f"ruta desconocida: {self.path}")
                 return
             respuesta = None
@@ -92,6 +93,10 @@ def crear_servidor(radio, host: str = "127.0.0.1", puerto: int = 7710,
                     if not isinstance(datos.get("estacion"), str):
                         raise _SolicitudInvalida("falta el campo 'estacion'")
                     radio.sintonizar(datos["estacion"])
+                elif ruta == "monitor":
+                    if not isinstance(datos.get("activo"), bool):
+                        raise _SolicitudInvalida("falta 'activo' (true o false)")
+                    radio.monitor(datos["activo"])
                 elif ruta == "volumen":
                     valor, delta = datos.get("valor"), datos.get("delta")
                     if valor is None and delta is None:
@@ -110,6 +115,10 @@ def crear_servidor(radio, host: str = "127.0.0.1", puerto: int = 7710,
                 self._error(503, f"mpv: {e}")
             except DJInactivo:
                 self._error(409, _MENSAJE_DJ_INACTIVO)
+            except BusInactivo as e:
+                self._error(409, str(e))
+            except AudioRouterError as e:
+                self._error(503, f"audio: {e}")
             except RadioApagada:
                 self._error(409, "No hay una estación sintonizada: encendé la radio primero")
             except SinEstaciones:

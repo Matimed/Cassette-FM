@@ -70,6 +70,7 @@ class Config:
     raiz_musica: Path = Path.home() / "Música"
     puerto: int = 7710
     avisos: bool = False                   # notificación al cambiar de emisora (el applet ya la muestra)
+    bus_audio: bool = True                 # todo el audio sale a un sink virtual (radio_virtual); ver audio_router.py
     normalizar: bool = True   # filtro dynaudnorm de mpv: parejiza el volumen entre temas
     dj: ConfigDJ = ConfigDJ()
     estaciones_dj: Mapping[str, ConfigDJ] = field(default_factory=dict)   # overrides ya fusionados
@@ -84,6 +85,7 @@ def configuracion_dj(config: Config, estacion: str) -> ConfigDJ:
 class Estado:
     estacion: str | None = None
     volumen: int = 70
+    monitor_local: bool = True    # con el bus de audio: si la radio se escucha en los parlantes de esta PC
     # por emisora: {"corrimiento": s, "pedidos": [{"inicio", "uri", "ruta", "duracion", "titulo", ...}]}
     agendas: dict[str, dict] = field(default_factory=dict)
 
@@ -163,10 +165,11 @@ def cargar_config(archivo: Path) -> Config:
         raise ErrorConfig(f"{archivo}: {e}")
     tabla_dj = datos.pop("dj", None)
     spotify = _leer_spotify(archivo, datos.pop("spotify", None))
-    conocidas = {"raiz_musica", "puerto", "avisos", "normalizar"}
+    conocidas = {"raiz_musica", "puerto", "avisos", "normalizar", "bus_audio"}
     datos = {k: v for k, v in datos.items() if k in conocidas}
     for clave, valor in datos.items():
-        tipo = {"raiz_musica": str, "puerto": int, "avisos": bool, "normalizar": bool}[clave]
+        tipo = {"raiz_musica": str, "puerto": int, "avisos": bool, "normalizar": bool,
+                "bus_audio": bool}[clave]
         if not isinstance(valor, tipo) or (tipo is int and isinstance(valor, bool)):
             raise ErrorConfig(f"{archivo}: '{clave}' tiene que ser {_NOMBRE_TIPO[tipo]}")
     if "puerto" in datos and not 1 <= datos["puerto"] <= 65535:
@@ -353,7 +356,8 @@ def cargar_estado(archivo: Path) -> Estado:
         agendas = datos.get("agendas")
         agendas = {str(n): {"corrimiento": float(a["corrimiento"]), "pedidos": list(a.get("pedidos", []))}
                    for n, a in (agendas.items() if isinstance(agendas, dict) else ()) if _agenda_valida(a)}
-        return Estado(estacion=datos.get("estacion"), volumen=int(datos.get("volumen", 70)), agendas=agendas)
+        return Estado(estacion=datos.get("estacion"), volumen=int(datos.get("volumen", 70)),
+                      monitor_local=datos.get("monitor_local", True) is not False, agendas=agendas)
     except (OSError, ValueError, AttributeError, TypeError):
         return Estado()
 
