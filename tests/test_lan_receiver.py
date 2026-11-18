@@ -383,3 +383,48 @@ def test_resync_vuelve_a_cargar_el_stream_sin_duplicar_mpv(entorno, servidor):
 def test_resync_sin_escuchar_no_hace_nada(entorno, servidor):
     assert lan_receiver.main(["resync"], entorno) == 0
     assert procesos_mpv(entorno) == [] and servidor.pedidos_stream == []
+
+
+def procesos_con(texto):
+    encontrados = []
+    for pid in os.listdir("/proc"):
+        if pid.isdigit():
+            try:
+                linea = Path(f"/proc/{pid}/cmdline").read_bytes().decode(errors="replace")
+            except OSError:
+                continue
+            if texto in linea:
+                encontrados.append((int(pid), linea))
+    return encontrados
+
+
+def test_la_estatica_del_receptor_es_la_misma_de_la_radio(tmp_path):
+    from cassette_fm.clips import generar_estatica
+    propia = RUTA.with_name("estatica.wav")
+    assert propia.is_file()
+    assert propia.read_bytes() == generar_estatica(tmp_path / "e.wav", segundos=1.0).read_bytes()
+
+
+def test_resync_toca_la_estatica_mientras_reconecta_con_el_volumen_de_la_escucha(entorno, servidor):
+    lan_receiver.main(["volume", "35"], entorno)
+    lan_receiver.main(["on"], entorno)
+    assert esperar(lambda: servidor.pedidos_stream)
+    lan_receiver.main(["resync"], entorno)
+    assert esperar(lambda: procesos_con("estatica.wav"), 3)
+    (_, linea), = procesos_con("estatica.wav")[:1]
+    assert "--volume=35" in linea and "Bearer" not in linea
+    assert esperar(lambda: not procesos_con("estatica.wav"), 5)          # dura ~1 s: no queda colgada
+
+
+def test_resync_sin_escuchar_no_toca_estatica(entorno, servidor):
+    lan_receiver.main(["resync"], entorno)
+    time.sleep(0.5)
+    assert procesos_con("estatica.wav") == []
+
+
+def test_resync_con_volumen_0_no_toca_estatica(entorno, servidor):
+    lan_receiver.main(["volume", "0"], entorno)
+    lan_receiver.main(["on"], entorno)
+    lan_receiver.main(["resync"], entorno)
+    time.sleep(0.6)
+    assert procesos_con("estatica.wav") == []

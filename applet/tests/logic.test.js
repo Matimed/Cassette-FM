@@ -378,3 +378,14 @@ test("parsearIconos: la salida de lan_receiver.py icons", () => {
   assert.deepEqual(L.parsearIconos("{}"), {});
   for (const mala of ["", "x", "[]", '{"A": 3}', "null", null, undefined]) assert.equal(L.parsearIconos(mala), null, String(mala));
 });
+
+test("musicaSonando: la emisora pedida ya tiene un tema distinto del que había", () => {
+  const ya = { encendida: true, estacion: "B", pista: "Nuevo - Tema", volumen: 50 };
+  assert.equal(L.musicaSonando(ya, "B", "Viejo - Tema"), true);
+  assert.equal(L.musicaSonando({ ...ya, pista: "Viejo - Tema" }, "B", "Viejo - Tema"), false);   // sigue el tema viejo
+  assert.equal(L.musicaSonando({ ...ya, pista: null }, "B", "Viejo - Tema"), false);               // todavía carga
+  assert.equal(L.musicaSonando({ ...ya, estacion: "A" }, "B", "Viejo - Tema"), false);
+  assert.equal(L.musicaSonando({ ...ya, encendida: false }, "B", null), false);
+  assert.equal(L.musicaSonando(ya, "B", null), true);                                              // al abrir con la radio apagada
+  assert.equal(L.musicaSonando(null, "B", null), false);
+});

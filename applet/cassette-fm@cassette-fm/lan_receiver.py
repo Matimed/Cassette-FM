@@ -29,6 +29,7 @@ from pathlib import Path
 
 VOLUMEN_INICIAL = 70
 ESPERA_SOCKET_SEGUNDOS = 5.0
+ARRANQUE_ESTATICA_SEGUNDOS = 0.15    # lo que tarda en arrancar el mpv de la estática
 
 
 def _runtime(env: Mapping[str, str]) -> Path:
@@ -192,11 +193,30 @@ def _resync(env: Mapping[str, str]) -> int:
         return 0
     with _Candado(runtime):
         if _vivo(socket_ipc):
+            if _tocar_estatica(env, runtime):
+                time.sleep(ARRANQUE_ESTATICA_SEGUNDOS)       # que la estática ya suene cuando se corta el stream viejo
             try:
                 _cargar(socket_ipc, *credenciales)
             except (OSError, ValueError):
                 return _error("no pude volver a cargar el stream")
     return 0
+
+
+def _tocar_estatica(env: Mapping[str, str], runtime: Path) -> bool:
+    """La misma estática que suena en la radio al sintonizar, mientras se reconecta: el salto del resync queda
+    disimulado y suena igual que en la PC principal. Un mpv corto que se cierra solo; con el volumen de la escucha."""
+    volumen = _volumen_guardado(runtime)
+    estatica = Path(__file__).with_name("estatica.wav")
+    if volumen == 0 or not estatica.is_file():
+        return False
+    try:
+        subprocess.Popen(["mpv", "--no-config", "--no-video", "--no-terminal", "--really-quiet", f"--volume={volumen}",
+                          *shlex.split(env.get("CASSETTE_LAN_MPV_ARGS", "")), str(estatica)],
+                         stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                         start_new_session=True, env=dict(env))
+        return True
+    except OSError:
+        return False                          # sin estática el resync igual anda
 
 
 def _es_nuestro_mpv(pid: int, socket_ipc: Path) -> bool:

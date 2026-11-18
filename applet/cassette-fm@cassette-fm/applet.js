@@ -52,6 +52,7 @@ class CassetteApplet extends Applet.TextIconApplet {
         this._firmaIconos = null;
         this._iconosReintento = 0;
         this._resync = 0;               // temporizador del resync tras cambiar de emisora
+        this._resincronizando = false;  // el receptor está reconectando
         this.settings.bind("is_remote", "is_remote", () => this._alCambiarRemoto());
         this.settings.bind("server_url", "server_url", () => this._alCambiarRemoto());
         this.settings.bind("server_token", "server_token", () => this._alCambiarRemoto());
@@ -268,8 +269,19 @@ class CassetteApplet extends Applet.TextIconApplet {
         if (!this._receptor.escuchando) return;
         this._resync = Mainloop.timeout_add(RESYNC_ESPERA_MS, () => {
             this._resync = 0;
-            if (this._receptor.escuchando) this._correrReceptor(["resync"], () => {});
+            if (!this._receptor.escuchando) return false;
+            this._resincronizando = true;
+            this._correrReceptor(["resync"], () => { this._resincronizando = false; });
             return false;
+        });
+    }
+
+    // Para el cierre del dial: ¿ya suena la música de `estacion`? En modo remoto, cuando terminó de sincronizar (no hay
+    // un resync esperando ni en curso); en local, cuando el servicio ya informa un tema nuevo de esa emisora.
+    _musicaSonando(estacion, pistaAntes, callback) {
+        if (this.is_remote) return callback(!this._resync && !this._resincronizando);
+        this._pedir("GET", "/estado", undefined, (r) => {
+            callback(r.codigo === 200 && AppletDir.logic.musicaSonando(r.datos, estacion, pistaAntes));
         });
     }
 
@@ -679,7 +691,9 @@ const DIAL_CHICO = 96;              // los demás
 const DIAL_PASO = 120;              // distancia entre los centros de los logos chicos
 const DIAL_LADO = 3;                // logos a cada lado de la actual
 const DIAL_ANIMACION_MS = 150;
-const DIAL_CIERRE_MS = 3000;        // sin tocar nada, se cierra solo
+const DIAL_CIERRE_MS = 3000;        // sin tocar nada, se cierra solo (cuenta desde que suena la música de la emisora)
+const DIAL_ESPERA_MAX_MS = 12000;   // mientras sintoniza: lo más que espera la música antes de cerrarse igual
+const DIAL_VIGILIA_MS = 300;        // cada cuánto mira si ya suena
 const DIAL_AVISO_MS = 2000;         // lo que dura el aviso de "no responde"
 const DIAL_PASO_VOLUMEN = 5;
 const DIAL_ESCALA = 1;           // tamaño de todo el dial (logos, textos y recuadro); 1 = el diseño original
@@ -730,6 +744,10 @@ class Dial {
         this._logos = new Map();        // nombre → St.Icon
         this._lugares = new Map();      // nombre → desplazamiento visible (undefined: no se ve)
         this._vencimiento = 0;
+        this._sintonizando = false;     // se pidió una emisora y todavía no suena
+        this._temaAntes = null;
+        this._vigilia = 0;
+        this._vigiliaTimer = 0;
         this._colaEmisora = AppletDir.logic.crearCola((nombre) =>
             applet._pedir("POST", "/sintonizar", { estacion: nombre }, (r) => this._alResponder(r, this._colaEmisora, true)));
         this._colaVolumen = AppletDir.logic.crearCola((valor) =>
@@ -790,6 +808,11 @@ class Dial {
                     return this._avisarYCerrar(e.datos && e.datos.error ? e.datos.error : "cassette-fm no responde");
                 applet._aplicar(e.datos);
                 this._empezar(e.datos);
+                // se prendió la radio: el cierre cuenta desde que suena la música
+                this._temaAntes = null;
+                this._sintonizando = true;
+                this._reiniciarCierre();
+                this._vigilarMusica(++this._vigilia);
             });
         });
     }
@@ -877,7 +900,9 @@ class Dial {
         this._reiniciarCierre(DIAL_AVISO_MS);
     }
 
-    _reiniciarCierre(ms = DIAL_CIERRE_MS) {
+    _reiniciarCierre(ms) {
+        // sintonizando, el cierre espera a que suene la música (ver _vigilarMusica); si no, 3 s sin tocar nada
+        if (ms === undefined) ms = this._sintonizando ? DIAL_ESPERA_MAX_MS : DIAL_CIERRE_MS;
         if (this._vencimiento) Mainloop.source_remove(this._vencimiento);
         this._vencimiento = Mainloop.timeout_add(ms, () => {
             this._vencimiento = 0;
@@ -909,6 +934,9 @@ class Dial {
         this._reiniciarCierre();
         if (nombre === this._actual && this._estado.encendida) return;
         this._actual = nombre;
+        this._temaAntes = this._estado.pista || null;
+        this._sintonizando = true;      // el cierre de 3 s cuenta desde que suena la música, no desde que se pide
+        this._reiniciarCierre();
         this._ubicar(true);
         this._refrescarTextos();
         this._colaEmisora.pedir(nombre);
@@ -931,6 +959,28 @@ class Dial {
         this._estado = Object.assign({}, this._estado, r.datos, { iconos: this._estado.iconos });
         this._volumen = AppletDir.logic.volumenTrasRespuesta(this._volumen, r.datos.volumen, eraSintonizar);
         this._refrescarTextos();
+        if (eraSintonizar) this._vigilarMusica(++this._vigilia);
+    }
+
+    // Mira cada tanto si ya suena la música de la emisora elegida; entonces sí empiezan los 3 s del cierre. Cada nueva
+    // elección (o el cierre del dial) cancela la vigilia anterior.
+    _vigilarMusica(vigilia) {
+        if (this._vigiliaTimer) Mainloop.source_remove(this._vigiliaTimer);
+        this._vigiliaTimer = 0;
+        if (this._cerrado || vigilia !== this._vigilia) return;
+        this._applet._musicaSonando(this._actual, this._temaAntes, (suena) => {
+            if (this._cerrado || vigilia !== this._vigilia) return;
+            if (suena) {
+                this._sintonizando = false;
+                this._reiniciarCierre();
+            } else {
+                this._vigiliaTimer = Mainloop.timeout_add(DIAL_VIGILIA_MS, () => {
+                    this._vigiliaTimer = 0;
+                    this._vigilarMusica(vigilia);
+                    return false;
+                });
+            }
+        });
     }
 
     cerrar() {
@@ -938,6 +988,8 @@ class Dial {
         this._cerrado = true;
         if (this._vencimiento) Mainloop.source_remove(this._vencimiento);
         this._vencimiento = 0;
+        if (this._vigiliaTimer) Mainloop.source_remove(this._vigiliaTimer);
+        this._vigiliaTimer = 0;
         if (this._modal) Main.popModal(this._fondo);
         this._modal = false;
         if (this._applet._dial === this) this._applet._dial = null;

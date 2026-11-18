@@ -109,7 +109,9 @@ a punta sin cortes). El reproductor consume a tiempo real, así que el audio que
 queda como retraso permanente (un corte de 8 s dejaba 8,6 s). Descartar al oyente atrasado para reconectarlo sería un salto cada
 vez que se atrasa, así que no se hace salvo que esté trabado más de ~5 s (cola de 25 bloques); en cambio, **cada cambio de emisora
 desde el applet remoto vuelve a "en vivo"** (`lan_receiver.py resync`: conexión nueva, buffers vacíos, ~0,4 s después del último
-cambio), que es cuando un salto no se nota (el hueco medido es de ~0,7 s y el servidor y `mpv` llevan buffers de red chicos
+cambio), que es cuando un salto no se nota (durante el hueco, de ~0,7 s, el receptor toca la misma estática que la radio al
+sintonizar —`estatica.wav`, generada con `generar_estatica`—, y el cierre de 3 s del dial, local o remoto, cuenta desde que suena la
+música o termina el resync, no desde que se pide la emisora). El hueco medido es de ~0,7 s y el servidor y `mpv` llevan buffers de red chicos
 —8 KB— para que el atraso no se esconda en el kernel). Sin `resync` el retraso tras un corte queda acotado en ~2 s.
 Máximo de oyentes simultáneos
 configurable (por defecto 4; el siguiente recibe 503). Sin `gst-launch-1.0`, sin bus o con falla del proceso, 503 con el

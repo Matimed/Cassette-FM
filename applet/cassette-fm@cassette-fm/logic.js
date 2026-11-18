@@ -332,6 +332,13 @@ function parsearReceptor(texto) {
     }
 }
 
+// ¿Ya suena música de la emisora pedida? (el cierre del dial cuenta desde ahí). `pistaAntes` es el tema que había al
+// pedirla: mientras siga ese, todavía no cambió (null: se abrió con la radio apagada, alcanza con que haya tema).
+function musicaSonando(estado, estacion, pistaAntes) {
+    if (!estado || !estado.encendida || estado.estacion !== estacion || !estado.pista) return false;
+    return pistaAntes === null || pistaAntes === undefined || estado.pista !== pistaAntes;
+}
+
 function iconoDe(nombre, iconos, generico) {
     return (iconos && iconos[nombre]) || generico;
 }
@@ -348,6 +355,6 @@ if (typeof module !== "undefined") {
         parsearVoces, idiomaBase, vocesDelIdioma, etiquetaDeVoz, elegirVoz, elegirIdioma, faltante, argumentosNueva,
         mensajeDeError, argumentosMuestra, botonMuestra, rutaDeMuestra, argumentosExaminar, rutaElegida,
         filaDial, teclaDial, crearCola, barraVolumen, iconoDe, volumenTrasRespuesta,
-        parsearUrlServidor, idEstacion, planRemoto, estadoRemoto, parsearReceptor, parsearIconos,
+        parsearUrlServidor, idEstacion, planRemoto, estadoRemoto, parsearReceptor, parsearIconos, musicaSonando,
     };
 }

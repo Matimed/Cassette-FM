@@ -248,3 +248,27 @@ def test_al_cambiar_de_emisora_en_modo_remoto_se_vuelve_al_vivo_con_un_resync_co
     pedir = js[js.index("    _pedirRemoto("):]
     pedir = pedir[:pedir.index("\n    }\n")]
     assert "_resincronizar()" in pedir
+
+
+def test_el_cierre_del_dial_cuenta_desde_que_suena_la_musica_y_no_desde_que_se_pide():
+    js = _js()
+    assert "DIAL_ESPERA_MAX_MS" in js and "_vigilarMusica" in js and "_sintonizando" in js
+    cierre = js[js.index("    _reiniciarCierre("):]
+    cierre = cierre[:cierre.index("\n    }\n")]
+    assert "_sintonizando" in cierre and "DIAL_ESPERA_MAX_MS" in cierre      # mientras sintoniza, una espera larga
+    elegir = js[js.index("    _elegir(nombre) {"):]
+    elegir = elegir[:elegir.index("\n    }\n")]
+    assert "_sintonizando = true" in elegir
+    responder = js[js.index("    _alResponder(r, cola, eraSintonizar) {"):]
+    responder = responder[:responder.index("\n    }\n")]
+    assert "_vigilarMusica(" in responder
+    vigilar = js[js.index("    _vigilarMusica("):]
+    vigilar = vigilar[:vigilar.index("\n    }\n")]
+    assert "_sintonizando = false" in vigilar and "_reiniciarCierre()" in vigilar    # y entonces sí, los 3 s
+
+
+def test_en_modo_remoto_la_musica_suena_cuando_termina_el_resync():
+    js = _js()
+    cuerpo = js[js.index("    _musicaSonando("):]
+    cuerpo = cuerpo[:cuerpo.index("\n    }\n")]
+    assert "this.is_remote" in cuerpo and "_resync" in cuerpo and "musicaSonando(" in cuerpo
