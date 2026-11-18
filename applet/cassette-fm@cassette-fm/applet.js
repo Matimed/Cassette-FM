@@ -25,6 +25,7 @@ const LIMITE_NUEVA_SEGUNDOS = 180;
 const LIMITE_MUESTRA_SEGUNDOS = 60;         // la primera muestra espera que el servicio DJ cargue el modelo
 const LIMITE_SONANDO_SEGUNDOS = 120;
 const LIMITE_RECEPTOR_SEGUNDOS = 10;          // lan_receiver.py (modo remoto): prender, apagar, volumen, estado
+const RESYNC_ESPERA_MS = 400;               // tras el último cambio de emisora, antes de volver a "en vivo"
 const ICONOS_REINTENTO_MS = 30000;          // si bajar los logos falla, no se reintenta antes
 const RECEPTOR_AL_DIA_MS = 10000;           // cada cuánto se le pregunta cómo está (se entera de que mpv murió)
 const LIMITE_EXAMINAR_SEGUNDOS = 600;       // lo que tarda la persona en elegir la imagen
@@ -50,6 +51,7 @@ class CassetteApplet extends Applet.TextIconApplet {
         this._iconosLocales = {};       // {emisora: ruta local} de los logos que publicó la radio remota
         this._firmaIconos = null;
         this._iconosReintento = 0;
+        this._resync = 0;               // temporizador del resync tras cambiar de emisora
         this.settings.bind("is_remote", "is_remote", () => this._alCambiarRemoto());
         this.settings.bind("server_url", "server_url", () => this._alCambiarRemoto());
         this.settings.bind("server_token", "server_token", () => this._alCambiarRemoto());
@@ -100,6 +102,7 @@ class CassetteApplet extends Applet.TextIconApplet {
     }
 
     on_applet_removed_from_panel() {
+        if (this._resync) Mainloop.source_remove(this._resync);
         if (this.is_remote) this._correrReceptor(["off"], () => {});     // no queda un mpv sonando sin dueño
         Main.keybindingManager.removeHotKey(this._nombreAtajo);
         if (this._dial) this._dial.cerrar();
@@ -257,6 +260,19 @@ class CassetteApplet extends Applet.TextIconApplet {
                             LIMITE_RECEPTOR_SEGUNDOS, callback, entorno);
     }
 
+    // Al cambiar de emisora se vuelve a "en vivo": el receptor reconecta el stream y descarta lo acumulado (un retraso
+    // por cortes de red no se recupera solo). Es cuando un salto no se nota; la espera se reinicia si llega otro cambio.
+    _resincronizar() {
+        if (this._resync) Mainloop.source_remove(this._resync);
+        this._resync = 0;
+        if (!this._receptor.escuchando) return;
+        this._resync = Mainloop.timeout_add(RESYNC_ESPERA_MS, () => {
+            this._resync = 0;
+            if (this._receptor.escuchando) this._correrReceptor(["resync"], () => {});
+            return false;
+        });
+    }
+
     // Baja los logos con el receptor solo cuando cambia la lista que publica la radio (y, si falla, no antes de 30 s).
     _actualizarIconos(publicados) {
         const firma = JSON.stringify(publicados);
@@ -321,7 +337,10 @@ class CassetteApplet extends Applet.TextIconApplet {
                 pedir(plan.metodo, plan.ruta, (r) => {
                     // 404: la lista cambió en la otra PC; se vuelve a pedir el estado y el menú se refresca
                     if (r.codigo === 404) pedir("GET", "/status", responder);
-                    else responder(r);
+                    else {
+                        if (r.codigo === 200) this._resincronizar();
+                        responder(r);
+                    }
                 });
             }
         } else if (plan.destino === "receptor") {

@@ -232,7 +232,9 @@ def test_un_arranque_lento_pero_vivo_no_es_un_error(banco):
     d.cerrar()
 
 
-def test_la_cola_de_cada_oyente_es_corta_para_que_un_atraso_no_se_acumule():
-    # a 160 kbps un bloque de 4096 bytes son ~0,2 s: más de ~2 s de cola es retraso permanente para el oyente
+def test_la_cola_por_oyente_tolera_baches_normales_pero_no_acumula_atrasos_enormes():
+    # ~0,2 s por bloque de 4096 bytes a 160 kbps: los baches de unos segundos no cortan el audio (el retraso se recupera
+    # al cambiar de emisora, con `resync`), y un oyente trabado por mucho más tiempo se descarta en vez de atrasarse sin fin
     d = Difusor(lambda: FUENTE_MONITOR)
-    assert d._cola_max * 4096 * 8 / 160_000 <= 2.0
+    segundos = d._cola_max * 4096 * 8 / 160_000
+    assert 3.0 <= segundos <= 8.0

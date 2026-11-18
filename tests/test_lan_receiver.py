@@ -370,3 +370,16 @@ def test_mpv_se_lanza_con_buffers_de_red_chicos_y_reconexion_al_cortar_el_servid
     # un atraso acumulado (cortes de red, picos de CPU) no se recupera solo: se acota con buffers chicos y, si el
     # servidor descarta al oyente atrasado, mpv vuelve a conectarse al "ahora"
     assert "recv_buffer_size=" in linea and "reconnect_at_eof=1" in linea
+
+
+def test_resync_vuelve_a_cargar_el_stream_sin_duplicar_mpv(entorno, servidor):
+    assert lan_receiver.main(["on"], entorno) == 0
+    assert esperar(lambda: len(servidor.pedidos_stream) >= 1)
+    assert lan_receiver.main(["resync"], entorno) == 0
+    assert esperar(lambda: len(servidor.pedidos_stream) >= 2)          # una conexión nueva: el stream "en vivo"
+    assert len(procesos_mpv(entorno)) == 1
+
+
+def test_resync_sin_escuchar_no_hace_nada(entorno, servidor):
+    assert lan_receiver.main(["resync"], entorno) == 0
+    assert procesos_mpv(entorno) == [] and servidor.pedidos_stream == []

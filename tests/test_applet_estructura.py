@@ -236,3 +236,15 @@ def test_el_dial_entiende_las_flechas_del_teclado_numerico():
     for tecla, nombre in (("KP_Left", "Left"), ("KP_Right", "Right"), ("KP_Up", "Up"), ("KP_Down", "Down"),
                           ("KP_4", "Left"), ("KP_6", "Right"), ("KP_8", "Up"), ("KP_2", "Down")):
         assert re.search(rf'\[Clutter\.KEY_{tecla}\]: "{nombre}"', cuerpo), tecla
+
+
+def test_al_cambiar_de_emisora_en_modo_remoto_se_vuelve_al_vivo_con_un_resync_con_espera():
+    js = _js()
+    assert '"resync"' in js and "_resincronizar" in js
+    cuerpo = js[js.index("    _resincronizar() {"):]
+    cuerpo = cuerpo[:cuerpo.index("\n    }\n")]
+    # solo si se está escuchando, y con una espera que se reinicia si llega otro cambio (el dial pasa de a varias)
+    assert "_receptor.escuchando" in cuerpo and "source_remove" in cuerpo and "timeout_add" in cuerpo
+    pedir = js[js.index("    _pedirRemoto("):]
+    pedir = pedir[:pedir.index("\n    }\n")]
+    assert "_resincronizar()" in pedir

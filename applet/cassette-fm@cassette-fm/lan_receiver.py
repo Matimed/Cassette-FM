@@ -4,7 +4,7 @@
 Sin demonio y sin depender de cassette_fm: el proceso que suena es un `mpv` con socket IPC; cada subcomando es un
 programa corto que lo prende, lo apaga, le mueve el volumen o cuenta cómo está.
 
-    lan_receiver.py on | off | volume N|+N|-N | status [--json] | icons
+    lan_receiver.py on | off | resync | volume N|+N|-N | status [--json] | icons
 
 Entorno: CASSETTE_LAN_URL (por ejemplo http://100.104.222.41:8765) y CASSETTE_LAN_TOKEN (la clave de oyente; llega a
 mpv por IPC, nunca por su línea de comandos). Para pruebas: CASSETTE_LAN_RUNTIME (dónde guardar socket y estado) y
@@ -182,6 +182,23 @@ def _on(env: Mapping[str, str]) -> int:
     return 0
 
 
+def _resync(env: Mapping[str, str]) -> int:
+    """Vuelve a "en vivo": se vuelve a cargar el stream (conexión nueva, buffers vacíos). Un retraso acumulado por cortes
+    de red no se recupera solo, y el momento de cambiar de emisora es cuando un salto no se nota."""
+    credenciales = _credenciales(env)
+    runtime = _runtime(env)
+    socket_ipc = runtime / "mpv.sock"
+    if credenciales is None or not runtime.exists():
+        return 0
+    with _Candado(runtime):
+        if _vivo(socket_ipc):
+            try:
+                _cargar(socket_ipc, *credenciales)
+            except (OSError, ValueError):
+                return _error("no pude volver a cargar el stream")
+    return 0
+
+
 def _es_nuestro_mpv(pid: int, socket_ipc: Path) -> bool:
     try:
         return str(socket_ipc) in Path(f"/proc/{pid}/cmdline").read_bytes().decode(errors="replace")
@@ -342,6 +359,7 @@ def main(argv: list[str] | None = None, env: Mapping[str, str] | None = None) ->
     sub = parser.add_subparsers(dest="comando", required=True)
     sub.add_parser("on", help="empieza a escuchar")
     sub.add_parser("off", help="deja de escuchar")
+    sub.add_parser("resync", help="vuelve a \"en vivo\" (reconecta el stream y descarta lo acumulado)")
     vol = sub.add_parser("volume", help="volumen local: N, +N o -N")
     vol.add_argument("pedido")
     sub.add_parser("icons", help="baja los logos de las emisoras y devuelve sus rutas locales (JSON)")
@@ -352,6 +370,8 @@ def main(argv: list[str] | None = None, env: Mapping[str, str] | None = None) ->
         return _on(env)
     if args.comando == "off":
         return _off(env)
+    if args.comando == "resync":
+        return _resync(env)
     if args.comando == "volume":
         return _volume(env, args.pedido)
     if args.comando == "icons":
