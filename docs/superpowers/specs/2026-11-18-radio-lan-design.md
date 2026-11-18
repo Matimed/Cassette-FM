@@ -15,29 +15,30 @@ emisora para las dos. Cada PC mantiene su **propio volumen y su propio encendido
 
 ## Objetivos
 
-- Esta PC publica por HTTP, en `0.0.0.0:8765`, tres cosas y nada más: el **audio** del bus (`GET /stream`), el **estado**
-  (`GET /status`: emisora activa, lista de emisoras, tema actual) y el **cambio de emisora** (`POST /station/{id}`).
+- Esta PC publica por HTTP, en el puerto 8765 (en qué dirección, ver §1), cuatro cosas y nada más: el **audio** del bus
+  (`GET /stream`), el **estado** (`GET /status`: emisora activa, lista de emisoras, tema actual), el **cambio de emisora**
+  (`POST /station/{id}`) y los **logos** de las emisoras (`GET /icon/{id}`).
 - Un script `lan_receiver.py` **independiente** (solo biblioteca estándar de Python + `mpv`) que en la PC 2 reproduce el stream,
   se prende y apaga y maneja su volumen local, sin importar nada del paquete `cassette_fm`.
-- Un **modo remoto del applet** (`is_remote`, `server_url`, más la clave): la lista de emisoras, la emisora y el tema salen
-  de la API de la PC principal; el encendido, el silencio y el volumen actúan sobre `lan_receiver.py` en la PC 2.
+- Un **modo remoto del applet** (`is_remote`, `server_url`, más la clave), **visualmente equivalente al local** (mismo menú,
+  mismo dial, con los logos de las emisoras): la lista de emisoras, la emisora y el tema salen de la API de la PC principal; el encendido, el silencio y el volumen actúan sobre `lan_receiver.py` en la PC 2.
 - Con todo apagado por defecto: sin activarlo, la radio de hoy no cambia en nada y no se abre ningún puerto nuevo.
 
 ## No objetivos
 
 - Sincronía exacta entre las dos PCs: el stream llega con 1–3 s de retraso respecto de la principal (aceptado).
-- Escuchar fuera de la red local (Internet, VPN, TLS), varias cuentas de Spotify, varios oyentes con emisoras distintas
-  (hay una sola transmisión).
+- Exponer el servidor a Internet abierta ni TLS propio (con Tailscale el túnel ya va cifrado; ver Restricciones), varias
+  cuentas de Spotify, varios oyentes con emisoras distintas (hay una sola transmisión).
 - Editar emisoras, el DJ o la configuración desde la PC 2; controlar el volumen o el encendido **de la PC principal**.
 - Clientes que no sean el applet (Android, web): la API y el stream están pensados para que se puedan escribir después,
   pero no se hacen ahora.
-- Los logos de las emisoras en la PC 2: viven en archivos de esta PC. En modo remoto el dial usa el logo genérico.
 - Descubrimiento automático del servidor (mDNS): la dirección se escribe a mano.
 
 ## Anti-objetivos (un fracaso aunque "funcione")
 
-- Exponer a la red algo más que esas tres rutas: ni la API de dueño (`/volumen`, `/dj/*`, `/apagar`…), ni el servidor de
-  audio completo (el micrófono, otros streams), ni archivos.
+- Exponer a la red algo más que esas cuatro rutas: ni la API de dueño (`/volumen`, `/dj/*`, `/apagar`…), ni el servidor de
+  audio completo (el micrófono, otros streams), ni archivos: `/icon/{id}` sirve solo los logos que la propia radio tiene
+  registrados para esa emisora, nunca una ruta que venga del cliente.
 - Que sin la clave se pueda oír el stream o cambiar la emisora; que la clave aparezca en logs, en `cassette lan`
   sin pedirlo, en mensajes de error o en la línea de comandos de algún proceso (`ps`).
 - Que cambiar de emisora desde la PC 2 **prenda o desmutee** los parlantes de la PC principal (el monitor local de esta PC
@@ -50,8 +51,12 @@ emisora para las dos. Cada PC mantiene su **propio volumen y su propio encendido
 - Fuente del audio: `radio_virtual.monitor` (hace falta `bus_audio = true`; sin bus, el stream responde 503 con el motivo).
 - PipeWire 1.0.5 con pipewire-pulse; GStreamer ya instalado con `pulsesrc`, `lamemp3enc` y `opusenc` (verificado). Sin
   `ffmpeg`. La PC 2 necesita `python3` y `mpv`, y que el applet esté instalado allí.
-- La red de esta casa es `192.168.0.x`. HTTP sin cifrar: la clave sirve para una red de confianza (se documenta, como en el
-  spec de radio en red).
+- **Tailscale**: el usuario lo usa y quiere conectarse **por la IP de Tailscale de esta PC** (hoy `100.104.222.41`), que es
+  fija, y no por la de la LAN (`192.168.0.x`, que el router puede cambiar). El tráfico entre equipos de la tailnet va
+  cifrado por WireGuard, así que el HTTP sin cifrar deja de ser un problema por ese camino (por la LAN sigue siéndolo:
+  la clave sirve para una red de confianza, como en el spec de radio en red). Consecuencia: conviene que el servidor escuche
+  **solo en la interfaz de Tailscale** (ver §1) y la radio queda alcanzable desde cualquier equipo de la tailnet, también fuera
+  de casa.
 - El proyecto usa `http.server` de la biblioteca estándar; el applet recibe todo por `Gio` y ya tiene `_correr` para
   lanzar comandos sin bloquear.
 - `logic.js` no se recarga con `ReloadXlet` (hay que reiniciar Cinnamon al tocarlo).
@@ -80,24 +85,32 @@ Un `ThreadingHTTPServer` aparte, **separado de la API de dueño** (que sigue en 
 `Authorization: Bearer <clave>` (comparación con `hmac.compare_digest`; sin clave o mala, 401 sin más detalle; cualquier otra
 ruta, 404):
 
+**Dirección.** `[lan] escuchar` (por defecto `"auto"`): la IP de Tailscale de esta PC si existe (interfaz `tailscale0`,
+rango 100.64.0.0/10) y, si no hay Tailscale, todas las interfaces (`0.0.0.0`); acepta una IP concreta. Si la IP de
+Tailscale todavía no está al arrancar el servicio, el servidor reintenta en segundo plano en vez de caerse.
+
 - `GET /status` → JSON con lo que hoy da `/estado` limitado a: `encendida`, `estacion`, `pista`, `estaciones`, `fuente`,
-  `segundo`, `iconos: {}`. Nada de `volumen` ni `monitor_local` (son de esta PC).
+  `segundo`, `iconos` (`{emisora: "/icon/<id>?v=<versión>"}`, solo las que tienen logo propio; el resto usa el genérico). Nada de
+  `volumen` ni `monitor_local` (son de esta PC).
 - `POST /station/{id}` → sintoniza. El `id` es el nombre de la emisora codificado como URL (no hay otros ids). 404 si no
   existe. **Sintonizar desde la red no toca el monitor local de esta PC** (hace falta que `Radio.sintonizar` acepte
   "sin oír acá"; hoy sintonizar prende el monitor). Si la radio estaba apagada, la enciende.
+- `GET /icon/{id}` → la imagen del logo de esa emisora (`image/png` o `image/jpeg`), con `ETag`; 404 si no tiene.
 - `GET /stream` → `audio/mpeg`, sin `Content-Length`, `Cache-Control: no-store`.
 
 **Stream.** Un único proceso de codificación para todos los oyentes (`gst-launch-1.0 -q pulsesrc
 device=radio_virtual.monitor ! audioconvert ! audioresample ! lamemp3enc … ! fdsink fd=1`, MP3 CBR ~160 kbps; *mi
 decisión*: MP3 por compatibilidad con cualquier reproductor; Opus en Ogg es la alternativa si importa más la calidad), con
-un reparto a los oyentes por colas acotadas. Arranca con el primer oyente y se detiene unos segundos después del último
-(sin oyentes no hay CPU). Un oyente que no consume se descarta sin frenar a los demás. Máximo de oyentes simultáneos
+un reparto a los oyentes por colas acotadas. **Si la radio principal está apagada, el codificador toma estática** (ruido blanco filtrado a bajo nivel, de carácter parecido al
+sonido de sintonía) **en vez del monitor**, y vuelve al monitor cuando se prende; cambiar de fuente reinicia el
+codificador (un corte de ~medio segundo con los oyentes conectados; los reproductores toleran MP3 concatenados). Arranca con el
+primer oyente y se detiene unos segundos después del último (sin oyentes no hay CPU). Un oyente que no consume se descarta sin frenar a los demás. Máximo de oyentes simultáneos
 configurable (por defecto 4; el siguiente recibe 503). Sin `gst-launch-1.0`, sin bus o con falla del proceso, 503 con el
 motivo.
 
 **Configuración.** `[lan]` en `config.toml`: `activo` (por defecto `false`), `puerto` (8765). La clave se genera la primera
 vez que se activa y se guarda con modo 600 (`lan.token`, junto a `soloist.key`); `cassette lan` muestra la dirección y la
-clave para configurarlas en la PC 2, y `cassette lan regenerar` la cambia (corta a los oyentes). Con `activo` y sin bus de
+clave para configurarlas en la PC 2 (la de Tailscale si existe), y `cassette lan regenerar` la cambia (corta a los oyentes). Con `activo` y sin bus de
 audio, el servicio arranca igual, no abre el puerto y deja el error en el log.
 
 ### 2. Receptor (PC 2) — `lan_receiver.py`
@@ -105,7 +118,8 @@ audio, el servicio arranca igual, no abre el puerto y deja el error en el log.
 Un solo archivo que se instala **dentro de la carpeta del applet** (así, instalar el applet instala el receptor), con solo
 biblioteca estándar. **Sin demonio propio**: el proceso que suena es el `mpv`, que arranca con un socket IPC en
 `$XDG_RUNTIME_DIR`. Subcomandos, todos con salida corta y código de salida claro: `on`, `off`, `volume N`, `status --json`
-(escuchando o no, volumen, y si el servidor responde).
+(escuchando o no, volumen y último error del stream) e `icons` (baja los logos del servidor a una caché local y devuelve
+`{emisora: ruta local}`; solo vuelve a bajar los que cambiaron).
 
 - `on` lanza `mpv` sin ventana (`--idle`, con IPC) y le manda `loadfile` del stream **por el socket**, con la cabecera de
   autorización como opción de ese archivo: así la clave no queda en la línea de comandos de `mpv`. Reconecta solo si el
@@ -125,6 +139,8 @@ Ajustes nuevos: `is_remote` (interruptor, apagado), `server_url` (por ejemplo `h
 - cambiar de emisora (menú, dial, rueda, `siguiente`/`anterior` calculados con la lista) → `POST /station/{id}`;
 - el clic izquierdo, el volumen y el "Apagar" del menú → `lan_receiver.py on` / `off` / `volume`. El "Apagar" apaga **la
   escucha en esta PC**, no la radio de la principal;
+- los **logos**: al arrancar y cuando cambia la lista, el applet corre `lan_receiver.py icons` y completa `estado.iconos` con las
+  rutas locales; el dial y el menú usan `iconoDe` igual que hoy;
 - se ocultan "Nueva emisora…" y todo lo que edita. Si el servidor no responde o rechaza la clave, el tooltip y el menú lo
   dicen ("no alcanzo a la radio en 192.168.0.157", "clave rechazada") y la escucha local sigue sonando lo que haya.
 - La traducción de rutas locales a remotas va en funciones puras de `logic.js` (con tests de node); `_pedir` decide el
@@ -132,8 +148,8 @@ Ajustes nuevos: `is_remote` (interruptor, apagado), `server_url` (por ejemplo `h
 
 ### 4. Qué pasa según el estado de la PC principal (calls del diseñador tras la revisión)
 
-- **Radio principal apagada** (`Apagar` del clic derecho, `cassette off`): `/stream` **sigue abierto** y sirve silencio; no
-  corta a la PC 2. `/status.encendida` es `false`; en modo remoto el applet muestra su propio estado de escucha pero el
+- **Radio principal apagada** (`Apagar` del clic derecho, `cassette off`): `/stream` **sigue abierto** y sirve estática (ver
+  §1); no corta a la PC 2. `/status.encendida` es `false`; en modo remoto el applet muestra su propio estado de escucha pero el
   tooltip agrega "la radio principal está apagada". Prender la principal es cosa de la principal (o de un
   `POST /station/{id}`, ver abajo).
 - **Silencio o volumen 0 en la principal**: no afectan al stream. Las fuentes siguen al 100 % y el monitor local es de esa PC.
@@ -174,15 +190,22 @@ Ajustes nuevos: `is_remote` (interruptor, apagado), `server_url` (por ejemplo `h
 
 - No se toca `audio_router.py` (el enfoque 1 se descartó); el servidor es un módulo aparte.
 - MP3 160 kbps, un solo codificador compartido y apagado sin oyentes.
-- Servidor separado en `:8765` con solo tres rutas y clave Bearer, con `http.server` y no FastAPI/aiohttp: coincide con el resto
+- Servidor separado en el puerto 8765 con solo cuatro rutas y clave Bearer, con `http.server` y no FastAPI/aiohttp: coincide con el resto
   del proyecto y evita dependencias para tres rutas.
+- Escucha por defecto en la IP de Tailscale si existe (`[lan] escuchar = "auto"`), no en todas las interfaces.
 - Apagado por defecto (`[lan] activo = false`) y clave generada y guardada con modo 600.
 - El receptor vive dentro de la carpeta del applet, sin demonio, y recibe la clave por entorno.
 - Sintonizar desde la red no cambia el monitor local de la principal.
 - En el modo remoto "Apagar" apaga la escucha local, no la radio principal.
 
+## Orden de trabajo (sugerencia)
+
+1. Servidor (clave, `/status`, `/station`, `/stream` con la estática) y el cambio de `Radio.sintonizar`. 2. `lan_receiver.py`.
+3. Modo remoto del applet. 4. **Logos** (`/icon` + `icons` + applet): separados a propósito, al final, para poder evaluarlos o
+dejarlos si resultan caros sin afectar al resto.
+
 ## Verificación con el usuario (al final, juntos)
 
-En la PC 2: el applet en modo remoto muestra las mismas emisoras y el mismo tema; cambiar de emisora allí la cambia en la
+Todo **por la IP de Tailscale** de esta PC. En la PC 2: el applet en modo remoto muestra las mismas emisoras y el mismo tema; cambiar de emisora allí la cambia en la
 principal y sin que la principal deje de estar silenciada si lo estaba; el encendido y el volumen de la PC 2 no afectan a la
 principal; sin la clave el stream y la API responden 401; con `[lan] activo` apagado el puerto no existe.
