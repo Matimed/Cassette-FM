@@ -1,10 +1,11 @@
 ---
 # CASSETTE-FM-r80e
 title: Bus de audio virtual radio_virtual con monitor local y volumen de radio
-status: todo
+status: completed
 type: feature
+priority: normal
 created_at: 2026-11-18T04:04:28Z
-updated_at: 2026-11-18T04:04:28Z
+updated_at: 2026-11-18T04:34:38Z
 parent: CASSETTE-FM-abja
 ---
 
