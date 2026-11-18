@@ -49,6 +49,7 @@ class AudioRouter:
         self._lock = threading.RLock()
         self._modulo_bus: int | None = None
         self._modulo_loopback: int | None = None
+        self._activo = False                # el loopback está cargado Y se oye (no silenciado)
         self._volumen_local = 100
 
     @property
@@ -57,7 +58,7 @@ class AudioRouter:
 
     @property
     def local_monitor_enabled(self) -> bool:
-        return self._modulo_loopback is not None
+        return self._modulo_loopback is not None and self._activo
 
     @property
     def local_volume(self) -> int:
@@ -106,27 +107,45 @@ class AudioRouter:
     # --- monitor local -----------------------------------------------------------------------------------------
 
     def enable_local_monitor(self) -> None:
-        """Pasa lo que suena en el bus a la salida predeterminada, con el último volumen local elegido."""
+        """Pasa lo que suena en el bus a la salida predeterminada, con el último volumen local elegido.
+
+        El loopback se carga una sola vez y queda cargado: cada carga de un `module-loopback` mete un chasquido a escala
+        completa a los ~30 ms (medido: ~1 de cada 5 cargas, con música o sin ella), que se oía como un golpe en los
+        parlantes al desmutear. Silenciar/activar es solo el mute de su stream."""
         with self._lock:
-            if self._modulo_loopback is not None:
-                return
             self.create_bus()
             if self._salida_predeterminada() == self._sink:
                 raise AudioRouterError(f"la salida predeterminada es {self._sink}: el monitor local "
                                        "generaría una realimentación; elegí los parlantes como salida")
             fuente = f"source={self._sink}.monitor"
-            self._modulo_loopback = (self._buscar_modulo("module-loopback", fuente)
-                                     or self._cargar("module-loopback", fuente, f"latency_msec={self._latencia_ms}"))
-            if self._volumen_local != 100:
-                try:
-                    self._aplicar_volumen()
-                except AudioRouterError:
-                    self._descargar_loopback()      # mejor sin monitor que a un volumen que no se eligió
-                    raise
+            if self._modulo_loopback is not None and self._buscar_modulo("module-loopback", fuente) != self._modulo_loopback:
+                self._modulo_loopback = None            # lo descargaron por afuera (p. ej. se reinició PipeWire)
+            if self._modulo_loopback is None:
+                self._modulo_loopback = (self._buscar_modulo("module-loopback", fuente)
+                                         or self._cargar("module-loopback", fuente, f"latency_msec={self._latencia_ms}"))
+            try:
+                # un stream nuevo nace al volumen que le dé PipeWire (a veces 100 %): se lo silencia antes de fijarle
+                # el volumen elegido, y recién entonces suena
+                indice = self._sink_input_del_loopback()
+                self._pactl("set-sink-input-mute", str(indice), "1")
+                self._pactl("set-sink-input-volume", str(indice), f"{self._volumen_local}%")
+                self._pactl("set-sink-input-mute", str(indice), "0")
+            except AudioRouterError:
+                self._descargar_loopback()              # mejor sin monitor que a un volumen que no se eligió
+                raise
+            self._activo = True
 
     def disable_local_monitor(self) -> None:
+        """Silencia el monitor (mute del stream del loopback); no lo descarga, ver `enable_local_monitor`."""
         with self._lock:
-            self._descargar_loopback()
+            self._activo = False
+            if self._modulo_loopback is None:
+                return
+            try:
+                self._pactl("set-sink-input-mute", str(self._sink_input_del_loopback()), "1")
+            except AudioRouterError as e:
+                _log.warning("no se pudo silenciar el monitor local, se descarga: %s", e)
+                self._descargar_loopback()
 
     def set_local_volume(self, percent: int) -> None:
         """Volumen de lo que sale por los parlantes (0 = mudo). El nivel dentro del bus no cambia.
@@ -178,6 +197,7 @@ class AudioRouter:
             _log.warning("no se pudo descargar el módulo %d: %s", id_, e)
 
     def _descargar_loopback(self) -> None:
+        self._activo = False
         if self._modulo_loopback is not None:
             self._descargar(self._modulo_loopback)
             self._modulo_loopback = None

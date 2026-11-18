@@ -15,6 +15,7 @@ class PactlFalso:
         self.sink_predeterminado = sink_predeterminado
         self.fallar_carga: str | None = None
         self._siguiente = 100
+        self.silenciados: dict[int, bool] = {}     # sink-input -> silenciado
 
     def __call__(self, *args: str) -> str:
         self.llamadas.append(list(args))
@@ -42,7 +43,13 @@ class PactlFalso:
             return self.sink_predeterminado + "\n"
         if args[0] == "set-sink-input-volume":
             return ""
+        if args[0] == "set-sink-input-mute":
+            self.silenciados[int(args[1])] = args[2] == "1"
+            return ""
         raise AssertionError(f"pactl inesperado: {args}")
+
+    def mudos(self) -> list[tuple[str, str]]:
+        return [(c[1], c[2]) for c in self.llamadas if c[0] == "set-sink-input-mute"]
 
     def volumenes(self) -> list[tuple[str, str]]:
         return [(c[1], c[2]) for c in self.llamadas if c[0] == "set-sink-input-volume"]
@@ -122,11 +129,49 @@ def test_no_activa_el_monitor_si_la_salida_predeterminada_es_el_bus(router, pact
     assert not any(c.startswith("module-loopback") for c in pactl.modulos.values())
 
 
-def test_desactivar_el_monitor_descarga_solo_el_loopback(router, pactl):
+def test_desactivar_el_monitor_silencia_el_stream_y_no_descarga_el_loopback(router, pactl):
+    # crear un loopback mete un chasquido a escala completa en ~1 de cada 5 cargas: se carga una vez y se silencia
+    router.enable_local_monitor()
+    stream = next(s["index"] for s in pactl.sink_inputs)
+    router.disable_local_monitor()
+    assert [c.split()[0] for c in pactl.modulos.values()] == ["module-null-sink", "module-loopback"]
+    assert pactl.silenciados[stream] is True
+    assert not router.local_monitor_enabled
+
+
+def test_reactivar_el_monitor_no_crea_otro_loopback_y_le_quita_el_silencio(router, pactl):
+    router.enable_local_monitor()
+    stream = next(s["index"] for s in pactl.sink_inputs)
+    router.disable_local_monitor()
+    router.enable_local_monitor()
+    cargas = [c for c in pactl.llamadas if c[:2] == ["load-module", "module-loopback"]]
+    assert len(cargas) == 1
+    assert pactl.silenciados[stream] is False and router.local_monitor_enabled
+
+
+def test_un_loopback_nuevo_nace_silenciado_se_le_fija_el_volumen_y_recien_ahi_suena(router, pactl):
+    router.set_local_volume(30)
+    router.enable_local_monitor()
+    ordenados = [(c[0], c[2]) for c in pactl.llamadas if c[0] in ("set-sink-input-mute", "set-sink-input-volume")]
+    assert ordenados == [("set-sink-input-mute", "1"), ("set-sink-input-volume", "30%"), ("set-sink-input-mute", "0")]
+
+
+def test_si_el_loopback_desaparecio_por_afuera_se_vuelve_a_crear(router, pactl):
     router.enable_local_monitor()
     router.disable_local_monitor()
-    assert [c.split()[0] for c in pactl.modulos.values()] == ["module-null-sink"]
-    assert not router.local_monitor_enabled
+    for id_ in [i for i, c in pactl.modulos.items() if c.startswith("module-loopback")]:
+        pactl("unload-module", str(id_))              # p. ej. se reinició PipeWire
+    router.enable_local_monitor()
+    assert sum(c.startswith("module-loopback") for c in pactl.modulos.values()) == 1
+    assert router.local_monitor_enabled
+
+
+def test_el_volumen_se_aplica_aunque_el_monitor_este_silenciado(router, pactl):
+    router.enable_local_monitor()
+    router.disable_local_monitor()
+    pactl.llamadas.clear()
+    router.set_local_volume(30)
+    assert [v for _, v in pactl.volumenes()] == ["30%"]
 
 
 def test_desactivar_sin_monitor_activo_no_hace_nada(router, pactl):

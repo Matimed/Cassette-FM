@@ -15,6 +15,12 @@ monitor y recibe siempre la señal completa: **cada monitor tiene su propio volu
   `set_local_volume`, `close`. Maneja todo con `pactl` (PulseAudio y PipeWire). Reutiliza un bus o un loopback
   huérfano de una corrida que murió, se niega a prender el monitor si la salida predeterminada es el propio bus
   (realimentación) y recuerda el volumen local aunque el monitor esté apagado.
+  **El loopback se carga una sola vez y queda cargado** (solo `close()` lo descarga): `disable_local_monitor` es el mute de su
+  stream y `enable_local_monitor` se lo quita. Cada carga de un `module-loopback` mete un chasquido a escala completa a los
+  ~30 ms (medido el 18/11 con un sink de prueba: ~1 de cada 5 cargas, con música o con el bus en silencio), que se oía como un
+  golpe en los parlantes al desmutear; alternar el mute de uno ya cargado dio 0 chasquidos en 40 ciclos. Un loopback nuevo se
+  silencia antes de fijarle el volumen (nace al que le dé PipeWire, a veces 100 %) y recién entonces suena. La primera carga
+  tras reiniciar el servicio todavía puede chasquear (no se puede silenciar a tiempo).
 - Config: `bus_audio` (por defecto `true`). Sin `pactl` el servicio arranca igual sin bus y deja un error en el log que
   recomienda `bus_audio = false`. `Estado.monitor_local` recuerda si el monitor estaba prendido.
 - **Abstracción de volumen** (`Radio._poner_volumen`): el volumen de la radio es el del monitor local. Las fuentes
