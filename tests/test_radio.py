@@ -983,3 +983,30 @@ def test_con_bus_prender_el_monitor_con_volumen_0_sube_a_50():
     radio, _, _, estado = crear(router=router, estado=Estado(volumen=0, monitor_local=False))
     radio.alternar()
     assert estado.volumen == 50 and router.volumenes[-1] == 50
+
+
+@pytest.mark.parametrize("encendida", [False, True])
+@pytest.mark.parametrize("monitor", [False, True])
+def test_sintonizar_sin_oir_aca_deja_el_monitor_como_estaba(encendida, monitor):
+    router = RouterFalso()
+    radio, rep, _, estado = crear(router=router, estado=Estado(monitor_local=monitor))
+    if encendida:
+        radio.encender()
+        router.local_monitor_enabled, estado.monitor_local = monitor, monitor    # lo dejamos como está en la prueba
+    radio.sintonizar("B", oir_aca=False)
+    assert rep.sintonizadas()[-1] == "B" and radio.encendida is True
+    assert router.local_monitor_enabled is monitor and estado.monitor_local is monitor
+
+
+def test_sintonizar_sin_oir_aca_no_sube_el_volumen_en_0():
+    router = RouterFalso()
+    radio, _, _, estado = crear(router=router, estado=Estado(volumen=0, monitor_local=False))
+    radio.sintonizar("B", oir_aca=False)
+    assert estado.volumen == 0 and router.volumenes[-1] == 0
+
+
+def test_sintonizar_normal_sigue_prendiendo_el_monitor():
+    router = RouterFalso()
+    radio, _, _, estado = crear(router=router, estado=Estado(monitor_local=False))
+    radio.sintonizar("B")
+    assert router.local_monitor_enabled is True and estado.monitor_local is True

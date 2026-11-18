@@ -123,9 +123,11 @@ class Radio:
         with self._lock:
             return list(self._estaciones)
 
-    def sintonizar(self, nombre: str) -> None:
+    def sintonizar(self, nombre: str, oir_aca: bool = True) -> None:
+        """`oir_aca=False` (pedidos desde la red): la radio se enciende y cambia de emisora, pero el monitor local y
+        el volumen de esta PC quedan como estaban."""
         with self._lock:
-            self._sintonizar(self._buscar(nombre))
+            self._sintonizar(self._buscar(nombre), oir_aca)
 
     def siguiente(self) -> None:
         self._rotar(+1)
@@ -283,8 +285,8 @@ class Radio:
                 destino = (actual + paso) % len(self._estaciones)
             self._sintonizar(self._estaciones[destino])
 
-    def _sintonizar(self, estacion: Estacion) -> None:
-        if self._estado.volumen == 0:
+    def _sintonizar(self, estacion: Estacion, oir_aca: bool = True) -> None:
+        if oir_aca and self._estado.volumen == 0:
             self._estado.volumen = self._poner_volumen(VOLUMEN_MINIMO)
         plegada = plegar_vencidos(estacion, self._reloj())   # la lista que se manda empieza donde corresponde
         if plegada is not estacion:
@@ -298,7 +300,7 @@ class Radio:
         except Exception:
             self._estado.estacion = anterior
             raise
-        if self._router is not None:
+        if self._router is not None and oir_aca:
             self._estado.monitor_local = self._prender_monitor()
         self._guardar(self._estado)
         self.encendida = True
