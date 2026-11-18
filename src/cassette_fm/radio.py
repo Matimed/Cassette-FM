@@ -136,6 +136,9 @@ class Radio:
     def encender(self) -> None:
         with self._lock:
             self._requerir_estaciones()
+            if self._router is not None and self.encendida:
+                self._escuchar()          # ya transmite al bus: solo se vuelve a oír, sin re-sintonizar
+                return
             actual = self._indice_actual()
             self._sintonizar(self._estaciones[0 if actual is None else actual])
 
@@ -144,11 +147,25 @@ class Radio:
             self._apagar()
 
     def alternar(self) -> None:
+        """Play/pausa. Con el bus, "pausa" es silenciar el monitor: la transmisión sigue (ver `apagar`)."""
         with self._lock:
-            if self.encendida:
+            if not self.encendida:
+                self.encender()
+            elif self._router is None:
+                self._apagar()
+            elif self._router.local_monitor_enabled:
+                self._poner_monitor(False)
+            else:
+                self._escuchar()
+
+    def silenciar(self) -> None:
+        """Dejar de oír la radio en esta PC. Sin bus no hay otra forma de callarla que apagarla; con bus la
+        transmisión sigue y solo `apagar` la corta."""
+        with self._lock:
+            if self._router is None:
                 self._apagar()
             else:
-                self.encender()
+                self._poner_monitor(False)
 
     def volumen(self, valor: int | None = None, delta: int | None = None) -> int:
         with self._lock:
@@ -158,6 +175,13 @@ class Radio:
             nuevo = valor if valor is not None else previo + delta
             self._estado.volumen = self._poner_volumen(nuevo)
             self._guardar(self._estado)
+            if self._router is not None:
+                # volumen 0 = silenciar el monitor (la transmisión sigue); subirlo desde el silencio lo prende
+                if self._estado.volumen == 0:
+                    self._poner_monitor(False)
+                elif self._estado.volumen > previo:
+                    self.encender()
+                return self._estado.volumen
             # volumen 0 = mutear = apagada; subir el volumen estando apagada enciende
             if self._estado.volumen == 0:
                 if self.encendida:
@@ -171,9 +195,10 @@ class Radio:
         with self._lock:
             if self._router is None:
                 raise BusInactivo("el bus de audio está apagado: poné `bus_audio = true` en config.toml")
-            self._aplicar_monitor(activo)
-            self._estado.monitor_local = activo
-            self._guardar(self._estado)
+            if activo:
+                self._escuchar()
+            else:
+                self._poner_monitor(False)
             return activo
 
     def rescan(self) -> None:
@@ -273,6 +298,8 @@ class Radio:
         except Exception:
             self._estado.estacion = anterior
             raise
+        if self._router is not None:
+            self._estado.monitor_local = self._prender_monitor()
         self._guardar(self._estado)
         self.encendida = True
         if self._dj is not None:
@@ -287,20 +314,41 @@ class Radio:
         else:
             self._router.disable_local_monitor()
 
+    def _prender_monitor(self) -> bool:
+        """Prende el monitor (con volumen 0 parte de VOLUMEN_MINIMO); True si quedó prendido."""
+        if self._estado.volumen == 0:
+            self._estado.volumen = self._poner_volumen(VOLUMEN_MINIMO)
+        try:
+            self._router.enable_local_monitor()
+        except AudioRouterError as e:
+            _log.warning("no se pudo prender el monitor local: %s", e)
+        return self._router.local_monitor_enabled
+
+    def _escuchar(self) -> None:
+        self._estado.monitor_local = self._prender_monitor()
+        self._guardar(self._estado)
+        self._avisar_cambio()
+
+    def _poner_monitor(self, activo: bool) -> None:
+        self._aplicar_monitor(activo)
+        self._estado.monitor_local = activo
+        self._guardar(self._estado)
+        self._avisar_cambio()
+
     def _poner_volumen(self, valor: int) -> int:
         if self._router is None:
-            valor = self._reproductor.volumen(valor)
+            valor = fuente = self._reproductor.volumen(valor)
         else:
-            # el volumen de la radio es el del monitor local: la señal del bus (y la de otros oyentes) no cambia,
-            # así que las fuentes quedan al 100 % (salvo mute, el ducking y la calibración, que siguen en ellas)
-            valor = max(0, min(100, int(valor)))
-            self._reproductor.volumen(100 if valor else 0)
+            # el volumen de la radio es el del monitor local: la señal del bus (y la de otros oyentes) no cambia, así
+            # que las fuentes y la voz quedan al 100 % (el ducking y la calibración siguen en ellas)
+            valor, fuente = max(0, min(100, int(valor))), 100
+            self._reproductor.volumen(fuente)
             try:
                 self._router.set_local_volume(valor)
             except AudioRouterError as e:
                 _log.warning("no se pudo ajustar el volumen del monitor local: %s", e)
         if self._dj is not None:
-            self._dj.volumen(valor)
+            self._dj.volumen(fuente)
         return valor
 
     def _apagar(self) -> None:

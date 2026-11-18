@@ -866,13 +866,24 @@ def test_con_bus_el_volumen_se_acota_a_0_100():
     assert router.volumenes[-2:] == [100, 0]
 
 
-def test_con_bus_volumen_0_mutea_tambien_las_fuentes_y_apaga():
+def test_con_bus_volumen_0_solo_silencia_el_monitor_y_la_transmision_sigue():
     router = RouterFalso()
     radio, rep, _, _ = crear(estado=Estado(volumen=10), router=router)
     radio.encender()
     radio.volumen(valor=0)
-    assert router.volumenes[-1] == 0 and rep.llamadas[-2] == ("volumen", 0)
-    assert radio.encendida is False
+    assert router.volumenes[-1] == 0 and router.local_monitor_enabled is False
+    assert radio.encendida is True and ("detener",) not in rep.llamadas
+    assert rep.llamadas[-1] == ("volumen", 100)          # las fuentes no se tocan
+
+
+def test_con_bus_subir_el_volumen_desde_0_vuelve_a_prender_el_monitor_sin_resintonizar():
+    router = RouterFalso()
+    radio, rep, _, _ = crear(estado=Estado(volumen=10), router=router)
+    radio.encender()
+    radio.volumen(valor=0)
+    radio.volumen(delta=15)
+    assert router.local_monitor_enabled is True and radio.encendida is True
+    assert rep.sintonizadas() == ["A"]
 
 
 def test_con_bus_un_error_del_router_no_rompe_el_volumen_de_la_radio():
@@ -909,3 +920,66 @@ def test_al_nacer_la_radio_respeta_el_monitor_guardado():
     router2 = RouterFalso()
     crear(router=router2, estado=Estado(monitor_local=False))
     assert router2.local_monitor_enabled is False
+
+
+def test_con_bus_alternar_silencia_y_vuelve_sin_cortar_la_transmision():
+    router = RouterFalso()
+    radio, rep, _, estado = crear(router=router)
+    radio.encender()
+    radio.alternar()
+    assert router.local_monitor_enabled is False and radio.encendida is True
+    assert estado.monitor_local is False and ("detener",) not in rep.llamadas
+    radio.alternar()
+    assert router.local_monitor_enabled is True and rep.sintonizadas() == ["A"]
+
+
+def test_con_bus_alternar_apagada_enciende_y_prende_el_monitor():
+    router = RouterFalso()
+    radio, rep, _, _ = crear(router=router, estado=Estado(monitor_local=False))
+    radio.alternar()
+    assert radio.encendida and router.local_monitor_enabled and rep.sintonizadas() == ["A"]
+
+
+def test_con_bus_silenciar_deja_la_radio_prendida_y_sin_bus_la_apaga():
+    router = RouterFalso()
+    radio, rep, _, _ = crear(router=router)
+    radio.encender()
+    radio.silenciar()
+    assert radio.encendida is True and router.local_monitor_enabled is False
+    sin_bus, rep2, _, _ = crear()
+    sin_bus.encender()
+    sin_bus.silenciar()
+    assert sin_bus.encendida is False and ("detener",) in rep2.llamadas
+
+
+def test_con_bus_apagar_es_el_unico_que_corta_la_transmision():
+    router = RouterFalso()
+    radio, rep, _, _ = crear(router=router)
+    radio.encender()
+    radio.apagar()
+    assert radio.encendida is False and ("detener",) in rep.llamadas
+
+
+def test_con_bus_encender_con_el_monitor_apagado_solo_lo_prende():
+    router = RouterFalso()
+    radio, rep, _, _ = crear(router=router)
+    radio.encender()
+    radio.silenciar()
+    radio.encender()
+    assert router.local_monitor_enabled is True and rep.sintonizadas() == ["A"]
+
+
+def test_con_bus_sintonizar_con_el_monitor_apagado_lo_prende():
+    router = RouterFalso()
+    radio, rep, _, _ = crear(router=router)
+    radio.encender()
+    radio.silenciar()
+    radio.siguiente()
+    assert router.local_monitor_enabled is True and rep.sintonizadas() == ["A", "B"]
+
+
+def test_con_bus_prender_el_monitor_con_volumen_0_sube_a_50():
+    router = RouterFalso()
+    radio, _, _, estado = crear(router=router, estado=Estado(volumen=0, monitor_local=False))
+    radio.alternar()
+    assert estado.volumen == 50 and router.volumenes[-1] == 50

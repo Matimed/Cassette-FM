@@ -14,7 +14,7 @@ from pathlib import Path
 from cassette_fm import __version__, applet, atajos, config
 
 ACCIONES = {"next": "siguiente", "prev": "anterior", "on": "encender", "off": "apagar",
-            "toggle": "alternar", "rescan": "rescan"}
+            "toggle": "alternar", "mute": "silenciar", "rescan": "rescan"}
 
 
 class _ErrorCli(Exception):

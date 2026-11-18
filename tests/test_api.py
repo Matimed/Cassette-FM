@@ -51,6 +51,7 @@ class RadioFalsa:
     def anterior(self): self._hacer("anterior")
     def encender(self): self._hacer("encender")
     def apagar(self): self._hacer("apagar")
+    def silenciar(self): self._hacer("silenciar")
     def alternar(self): self._hacer("alternar")
     def rescan(self): self._hacer("rescan")
 
@@ -105,7 +106,7 @@ def test_post_sintonizar_con_espacios_y_acentos(servidor):
     assert servidor.radio.llamadas == [("sintonizar", ("Música Ñandú 2000",), {})]
 
 
-@pytest.mark.parametrize("ruta", ["siguiente", "anterior", "encender", "apagar", "alternar", "rescan"])
+@pytest.mark.parametrize("ruta", ["siguiente", "anterior", "encender", "apagar", "alternar", "silenciar", "rescan"])
 def test_post_acciones_simples(servidor, ruta):
     codigo, cuerpo = pedir(servidor, "POST", f"/{ruta}")
     assert codigo == 200 and cuerpo["estacion"] == "A"

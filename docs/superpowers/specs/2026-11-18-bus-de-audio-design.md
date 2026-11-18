@@ -20,9 +20,15 @@ monitor y recibe siempre la señal completa: **cada monitor tiene su propio volu
 - **Abstracción de volumen** (`Radio._poner_volumen`): el volumen de la radio es el del monitor local. Las fuentes
   (mpv, voz, Soloist) quedan al 100 % —0 si el volumen es 0— y solo se mueven para el ducking del DJ y la calibración de
   Spotify (`ajuste_volumen_db`), que siguen dentro de la señal del bus.
-- API: `POST /monitor {"activo": bool}`; `/estado` suma `monitor_local` (solo con bus). 409 sin bus, 503 si falla `pactl`.
+- **Apagar vs. silenciar** (decidido el 18/11 con el usuario): con el bus la radio es una transmisión que sigue sonando en
+  `radio_virtual` aunque nadie la escuche en esta PC. Todo lo que antes "apagaba" ahora solo **silencia el monitor**
+  (`Radio.silenciar`): el clic izquierdo del applet, Pause/Stop/PlayPause de MPRIS y de las teclas multimedia, y el volumen
+  en 0 (las fuentes y la voz no se tocan). Subir el volumen, Play, sintonizar o abrir el dial lo vuelven a prender sin
+  re-sintonizar (con volumen 0 parte de 50). **Solo corta la transmisión** el "Apagar" del menú del clic derecho,
+  `cassette off` y `POST /apagar`. Sin bus, `silenciar` es `apagar`: nada cambia. En MPRIS, silenciado se ve como
+  "Stopped". Se descartó el interruptor "Escuchar en esta PC" del applet: era una segunda forma de lo mismo.
+- API: `POST /silenciar` (y `cassette mute`); `POST /monitor {"activo": bool}`; `/estado` suma `monitor_local` (solo con bus). 409 sin bus, 503 si falla `pactl`.
   `/volumen` no cambia de forma: el applet, MPRIS y las teclas multimedia siguen igual.
-- Applet: interruptor "Escuchar en esta PC" en el menú del clic derecho, solo si el servicio tiene bus.
 
 ## Cómo llega el audio al bus (verificado el 18/11 en este equipo)
 

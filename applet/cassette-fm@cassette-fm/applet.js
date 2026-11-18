@@ -124,7 +124,7 @@ class CassetteApplet extends Applet.TextIconApplet {
 
     _reconstruirMenu() {
         const estado = this.estado;
-        const firma = estado ? JSON.stringify([estado.estaciones, estado.estacion, estado.encendida, estado.monitor_local]) : "";
+        const firma = estado ? JSON.stringify([estado.estaciones, estado.estacion, estado.encendida]) : "";
         if (firma === this._firmaMenu) return;
         this._firmaMenu = firma;
         this._seccionEstaciones.removeAll();
@@ -139,15 +139,10 @@ class CassetteApplet extends Applet.TextIconApplet {
         nueva.connect("activate", () => new DialogoEmisora(this).abrir());
         this._seccionEstaciones.addMenuItem(nueva);
         if (estado.encendida) {
+            // el único que corta la transmisión: el clic izquierdo, la pausa y el volumen en 0 solo silencian
             const apagar = new PopupMenu.PopupMenuItem("Apagar");
             apagar.connect("activate", () => this._accion("/apagar"));
             this._seccionEstaciones.addMenuItem(apagar);
-        }
-        if (typeof estado.monitor_local === "boolean") {
-            // solo con el bus de audio (`bus_audio = true`): la radio sigue sonando en el bus aunque se apague acá
-            const escuchar = new PopupMenu.PopupSwitchMenuItem("Escuchar en esta PC", estado.monitor_local);
-            escuchar.connect("toggled", (_item, activo) => this._accion("/monitor", { activo: activo }));
-            this._seccionEstaciones.addMenuItem(escuchar);
         }
         this._seccionEstaciones.addMenuItem(new PopupMenu.PopupSeparatorMenuItem());
     }
@@ -614,7 +609,8 @@ class Dial {
         applet._pedir("GET", "/estado", undefined, (r) => {
             if (this._cerrado) return;
             if (r.codigo !== 200) return this._avisarYCerrar("cassette-fm no responde");
-            if (r.datos.encendida) return this._empezar(r.datos);
+            // con el bus de audio la radio puede estar prendida pero silenciada (monitor_local: false)
+            if (r.datos.encendida && r.datos.monitor_local !== false) return this._empezar(r.datos);
             // abrir el dial prende la radio (con el volumen en 0, la API la sube a 50)
             applet._pedir("POST", "/encender", undefined, (e) => {
                 if (this._cerrado) return;

@@ -57,6 +57,7 @@ class RadioFalsa:
     def anterior(self): self._hacer("anterior")
     def encender(self): self._hacer("encender")
     def apagar(self): self._hacer("apagar")
+    def silenciar(self): self._hacer("silenciar")
     def alternar(self): self._hacer("alternar")
     def rescan(self): self._hacer("rescan")
 
@@ -127,7 +128,7 @@ def test_list_marca_la_actual(servicio, capsys):
 
 @pytest.mark.parametrize("comando,ruta", [
     ("next", "siguiente"), ("prev", "anterior"), ("on", "encender"),
-    ("off", "apagar"), ("toggle", "alternar"), ("rescan", "rescan")])
+    ("off", "apagar"), ("toggle", "alternar"), ("mute", "silenciar"), ("rescan", "rescan")])
 def test_acciones(servicio, capsys, comando, ruta):
     assert main([comando, "--puerto", servicio.puerto]) == 0
     assert servicio.radio.llamadas == [(ruta, (), {})]

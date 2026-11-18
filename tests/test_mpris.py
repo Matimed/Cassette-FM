@@ -30,6 +30,7 @@ class RadioFalsa:
     def __init__(self):
         self.acciones = []
         self.encendida = False
+        self.monitor_local = None      # solo con el bus de audio
         self.pista = Pista(Path("/m/a.mp3"), 200.0, "Queen - Bohemian Rhapsody", artista="Queen",
                            cancion="Bohemian Rhapsody")
         self.emisora = "Rock"
@@ -67,11 +68,17 @@ class RadioFalsa:
     def apagar(self):
         self._accion("apagar")
 
+    def silenciar(self):
+        self._accion("silenciar")
+
     def sonando(self):
         return (self.emisora, self.pista) if self.encendida and self.pista else None
 
     def estado(self):
-        return {"encendida": self.encendida, "volumen": 70, "segundo": 12.5 if self.encendida else None}
+        estado = {"encendida": self.encendida, "volumen": 70, "segundo": 12.5 if self.encendida else None}
+        if self.monitor_local is not None:
+            estado["monitor_local"] = self.monitor_local
+        return estado
 
 
 class Bucle:
@@ -174,7 +181,7 @@ def test_cada_metodo_llama_a_su_accion(servicio, cliente, bucle):
     p, _, _ = player(cliente, bucle)
     for llamada in (p.call_previous, p.call_play_pause, p.call_play, p.call_pause, p.call_stop):
         bucle(llamada())
-    assert esperar(lambda: radio.acciones == ["anterior", "alternar", "encender", "apagar", "apagar"])
+    assert esperar(lambda: radio.acciones == ["anterior", "alternar", "encender", "silenciar", "silenciar"])
 
 
 def test_estado_y_metadata(servicio, cliente, bucle):
@@ -308,7 +315,7 @@ def test_cada_tecla_llama_a_su_accion(teclas, servicio, bucle):
     assert esperar(lambda: teclas.pedidos)
     for tecla in ("Next", "Previous", "Play", "Pause", "Stop"):
         bucle.loop.call_soon_threadsafe(teclas.MediaPlayerKeyPressed, "cassette-fm", tecla)
-    assert esperar(lambda: radio.acciones == ["siguiente", "anterior", "alternar", "alternar", "apagar"])
+    assert esperar(lambda: radio.acciones == ["siguiente", "anterior", "alternar", "silenciar", "silenciar"])
 
 
 def test_ignora_teclas_de_otra_aplicacion(teclas, servicio, bucle):
@@ -356,3 +363,12 @@ def test_prendida_sin_tema_todavia_sigue_playing(servicio, cliente, bucle):
     meta = {k: v.value for k, v in bucle(p.get_metadata()).items()}
     assert meta == {"mpris:trackid": "/org/mpris/MediaPlayer2/TrackList/NoTrack"}
     assert bucle(p.get_position()) == 0
+
+
+@pytest.mark.parametrize("monitor, esperado", [(False, "Stopped"), (True, "Playing")])
+def test_con_bus_silenciado_se_ve_pausado_aunque_la_radio_siga_prendida(servicio, cliente, bucle, monitor, esperado):
+    radio = RadioFalsa()
+    radio.encendida, radio.monitor_local = True, monitor
+    servicio(radio)
+    p, _, _ = player(cliente, bucle)
+    assert bucle(p.get_playback_status()) == esperado

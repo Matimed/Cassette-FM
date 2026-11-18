@@ -23,7 +23,7 @@ _APLICACION = "cassette-fm"
 _TECLAS_BUS = "org.gnome.SettingsDaemon"
 _TECLAS_RUTA = "/org/gnome/SettingsDaemon/MediaKeys"
 _TECLAS_IFACE = "org.gnome.SettingsDaemon.MediaKeys"
-_TECLAS = {"Next": "siguiente", "Previous": "anterior", "Play": "alternar", "Pause": "alternar", "Stop": "apagar"}
+_TECLAS = {"Next": "siguiente", "Previous": "anterior", "Play": "alternar", "Pause": "silenciar", "Stop": "silenciar"}
 
 
 class _Foto:
@@ -32,7 +32,8 @@ class _Foto:
     def __init__(self, sonando, estado: dict, trackid: str):
         self.sonando = sonando
         # prendida aunque el tema nuevo todavía no arrancó (al cambiar de emisora): si no, se vería "Stopped" en el medio
-        self.prendida = bool(estado.get("encendida"))
+        # con el bus de audio, silenciado se ve como pausa aunque la transmisión siga
+        self.prendida = bool(estado.get("encendida")) and estado.get("monitor_local") is not False
         self.volumen = estado.get("volumen", 0) / 100
         self.segundo = estado.get("segundo") or 0.0
         self.tomada = time.monotonic()
@@ -117,11 +118,11 @@ class _Player(ServiceInterface):
 
     @method()
     def Pause(self):
-        self._s.accion("apagar")
+        self._s.accion("silenciar")
 
     @method()
     def Stop(self):
-        self._s.accion("apagar")
+        self._s.accion("silenciar")
 
     @method()
     def Seek(self, desplazamiento: "x"):

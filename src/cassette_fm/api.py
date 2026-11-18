@@ -10,7 +10,7 @@ from cassette_fm.radio import BusInactivo, DJInactivo, EstacionInexistente, Radi
 
 _log = logging.getLogger("cassette_fm")
 
-ACCIONES = ("siguiente", "anterior", "encender", "apagar", "alternar", "rescan")
+ACCIONES = ("siguiente", "anterior", "encender", "apagar", "alternar", "silenciar", "rescan")
 
 
 _MENSAJE_DJ_INACTIVO = ("El DJ está apagado: poné `activo = true` (y, para pedirle intervenciones al servicio DJ, la "
