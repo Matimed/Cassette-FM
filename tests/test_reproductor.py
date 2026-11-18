@@ -268,6 +268,19 @@ def test_atenuar_sin_rampa_aplica_el_volumen_por_el_factor(rep, mpv):
     assert _volumenes(mpv)[-1] == pytest.approx(28.0)
 
 
+def test_ajuste_de_volumen_en_db_escala_el_volumen_de_mpv_con_la_curva_cubica(mpv):
+    rep = Reproductor(mpv, reloj=lambda: T, ajuste_volumen_db=-6.0)
+    rep.volumen(100)
+    assert _volumenes(mpv)[-1] == pytest.approx(100 * 10 ** (-6 / 60))
+    rep.atenuar(0.5, 0)
+    assert _volumenes(mpv)[-1] == pytest.approx(50 * 10 ** (-6 / 60))
+
+
+def test_sin_ajuste_el_volumen_de_mpv_es_el_pedido(rep, mpv):
+    rep.volumen(80)
+    assert _volumenes(mpv)[-1] == pytest.approx(80.0)
+
+
 def test_atenuar_con_rampa_baja_en_pasos_y_llega_al_valor(rep, mpv):
     rep.volumen(80)
     mpv.comandos.clear()

@@ -21,7 +21,7 @@ class Reproductor:
     al_cambiar_pista: Callable[[Pista, Estacion], None] | None = None
     al_fallar: Callable[[Estacion], None] | None = None   # no hay forma de seguir sonando en esa estación
 
-    def __init__(self, mpv, reloj: Callable[[], float] = time.time, cola: int = 2):
+    def __init__(self, mpv, reloj: Callable[[], float] = time.time, cola: int = 2, ajuste_volumen_db: float = 0.0):
         self._mpv = mpv
         self._reloj = reloj
         self._cola = cola
@@ -33,6 +33,7 @@ class Reproductor:
         self._avisada = True
         self._estacion: Estacion | None = None
         self._volumen: int | None = None
+        self._ganancia = 10 ** (ajuste_volumen_db / 60)    # nivel frente a la voz y Spotify; curva cúbica, como la de mpv
         self._factor = 1.0          # atenuación vigente (la voz baja la música)
         self._rampa = 0             # identifica la rampa en curso; una nueva invalida a la anterior
         self._fallos = 0
@@ -150,7 +151,7 @@ class Reproductor:
 
     def _aplicar_volumen(self) -> None:
         if self._volumen is not None:
-            self._mpv.comando("set_property", "volume", self._volumen * self._factor)
+            self._mpv.comando("set_property", "volume", self._volumen * self._factor * self._ganancia)
 
     def manejar_evento(self, evento: dict) -> None:
         avisar = None

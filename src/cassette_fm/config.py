@@ -81,6 +81,7 @@ class Config:
     avisos: bool = False                   # notificación al cambiar de emisora (el applet ya la muestra)
     bus_audio: bool = True                 # todo el audio sale a un sink virtual (radio_virtual); ver audio_router.py
     normalizar: bool = True   # filtro dynaudnorm de mpv: parejiza el volumen entre temas
+    ajuste_volumen_db: float = 0.0   # nivel de las emisoras locales (y la estática) frente a la voz y Spotify, en el bus
     dj: ConfigDJ = ConfigDJ()
     estaciones_dj: Mapping[str, ConfigDJ] = field(default_factory=dict)   # overrides ya fusionados
     spotify: ConfigSpotify = ConfigSpotify()
@@ -180,11 +181,15 @@ def cargar_config(archivo: Path) -> Config:
     tabla_dj = datos.pop("dj", None)
     spotify = _leer_spotify(archivo, datos.pop("spotify", None))
     lan = _leer_lan(archivo, datos.pop("lan", None))
-    conocidas = {"raiz_musica", "puerto", "avisos", "normalizar", "bus_audio"}
+    conocidas = {"raiz_musica", "puerto", "avisos", "normalizar", "bus_audio", "ajuste_volumen_db"}
     datos = {k: v for k, v in datos.items() if k in conocidas}
+    if "ajuste_volumen_db" in datos:
+        datos["ajuste_volumen_db"] = _numero(archivo, "ajuste_volumen_db", datos["ajuste_volumen_db"])
+        if not -30 <= datos["ajuste_volumen_db"] <= 30:
+            raise ErrorConfig(f"{archivo}: 'ajuste_volumen_db' tiene que estar entre -30 y 30")
     for clave, valor in datos.items():
         tipo = {"raiz_musica": str, "puerto": int, "avisos": bool, "normalizar": bool,
-                "bus_audio": bool}[clave]
+                "bus_audio": bool, "ajuste_volumen_db": float}[clave]
         if not isinstance(valor, tipo) or (tipo is int and isinstance(valor, bool)):
             raise ErrorConfig(f"{archivo}: '{clave}' tiene que ser {_NOMBRE_TIPO[tipo]}")
     if "puerto" in datos and not 1 <= datos["puerto"] <= 65535:

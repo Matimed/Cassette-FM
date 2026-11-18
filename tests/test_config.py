@@ -296,6 +296,18 @@ def test_spotify_campos_de_reproduccion_del_toml(tmp_path):
     assert s.soloist_bin == Path.home() / "x/soloist"
 
 
+def test_ajuste_volumen_db_de_las_emisoras_locales(tmp_path):
+    archivo = tmp_path / "config.toml"
+    archivo.write_text("")
+    assert cargar_config(archivo).ajuste_volumen_db == 0.0
+    archivo.write_text("ajuste_volumen_db = -2.5\n")
+    assert cargar_config(archivo).ajuste_volumen_db == -2.5
+    for malo in ('"fuerte"', "40", "-31", "true"):
+        archivo.write_text(f"ajuste_volumen_db = {malo}\n")
+        with pytest.raises(ErrorConfig, match="ajuste_volumen_db"):
+            cargar_config(archivo)
+
+
 @pytest.mark.parametrize("texto, mensaje", [("ajuste_volumen_db = 40", "ajuste_volumen_db"),
                                             ("uris_por_pedido = 0", "uris_por_pedido"),
                                             ("uris_por_pedido = 1000", "uris_por_pedido"),

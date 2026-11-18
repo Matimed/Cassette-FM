@@ -165,7 +165,7 @@ def servir(config: Config, rutas: Rutas, avisar: Callable[[str, str], None] | No
     if cliente is not None:
         spotify, soloist = reproductor_spotify(config, rutas, cliente)
         estatica = generar_estatica(rutas.runtime / "estatica.wav")
-    reproductor = Reproductores(Reproductor(mpv), spotify, estatica)
+    reproductor = Reproductores(Reproductor(mpv, ajuste_volumen_db=config.ajuste_volumen_db), spotify, estatica)
     locutor = None
     planificador = None
     extra_radio = {}

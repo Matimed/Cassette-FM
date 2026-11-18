@@ -385,7 +385,12 @@ raiz_musica = "~/Música"   # solo para crear estaciones.json la primera vez (ve
 puerto = 7710              # la API escucha solo en 127.0.0.1
 avisos = false             # true: notificación de escritorio con estación y tema al cambiar
 normalizar = true          # parejiza el volumen entre temas (filtro dynaudnorm de mpv)
+ajuste_volumen_db = 0      # nivel de las emisoras locales frente a la voz del DJ y Spotify (-30 a 30 dB)
 ```
+
+Los tres niveles (emisoras locales, voz del DJ con `[dj] ganancia_voz_db` y Spotify con `[spotify] ajuste_volumen_db`)
+se miden en el bus, antes del volumen del monitor, así que se pueden emparejar sin tocar el volumen de la radio. Con
+los valores por defecto la voz y las locales quedan cerca (~-13 dB medios) y Spotify ~-16 dB si su ajuste es 0.
 
 El estado (última estación y volumen) se guarda en `~/.local/state/cassette-fm/estado.json`.
 
