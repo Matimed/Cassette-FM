@@ -482,6 +482,38 @@ Las emisoras están en `~/.config/cassette-fm/estaciones.json`, una lista en el 
   error con la línea. Si está mal escrito **al arrancar**, el servicio no levanta: el motivo (con la línea) se ve con
   `journalctl --user -u cassette-fm -n 20`.
 
+## Radio en otra PC (Tailscale o LAN)
+
+Una segunda PC propia puede escuchar la misma radio con el mismo applet, sin correr nada del backend (ni Soloist, ni Docker,
+ni el DJ). Es **una sola transmisión**: lo que suena allá es lo que suena en el bus `radio_virtual` de esta PC (música y
+voces del DJ mezcladas), con 1–3 s de retraso; cambiar de emisora desde cualquiera de las dos la cambia para las dos, y cada
+PC tiene su propio volumen y su propio encendido. Diseño:
+[`docs/superpowers/specs/2026-11-18-radio-lan-design.md`](docs/superpowers/specs/2026-11-18-radio-lan-design.md).
+
+**En la PC principal** (necesita `bus_audio = true`, que viene por defecto, y `gst-launch-1.0`, que ya trae Linux Mint):
+
+```toml
+# ~/.config/cassette-fm/config.toml
+[lan]
+activo = true            # apagado por defecto: sin esto no se abre ningún puerto
+# puerto = 8765
+# escuchar = "auto"      # la IP de Tailscale si existe (si no, todas las interfaces) o una IP concreta
+# max_oyentes = 4
+```
+
+Reiniciá el servicio (`systemctl --user restart cassette-fm`) y corré `cassette lan`: muestra la dirección (la de Tailscale
+si hay, que es fija) y la **clave de oyente**; `cassette lan regenerar` la cambia. Solo se exponen cuatro rutas, todas con la
+clave (`Authorization: Bearer …`): `GET /status`, `POST /station/{emisora}`, `GET /stream` (MP3 de 160 kbps; con la radio
+apagada suena estática) y `GET /icon/{emisora}`. La API de control completa sigue solo en `127.0.0.1`. Va por HTTP sin
+cifrar: por Tailscale el tráfico ya viaja cifrado; por la LAN sirve para una red de confianza.
+
+**En la otra PC**: instalá `python3` y `mpv`, copiá o enlazá la carpeta `applet/cassette-fm@cassette-fm` a
+`~/.local/share/cinnamon/applets/`, habilitá el applet en el panel y, en sus ajustes, prendé **Modo remoto** y completá
+**Dirección de la radio remota** (`http://100.x.y.z:8765`) y **Clave de oyente**. Si no se ve, reiniciá Cinnamon
+(`Alt+F2`, `r`). El applet se ve igual que el local (menú, dial, logos) salvo que no ofrece editar emisoras, y el clic
+izquierdo, el volumen y "Apagar" actúan solo sobre la escucha de esa PC (`lan_receiver.py`, que viaja dentro de la carpeta
+del applet). Si algo falla, el tooltip lo dice (clave rechazada, no alcanzo a la radio, la radio principal está apagada).
+
 ## Desarrollo
 
 ```bash

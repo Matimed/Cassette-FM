@@ -1,10 +1,11 @@
 ---
 # CASSETTE-FM-u8ea
 title: 'Radio por la LAN: stream HTTP del bus, receptor liviano y applet remoto'
-status: todo
+status: completed
 type: feature
+priority: normal
 created_at: 2026-11-18T05:05:14Z
-updated_at: 2026-11-18T05:05:14Z
+updated_at: 2026-11-18T05:37:28Z
 parent: CASSETTE-FM-abja
 ---
 

@@ -62,6 +62,11 @@ monitor local con volumen propio (el volumen de la radio es el del monitor; las 
 calibración), base de la retransmisión por red; `bus_audio` en `config.toml` (por defecto `true`), `POST /monitor`,
 interruptor en el applet y `scripts/instalar-bus.sh` para Soloist (cliente PipeWire nativo: `PIPEWIRE_NODE`, no `PULSE_SINK`):
 [`superpowers/specs/2026-11-18-bus-de-audio-design.md`](superpowers/specs/2026-11-18-bus-de-audio-design.md).
+Radio por la LAN (CASSETTE-FM-u8ea, 18/11): una segunda PC propia escucha la misma transmisión con el mismo applet en modo remoto;
+servidor `lan_server.py` (`[lan]`, apagado por defecto, escucha en la IP de Tailscale) con `/status`, `/station`, `/stream`
+(MP3 del bus, estática con la radio apagada) e `/icon`, clave Bearer (`cassette lan`) y receptor `lan_receiver.py` dentro de la
+carpeta del applet: [`superpowers/specs/2026-11-18-radio-lan-design.md`](superpowers/specs/2026-11-18-radio-lan-design.md),
+plan en [`superpowers/plans/2026-11-18-radio-lan.md`](superpowers/plans/2026-11-18-radio-lan.md).
 Prender desde volumen 0 sube a 50. Ojo al tocar el applet: `ReloadXlet` recarga `applet.js` pero no `logic.js` (queda en caché hasta reiniciar Cinnamon).
 
 ## Relevamiento previo (leer antes de diseñar)
