@@ -67,6 +67,11 @@ servidor `lan_server.py` (`[lan]`, apagado por defecto, escucha en la IP de Tail
 (MP3 del bus, estática con la radio apagada) e `/icon`, clave Bearer (`cassette lan`) y receptor `lan_receiver.py` dentro de la
 carpeta del applet: [`superpowers/specs/2026-11-18-radio-lan-design.md`](superpowers/specs/2026-11-18-radio-lan-design.md),
 plan en [`superpowers/plans/2026-11-18-radio-lan.md`](superpowers/plans/2026-11-18-radio-lan.md).
+Puente a la nube (19/11): con `[nube]` esta PC se conecta hacia afuera a un relay (WebSocket de control con estado y
+órdenes; audio MP3 de 64/96/160 kbps solo mientras el relay pide cada calidad), para escuchar desde cualquier dispositivo sin
+Tailscale; el relay y la web son las entregas siguientes, por ahora hay `scripts/relay-de-prueba.py`:
+[`superpowers/specs/2026-11-19-puente-nube-design.md`](superpowers/specs/2026-11-19-puente-nube-design.md),
+plan en [`superpowers/plans/2026-11-19-puente-nube.md`](superpowers/plans/2026-11-19-puente-nube.md).
 Prender desde volumen 0 sube a 50. Ojo al tocar el applet: `ReloadXlet` recarga `applet.js` pero no `logic.js` (queda en caché hasta reiniciar Cinnamon).
 
 ## Relevamiento previo (leer antes de diseñar)
