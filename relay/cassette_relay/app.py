@@ -1,0 +1,42 @@
+"""La aplicación aiohttp: rutas de la PC (`/casa/…`), de los oyentes (`/api/…`), la página y `/salud`."""
+from pathlib import Path
+
+from aiohttp import web
+
+from .acceso import Acceso
+from .casa import MAX_LOGO, Casa
+from .config import Ajustes
+from .oyentes import Oyentes
+
+CASA = web.AppKey("casa", Casa)
+OYENTES = web.AppKey("oyentes", Oyentes)
+ACCESO = web.AppKey("acceso", Acceso)
+AJUSTES = web.AppKey("ajustes", Ajustes)
+
+WEB_POR_DEFECTO = Path(__file__).resolve().parent.parent / "web"
+
+
+async def _salud(request: web.Request) -> web.Response:
+    return web.Response(text="ok")
+
+
+def crear_app(ajustes: Ajustes, web_dir: Path | None = None) -> web.Application:
+    app = web.Application(client_max_size=MAX_LOGO + 64 * 1024)
+    casa: Casa | None = None
+    oyentes = Oyentes(lambda calidades: casa.mandar_demanda(calidades), gracia=ajustes.gracia,
+                      cola_segundos=ajustes.cola_segundos)
+    casa = Casa(ajustes, oyentes)
+    app[CASA] = casa
+    app[OYENTES] = oyentes
+    app[ACCESO] = Acceso(ajustes.app_password)
+    app[AJUSTES] = ajustes
+
+    async def al_cerrar(app: web.Application) -> None:
+        await casa.cerrar()
+    app.on_shutdown.append(al_cerrar)
+
+    app.router.add_get("/salud", _salud)
+    app.router.add_get("/casa/control", casa.control)
+    app.router.add_get("/casa/audio", casa.audio)
+    app.router.add_put("/casa/icono/{nombre:.+}", casa.subir_icono)
+    return app
