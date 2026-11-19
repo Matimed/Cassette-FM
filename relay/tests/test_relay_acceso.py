@@ -170,3 +170,12 @@ def test_validar_claves_validas():
 ])
 def test_validar_claves_invalidas(datos):
     assert validar_claves(datos) is None
+
+
+def test_bytes_no_utf8_no_explotan(acceso):
+    basura = "\udcff\udcfe"                               # lo que aiohttp arma con bytes latin-1 sueltos
+    for s in (basura, "\ud800", "a" + basura + "b"):
+        assert acceso.probar(s) == ("mal", None)
+        assert acceso.identidad_de_sesion(f"abcd1234.escucha.99999999999.{s}") is None
+        assert huella(s) and normalizar(s)
+    assert clave_igual(basura, CLAVE) is False

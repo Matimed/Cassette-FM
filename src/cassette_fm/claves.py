@@ -54,6 +54,8 @@ def leer(ruta: Path) -> list[dict]:
         return []
     except OSError as e:
         raise ErrorClaves(f"{ruta}: no se pudo leer ({e.strerror})") from None
+    except UnicodeDecodeError:
+        raise ErrorClaves(f"{ruta}: no es un archivo de texto (UTF-8)") from None
     try:
         datos = json.loads(crudo)
     except ValueError as e:

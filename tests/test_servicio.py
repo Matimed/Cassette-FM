@@ -926,3 +926,24 @@ def test_nube_archivo_borrado_manda_lista_vacia(tmp_path):
         assert esperar(lambda: p.listas[-1:] == [[]])
     finally:
         cerrar()
+
+
+def test_nube_archivo_binario_no_rompe_el_arranque_y_manda_lista_vacia(tmp_path, caplog):
+    from cassette_fm import claves
+    PuenteFalso.creados.clear()
+    rutas = _rutas_lan(tmp_path)
+    rutas.claves.parent.mkdir(parents=True, exist_ok=True)
+    rutas.claves.write_bytes(b"\xff\xfe\x00garbage")
+    cerrar, _ = servicio.iniciar_nube(_nube(), rutas, RadioDeLan(), object(), object(), crear_puente=PuenteFalso,
+                                      intervalo_revision=0.05)
+    try:
+        p = PuenteFalso.creados[0]
+        assert p.iniciado and p.listas_al_iniciar == [[]]            # nunca hubo una buena: vacía (fallar cerrado)
+        time.sleep(0.3)
+        assert "Traceback" not in caplog.text and caplog.text.count("no se puede leer") == 1
+        claves.crear(rutas.claves.with_name("otro.json"), "x", "escucha")
+        rutas.claves.unlink()
+        _, registro = claves.crear(rutas.claves, "Mamá", "escucha")
+        assert esperar(lambda: p.listas[-1:] == [claves.para_relay([registro])])
+    finally:
+        cerrar()

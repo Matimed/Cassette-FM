@@ -159,6 +159,9 @@ def iniciar_nube(config: Config, rutas: Rutas, radio, router, difusores, crear_p
             if not estado_claves["roto"]:
                 _log.error("claves.json no se puede leer: %s; sigue rigiendo la última lista", e)
                 estado_claves["roto"] = True
+            if estado_claves["mandada"] is None:       # nunca hubo una buena: vacía (solo la maestra entra)
+                estado_claves["mandada"] = []
+                puente[0].poner_claves([])
             return
         estado_claves["roto"] = False
         if lista != estado_claves["mandada"]:

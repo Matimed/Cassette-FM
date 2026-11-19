@@ -83,3 +83,10 @@ def test_ids_unicos_en_muchas_claves(ruta):
         crear(ruta, f"p{i}", "escucha")
     ids = [r["id"] for r in leer(ruta)]
     assert len(set(ids)) == 50
+
+
+def test_leer_archivo_binario_es_error_claro(ruta):
+    ruta.parent.mkdir(parents=True)
+    ruta.write_bytes(b"\xff\xfe\x00garbage")
+    with pytest.raises(ErrorClaves):
+        leer(ruta)

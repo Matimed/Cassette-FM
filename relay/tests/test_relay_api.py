@@ -428,3 +428,9 @@ def test_la_maestra_entra_con_la_pc_desconectada(relay):
 def test_pagina_usa_el_permiso(relay):
     cuerpo = relay.pedir("GET", "/")[2]
     assert b"permiso" in cuerpo and b"escucha" in cuerpo
+
+
+def test_bytes_no_utf8_dan_401_no_500(relay):
+    assert relay.pedir("GET", "/api/estado", headers={"Cookie": "sesion=abcd1234.escucha.99999999999.\xff\xff"})[0] == 401
+    assert relay.pedir("GET", "/api/estado", headers={"Authorization": "Bearer \xff\xfe"})[0] == 401
+    assert relay.pedir("POST", "/api/entrar", b'{"clave": "\\ud800"}', {"Content-Type": "application/json"})[0] == 401

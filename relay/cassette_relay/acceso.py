@@ -25,11 +25,17 @@ class Identidad:
     permiso: str
 
 
+def _bytes(texto: str) -> bytes:
+    """UTF-8 que acepta surrogates sueltos (bytes que no son UTF-8 en un encabezado, o `\\ud800` en un JSON): sin
+    esto, una cookie o un Bearer con basura daría un error 500."""
+    return texto.encode("utf-8", "surrogatepass")
+
+
 def clave_igual(dada: str | None, esperada: str) -> bool:
     """Compara en tiempo constante; una clave vacía nunca coincide."""
     if not dada or not esperada:
         return False
-    return hmac.compare_digest(dada.encode(), esperada.encode())
+    return hmac.compare_digest(_bytes(dada), _bytes(esperada))
 
 
 def normalizar(clave: str) -> str:
@@ -39,7 +45,7 @@ def normalizar(clave: str) -> str:
 
 def huella(clave: str) -> str:
     """Igual que `cassette_fm.claves.huella`: es lo único que el relay sabe de una clave de la PC."""
-    return hashlib.sha256(normalizar(clave).encode()).hexdigest()
+    return hashlib.sha256(_bytes(normalizar(clave))).hexdigest()
 
 
 def validar_claves(datos: object) -> list[dict] | None:
@@ -97,7 +103,7 @@ class Acceso:
                 or not vence.isascii() or not vence.isdigit() or len(vence) > _MAX_DIGITOS_VENCE):
             return None
         cuerpo = f"{ident}.{permiso}.{int(vence)}"
-        if not hmac.compare_digest(firma.encode(), self._firma(cuerpo).encode()) or int(vence) <= self._reloj():
+        if not hmac.compare_digest(_bytes(firma), self._firma(cuerpo).encode()) or int(vence) <= self._reloj():
             return None
         if ident == MAESTRA:
             return Identidad(MAESTRA, "completa") if permiso == "completa" else None
