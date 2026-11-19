@@ -29,7 +29,7 @@ class RelayEnHilo:
     """El relay de verdad (`crear_app`) en 127.0.0.1, con su loop en un hilo aparte."""
 
     def __init__(self, web_dir=None, **ajustes):
-        self.ajustes = Ajustes(ingest_token=TOKEN, app_password=CLAVE, **ajustes)
+        self.ajustes = Ajustes(ingest_token=TOKEN, clave_maestra=CLAVE, **ajustes)
         self.loop = asyncio.new_event_loop()
         listo = threading.Event()
         self._hilo = threading.Thread(target=self._correr, args=(listo, web_dir), daemon=True, name="relay-test")

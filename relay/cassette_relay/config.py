@@ -4,6 +4,7 @@ from dataclasses import dataclass
 
 CALIDADES = (64, 96, 160)      # kbps que sube la PC (protocolo del puente, versión 1)
 PROTOCOLO = 1
+MAESTRA = "maestra"        # el id de acceso de la clave maestra (MASTER_PASSWORD)
 
 _MIN_CLAVE = 8
 
@@ -15,7 +16,7 @@ class ErrorConfig(Exception):
 @dataclass(frozen=True)
 class Ajustes:
     ingest_token: str
-    app_password: str
+    clave_maestra: str
     puerto: int = 8080
     gracia: float = 10.0          # s que una calidad sigue pedida después de irse su último oyente
     cola_segundos: float = 15.0   # audio que se le guarda a cada oyente antes de saltar al vivo
@@ -30,11 +31,11 @@ def desde_entorno(env: Mapping[str, str]) -> Ajustes:
     token = (env.get("INGEST_TOKEN") or "").strip()
     if not token:
         raise ErrorConfig("falta INGEST_TOKEN (la clave de la PC: la que muestra `cassette nube`)")
-    clave = env.get("APP_PASSWORD") or ""
+    clave = env.get("MASTER_PASSWORD") or ""
     if not clave.strip():
-        raise ErrorConfig("falta APP_PASSWORD (la clave de los oyentes)")
+        raise ErrorConfig("falta MASTER_PASSWORD (la clave maestra: escucha y maneja la radio, siempre)")
     if len(clave) < _MIN_CLAVE:
-        raise ErrorConfig(f"APP_PASSWORD tiene que tener al menos {_MIN_CLAVE} caracteres")
+        raise ErrorConfig(f"MASTER_PASSWORD tiene que tener al menos {_MIN_CLAVE} caracteres")
     crudo = (env.get("PORT") or "8080").strip()
     try:
         puerto = int(crudo)
@@ -42,4 +43,4 @@ def desde_entorno(env: Mapping[str, str]) -> Ajustes:
         raise ErrorConfig("PORT tiene que ser un número de puerto") from None
     if not 0 < puerto < 65536:
         raise ErrorConfig("PORT tiene que estar entre 1 y 65535")
-    return Ajustes(ingest_token=token, app_password=clave, puerto=puerto)
+    return Ajustes(ingest_token=token, clave_maestra=clave, puerto=puerto)

@@ -25,7 +25,7 @@ def test_sin_variables_sale_con_error():
 
 def test_arranca_y_contesta_salud():
     puerto = _puerto_libre()
-    env = {"PATH": os.environ["PATH"], "PORT": str(puerto), "INGEST_TOKEN": TOKEN, "APP_PASSWORD": CLAVE}
+    env = {"PATH": os.environ["PATH"], "PORT": str(puerto), "INGEST_TOKEN": TOKEN, "MASTER_PASSWORD": CLAVE}
     proceso = subprocess.Popen([sys.executable, "-m", "cassette_relay"], env=env, cwd=RELAY_DIR,
                                stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
     try:

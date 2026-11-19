@@ -60,6 +60,11 @@ def test_cookie_adulterada_401(relay):
     assert relay.pedir("GET", "/api/estado", headers={"Cookie": "sesion=99999999999.abc"})[0] == 401
 
 
+@pytest.mark.parametrize("valor", ["1.escucha.\u00b23.ab", "abcd1234.escucha." + "9" * 5000 + ".x", "a.b.c.d.e"])
+def test_cookie_con_basura_da_401_no_500(relay, valor):
+    assert relay.pedir("GET", "/api/estado", headers={"Cookie": f"sesion={valor}"})[0] == 401
+
+
 def test_bearer_correcto_y_malo(relay):
     assert relay.pedir("GET", "/api/estado", headers=BEARER)[0] == 200
     assert relay.pedir("GET", "/api/estado", headers={"Authorization": "Bearer otra"})[0] == 401

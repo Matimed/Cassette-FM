@@ -29,7 +29,7 @@ def crear_app(ajustes: Ajustes, web_dir: Path | None = None) -> web.Application:
     casa = Casa(ajustes, oyentes)
     app[CASA] = casa
     app[OYENTES] = oyentes
-    app[ACCESO] = Acceso(ajustes.app_password)
+    app[ACCESO] = Acceso(ajustes.clave_maestra)
     app[AJUSTES] = ajustes
 
     async def al_cerrar(app: web.Application) -> None:

@@ -6,7 +6,7 @@ import socket
 
 from aiohttp import web
 
-from .acceso import DURACION_SESION, Acceso
+from .acceso import DURACION_SESION, Acceso, Identidad
 from .casa import Casa, nombre_en_ruta
 from .config import CALIDADES, Ajustes
 from .oyentes import Oyentes
@@ -14,6 +14,7 @@ from .oyentes import Oyentes
 _log = logging.getLogger("cassette_relay.api")
 
 COOKIE = "sesion"
+IDENTIDAD = web.RequestKey("identidad", Identidad)    # la identidad con que se entró, en cada pedido a /api/
 _MAX_CUERPO = 4 * 1024          # los pedidos JSON de los oyentes son chicos
 _SNDBUF_OYENTE = 16 * 1024     # chico: que el atraso de un oyente lento se vea en su cola y no en el kernel
 
@@ -65,13 +66,16 @@ class Api:
     async def _middleware(self, request: web.Request, handler):
         if not request.path.startswith("/api/") or request.path == "/api/entrar":
             return await handler(request)
-        if self._acceso.sesion_valida(request.cookies.get(COOKIE)):
+        identidad = self._acceso.identidad_de_sesion(request.cookies.get(COOKIE))
+        if identidad is not None:
+            request[IDENTIDAD] = identidad
             return await handler(request)
         clave = _bearer(request)
         if clave is None:
             return _error(401, "hace falta entrar con la clave")
-        resultado = self._acceso.probar(clave)
+        resultado, identidad = self._acceso.probar(clave)
         if resultado == "ok":
+            request[IDENTIDAD] = identidad
             return await handler(request)
         if resultado == "bloqueado":
             return _error(429, "demasiados intentos: probá de nuevo en un minuto")
@@ -97,15 +101,16 @@ class Api:
         if error is not None:
             return error
         clave = cuerpo.get("clave") if isinstance(cuerpo, dict) else None
-        resultado = self._acceso.probar(clave if isinstance(clave, str) else None)
+        resultado, identidad = self._acceso.probar(clave if isinstance(clave, str) else None)
         if resultado == "bloqueado":
             return _error(429, "demasiados intentos: probá de nuevo en un minuto")
         if resultado != "ok":
             _log.warning("intento de entrar con una clave incorrecta")
             return _error(401, "clave incorrecta")
+        _log.info("entró %s (%s)", identidad.id, identidad.permiso)
         respuesta = web.Response(status=204)
         seguro = request.secure or request.headers.get("X-Forwarded-Proto", "").lower() == "https"
-        respuesta.set_cookie(COOKIE, self._acceso.nueva_sesion(), max_age=DURACION_SESION, path="/",
+        respuesta.set_cookie(COOKIE, self._acceso.nueva_sesion(identidad), max_age=DURACION_SESION, path="/",
                              httponly=True, samesite="Lax", secure=seguro)
         return respuesta
 
