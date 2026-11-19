@@ -348,3 +348,147 @@ def test_espera_crece_hasta_el_maximo_y_se_reinicia():
     assert e.siguiente() == 1
     con_azar = Espera(minimo=1.0, maximo=30.0, azar=lambda: 0.0)
     assert 0.5 <= con_azar.siguiente() < 1.0
+
+
+# --- audio bajo demanda ---
+
+from cassette_fm.lan_stream import FUENTE_MONITOR, Difusor, Difusores  # noqa: E402
+from test_lan_stream import ProcesoFalso  # noqa: E402
+
+
+class Codificadores:
+    """Los `gst-launch` falsos que lanzan los `Difusor`."""
+
+    def __init__(self):
+        self.procesos: list[ProcesoFalso] = []
+
+    def lanzar(self, comando):
+        p = ProcesoFalso(comando)
+        self.procesos.append(p)
+        return p
+
+    def de(self, kbps):
+        return [p for p in self.procesos if f"bitrate={kbps}" in p.comando]
+
+    def registro(self, **kw):
+        kw.setdefault("gracia_segundos", 0.1)
+        return Difusores(lambda: FUENTE_MONITOR, crear=lambda f, **o: Difusor(
+            f, lanzar=self.lanzar, arranque_segundos=0.0, **{**o, **kw}))
+
+
+def _audios(relay, kbps=None):
+    return [c for c in relay.conexiones if c.ruta.startswith("/casa/audio")
+            and (kbps is None or c.ruta == f"/casa/audio?calidad={kbps}")]
+
+
+@pytest.fixture
+def gst():
+    return Codificadores()
+
+
+def _pedir(relay, calidades, n=-1):
+    c = relay.control(n)
+    relay.recibir_tipo(c, "estado")
+    relay.mandar(c, {"tipo": "demanda", "calidades": calidades})
+    return c
+
+
+def test_demanda_abre_audio_en_esa_calidad(relay, armar, gst):
+    p = armar(difusores=gst.registro())
+    _pedir(relay, [96])
+    assert esperar(lambda: _audios(relay, 96) and gst.de(96))
+    audio = _audios(relay, 96)[0]
+    assert audio.headers["Authorization"] == f"Bearer {CLAVE}"
+    gst.de(96)[0].emitir(b"frame-1")
+    assert audio.binarios.get(timeout=2) == b"frame-1"
+    gst.de(96)[0].emitir(b"frame-2")
+    assert audio.binarios.get(timeout=2) == b"frame-2"
+    assert esperar(lambda: p.info()["subiendo"] == [96])
+
+
+def test_demanda_vacia_cierra_y_el_codificador_se_apaga(relay, armar, gst):
+    registro = gst.registro()
+    p = armar(difusores=registro)
+    c = _pedir(relay, [64])
+    assert esperar(lambda: _audios(relay, 64) and gst.de(64))
+    relay.mandar(c, {"tipo": "demanda", "calidades": []})
+    assert esperar(lambda: not _audios(relay, 64)[0].abierta)
+    assert esperar(lambda: p.info()["subiendo"] == [])
+
+    def apagado():
+        registro.revisar_fuente()          # lo que hace el servicio cada segundo
+        return gst.de(64)[0].terminado
+
+    assert esperar(apagado)
+
+
+def test_dos_calidades_a_la_vez(relay, armar, gst):
+    p = armar(difusores=gst.registro())
+    _pedir(relay, [64, 160])
+    assert esperar(lambda: _audios(relay, 64) and _audios(relay, 160))
+    assert esperar(lambda: p.info()["subiendo"] == [64, 160])
+
+
+def test_calidad_desconocida_se_ignora(relay, armar, gst, caplog):
+    armar(difusores=gst.registro())
+    c = _pedir(relay, [128, "x", 96])
+    assert esperar(lambda: _audios(relay, 96))
+    time.sleep(0.2)
+    assert len(_audios(relay)) == 1 and "128" in caplog.text
+
+
+def test_si_el_difusor_corta_la_conexion_se_reabre_en_vivo(relay, armar, gst):
+    registro = gst.registro()
+    armar(difusores=registro)
+    _pedir(relay, [96])
+    assert esperar(lambda: _audios(relay, 96))
+    registro.de(96).cortar_oyentes()       # lo que hace con un oyente que se atrasó demasiado
+    assert esperar(lambda: len(_audios(relay, 96)) == 2)
+    assert not _audios(relay, 96)[0].abierta or esperar(lambda: not _audios(relay, 96)[0].abierta)
+
+
+def test_control_caido_mantiene_el_audio_y_despues_de_la_gracia_lo_cierra(relay, armar, gst):
+    armar(difusores=gst.registro(), gracia_control=0.5, espera_401=60)
+    c = _pedir(relay, [96])
+    assert esperar(lambda: _audios(relay, 96))
+    relay.rechazar = True                  # el control no puede volver
+    c.ws.close()
+    time.sleep(0.25)
+    assert _audios(relay, 96)[0].abierta
+    assert esperar(lambda: not _audios(relay, 96)[0].abierta, 2)
+    assert len(_audios(relay, 96)) == 1
+
+
+def test_demanda_al_reconectar_corrige(relay, armar, gst):
+    armar(difusores=gst.registro())
+    c = _pedir(relay, [96])
+    assert esperar(lambda: _audios(relay, 96))
+    c.ws.close()
+    assert esperar(lambda: len([x for x in relay.conexiones if x.ruta == "/casa/control"]) == 2)
+    assert _audios(relay, 96)[0].abierta
+    _pedir(relay, [])
+    assert esperar(lambda: not _audios(relay, 96)[0].abierta)
+
+
+def test_reconectar_corta_y_reabre_audio_con_la_clave_nueva(relay, armar, gst):
+    claves = [CLAVE]
+    p = armar(difusores=gst.registro(), token=lambda: claves[-1])
+    _pedir(relay, [96])
+    assert esperar(lambda: _audios(relay, 96))
+    claves.append("otra")
+    p.reconectar()
+    assert esperar(lambda: len(_audios(relay, 96)) == 2)
+    assert _audios(relay, 96)[-1].headers["Authorization"] == "Bearer otra"
+
+
+def test_nube_160_y_lan_comparten_codificador(relay, armar, gst):
+    registro = gst.registro()
+    oyente_lan = registro.de(160).suscribir()
+    armar(difusores=registro)
+    _pedir(relay, [160])
+    assert esperar(lambda: _audios(relay, 160))
+    gst.de(160)[0].emitir(b"compartido")
+    assert _audios(relay, 160)[0].binarios.get(timeout=2) == b"compartido"
+    assert oyente_lan.get(timeout=2) == b"compartido"
+    assert len(gst.de(160)) == 1
+    registro.de(160).desuscribir(oyente_lan)

@@ -8,6 +8,7 @@ import json
 import logging
 import queue
 import random
+import socket
 import threading
 import time
 from collections.abc import Callable
@@ -17,6 +18,7 @@ from websockets.exceptions import ConnectionClosed, InvalidHandshake, InvalidSta
 from websockets.sync.client import connect
 
 from cassette_fm.lan_server import estado_publico, version_logo
+from cassette_fm.lan_stream import CodificadorNoDisponible, SinCapacidad
 from cassette_fm.radio import SinEstaciones
 
 _log = logging.getLogger("cassette_fm")
@@ -25,6 +27,8 @@ PROTOCOLO = 1
 CALIDADES = (64, 96, 160)
 _CONEXION_ESTABLE = 60.0       # una conexión que duró más que esto vuelve la espera al mínimo
 _VUELTA_LECTURA = 0.05         # cada cuánto el control mira si hay un estado para mandar
+_VUELTA_AUDIO = 0.2            # cada cuánto una conexión de audio mira si sigue pedida
+_BUFFER_ENVIO_BYTES = 8192     # como en la LAN: que el atraso no se esconda en el kernel
 
 
 def mensaje_estado(estado: dict, seq: int) -> dict:
@@ -57,6 +61,16 @@ class _Rechazado(Exception):
     """El relay no aceptó la clave."""
 
 
+class _Audio:
+    """Una conexión de audio de una calidad: su hilo y cómo pararla."""
+
+    def __init__(self):
+        self.parar = threading.Event()
+        self.reabrir = threading.Event()      # reconectar(): se cierra y se vuelve a abrir (con la clave nueva)
+        self.ws = None
+        self.hilo: threading.Thread | None = None
+
+
 class PuenteNube:
     def __init__(self, radio, difusores, url: str, token: Callable[[], str], conectar=connect,
                  subir=None, reloj: Callable[[], float] = time.monotonic, ping_segundos: float = 20.0,
@@ -84,6 +98,8 @@ class PuenteNube:
         self._cambio = threading.Event()
         self._ordenes: queue.Queue = queue.Queue()
         self._hilos: list[threading.Thread] = []
+        self._audios: dict[int, _Audio] = {}     # calidades pedidas por el relay, con su conexión
+        self._control_caido_desde: float | None = None
 
     # --- ciclo de vida ---
 
@@ -99,6 +115,8 @@ class PuenteNube:
         self._despertar.set()
         self._ordenes.put(None)
         self._cerrar_control()
+        for audio in self._pedir_calidades(set()):
+            audio.hilo.join(timeout=5)
         for hilo in self._hilos:
             hilo.join(timeout=5)
 
@@ -106,10 +124,15 @@ class PuenteNube:
         """Corta las conexiones y vuelve a conectar enseguida (p. ej. con una clave nueva)."""
         self._despertar.set()
         self._cerrar_control()
+        with self._lock:
+            for audio in self._audios.values():
+                audio.reabrir.set()
 
     def info(self) -> dict:
         with self._lock:
-            return {"conectado": self._ws is not None, "desde": self._desde, "error": self._error, "subiendo": []}
+            subiendo = sorted(k for k, a in self._audios.items() if a.ws is not None)
+            return {"conectado": self._ws is not None, "desde": self._desde, "error": self._error,
+                    "subiendo": subiendo}
 
     # --- control ---
 
@@ -156,11 +179,13 @@ class PuenteNube:
                 _log.info("puente a la nube: conectado al relay")
             with self._lock:
                 self._ws, self._desde, self._error = ws, inicio, None
+                self._control_caido_desde = None
             try:
                 self._sesion(ws)
             finally:
                 with self._lock:
                     self._ws = self._desde = None
+                    self._control_caido_desde = self._reloj()
                 ws.close()
             if self._parar.is_set():
                 break
@@ -225,8 +250,105 @@ class PuenteNube:
         else:
             _log.warning("puente a la nube: tipo de mensaje desconocido %r; se ignora", str(tipo)[:40])
 
+    # --- audio ---
+
     def _demanda(self, mensaje: dict) -> None:
-        pass
+        calidades = mensaje.get("calidades")
+        if not isinstance(calidades, list):
+            _log.warning("puente a la nube: demanda sin lista de calidades; se ignora")
+            return
+        validas = {c for c in calidades if isinstance(c, int) and not isinstance(c, bool) and c in CALIDADES}
+        if len(validas) != len(calidades):
+            _log.warning("puente a la nube: calidades que no se ofrecen en la demanda %s; se ignoran",
+                         str(calidades)[:80])
+        self._pedir_calidades(validas)
+
+    def _pedir_calidades(self, calidades: set[int]) -> list[_Audio]:
+        """Abre las conexiones que faltan y para las que sobran; devuelve las paradas."""
+        if self._difusores is None:
+            return []
+        paradas = []
+        with self._lock:
+            for kbps in list(self._audios):
+                if kbps not in calidades:
+                    audio = self._audios.pop(kbps)
+                    audio.parar.set()
+                    paradas.append(audio)
+            for kbps in calidades - set(self._audios):
+                if self._parar.is_set():
+                    break
+                audio = self._audios[kbps] = _Audio()
+                audio.hilo = threading.Thread(target=self._bucle_audio, args=(kbps, audio), daemon=True,
+                                              name=f"nube-audio-{kbps}")
+                audio.hilo.start()
+        for audio in paradas:
+            if audio.ws is not None:
+                audio.ws.close()
+        return paradas
+
+    def _audio_vigente(self, kbps: int, audio: _Audio) -> bool:
+        """Sigue pedida y el control no lleva caído más que la gracia (sin control no hay cómo saber si se pide)."""
+        if audio.parar.is_set() or self._parar.is_set():
+            return False
+        with self._lock:
+            caido = self._control_caido_desde
+        if caido is not None and self._reloj() - caido > self._gracia_control:
+            _log.info("puente a la nube: sin control hace más de %.0f s, se deja de subir %d kbps",
+                      self._gracia_control, kbps)
+            with self._lock:
+                if self._audios.get(kbps) is audio:
+                    del self._audios[kbps]
+            audio.parar.set()
+            return False
+        return True
+
+    def _bucle_audio(self, kbps: int, audio: _Audio) -> None:
+        espera = Espera()
+        while self._audio_vigente(kbps, audio):
+            try:
+                ws = self._abrir(f"/casa/audio?calidad={kbps}")
+            except (_Rechazado, OSError, TimeoutError, InvalidHandshake, WebSocketException) as e:
+                _log.debug("puente a la nube: no se pudo abrir el audio de %d kbps (%s)", kbps, e)
+                audio.parar.wait(espera.siguiente())
+                continue
+            try:
+                ws.socket.setsockopt(socket.SOL_SOCKET, socket.SO_SNDBUF, _BUFFER_ENVIO_BYTES)
+            except OSError:
+                pass
+            with self._lock:
+                audio.ws = ws
+            if audio.parar.is_set():           # la pararon mientras se abría: close() no la alcanzó
+                ws.close()
+            try:
+                self._subir_audio(kbps, audio, ws)
+                espera.reiniciar()
+            except (CodificadorNoDisponible, SinCapacidad) as e:
+                _log.warning("puente a la nube: no se puede codificar a %d kbps: %s", kbps, e)
+                audio.parar.wait(espera.siguiente())
+            finally:
+                with self._lock:
+                    audio.ws = None
+                ws.close()
+
+    def _subir_audio(self, kbps: int, audio: _Audio, ws) -> None:
+        difusor = self._difusores.de(kbps)
+        cola = difusor.suscribir()
+        try:
+            while self._audio_vigente(kbps, audio):
+                if audio.reabrir.is_set():
+                    audio.reabrir.clear()
+                    return
+                try:
+                    datos = cola.get(timeout=_VUELTA_AUDIO)
+                except queue.Empty:
+                    continue
+                if datos is None:              # el difusor la cortó (atrasada, o se recreó el bus): se reabre en vivo
+                    return
+                ws.send(datos)
+        except (ConnectionClosed, OSError):
+            return
+        finally:
+            difusor.desuscribir(cola)
 
     # --- órdenes (de a una, fuera del hilo que lee la conexión) ---
 
