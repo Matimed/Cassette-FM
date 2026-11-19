@@ -925,3 +925,20 @@ def test_cassette_nube_con_la_radio_parada(tmp_path, monkeypatch, capsys):
     monkeypatch.setattr(cli, "_llamar", caido)
     assert main(["nube"]) == 0
     assert "no está corriendo" in capsys.readouterr().out
+
+
+def test_cassette_nube_muestra_el_error_del_puente(tmp_path, monkeypatch, capsys):
+    _rutas_lan(tmp_path, monkeypatch, '[nube]\nactivo = true\nurl = "wss://relay.ejemplo.com"\n')
+    monkeypatch.setattr(cli, "_llamar", lambda *a, **k: {"nube": {
+        "conectado": False, "subiendo": [], "conectado_hace": None,
+        "error": "el relay rechazó la clave (HTTP 401): …"}})
+    assert main(["nube"]) == 0
+    assert "rechazó la clave" in capsys.readouterr().out
+
+
+def test_cassette_nube_dice_hace_cuanto_esta_conectado(tmp_path, monkeypatch, capsys):
+    _rutas_lan(tmp_path, monkeypatch, '[nube]\nactivo = true\nurl = "wss://relay.ejemplo.com"\n')
+    monkeypatch.setattr(cli, "_llamar", lambda *a, **k: {"nube": {
+        "conectado": True, "subiendo": [], "conectado_hace": 185.0, "error": None}})
+    assert main(["nube"]) == 0
+    assert "hace 3 min" in capsys.readouterr().out

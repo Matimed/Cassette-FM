@@ -780,7 +780,7 @@ class PuenteFalso:
     def iniciar(self): self.iniciado = True
     def cerrar(self): self.cerrado = True
     def reconectar(self): self.reconexiones += 1
-    def info(self): return {"conectado": True, "desde": 1.0, "error": None, "subiendo": [96]}
+    def info(self): return {"conectado": True, "conectado_hace": 12.0, "error": None, "subiendo": [96]}
 
 
 def _nube(url="wss://relay.ejemplo.com"):
@@ -811,7 +811,7 @@ def test_nube_arranca_con_la_clave_y_cierra(tmp_path):
     p = PuenteFalso.creados[0]
     assert p.iniciado and p.difusores is difusores and p.url == "wss://relay.ejemplo.com"
     assert p.token() == rutas.nube_token.read_text().strip() and len(p.token()) >= 32
-    assert info() == {"conectado": True, "subiendo": [96]}
+    assert info() == {"conectado": True, "conectado_hace": 12.0, "error": None, "subiendo": [96]}
     cerrar()
     assert p.cerrado
 

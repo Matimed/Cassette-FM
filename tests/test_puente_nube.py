@@ -32,11 +32,19 @@ class RelayFalso:
     """El lado relay del protocolo, en 127.0.0.1: guarda lo que llega por cada conexión y puede mandar, cortar y
     rechazar con 401."""
 
-    def __init__(self):
+    def __init__(self, buffer_recepcion: int | None = None):
         self.rechazar = False
+        self.audio_mudo = False            # acepta el audio y no lo lee nunca (relay colgado)
+        self._fin = threading.Event()
         self.intentos = 0
         self.conexiones: list[SimpleNamespace] = []
-        self._servidor = serve(self._atender, "127.0.0.1", 0, process_request=self._pedido, compression=None)
+        escucha = socket.socket()
+        if buffer_recepcion:                # chico: un relay que no lee traba de verdad el envío de la PC
+            escucha.setsockopt(socket.SOL_SOCKET, socket.SO_RCVBUF, buffer_recepcion)
+        escucha.bind(("127.0.0.1", 0))
+        escucha.listen()
+        self._servidor = serve(self._atender, sock=escucha, process_request=self._pedido, compression=None,
+                               close_timeout=1)
         self.puerto = self._servidor.socket.getsockname()[1]
         self.url = f"ws://127.0.0.1:{self.puerto}"
         threading.Thread(target=self._servidor.serve_forever, daemon=True).start()
@@ -51,6 +59,9 @@ class RelayFalso:
         c = SimpleNamespace(ws=ws, ruta=ws.request.path, headers=ws.request.headers, mensajes=queue.Queue(),
                             binarios=queue.Queue(), abierta=True)
         self.conexiones.append(c)
+        if self.audio_mudo and c.ruta.startswith("/casa/audio"):
+            self._fin.wait()
+            return
         try:
             for m in ws:
                 (c.binarios if isinstance(m, bytes) else c.mensajes).put(m)
@@ -80,6 +91,7 @@ class RelayFalso:
         c.ws.send(mensaje if isinstance(mensaje, (str, bytes)) else json.dumps(mensaje))
 
     def cerrar(self):
+        self._fin.set()
         self._servidor.shutdown()
 
 
@@ -549,7 +561,8 @@ def test_logo_que_falla_al_subir_no_corta_el_control(relay, armar, tmp_path, cap
     c = relay.control()
     relay.mandar(c, {"tipo": "pedir_icono", "estacion": "Más Gasolina F.M."})
     relay.mandar(c, {"tipo": "siguiente", "id": 2})
-    assert relay.recibir_tipo(c, "resultado")["id"] == 2 and "sin red" in caplog.text
+    assert relay.recibir_tipo(c, "resultado")["id"] == 2
+    assert esperar(lambda: "sin red" in caplog.text)
     assert len([x for x in relay.conexiones if x.ruta == "/casa/control"]) == 1
 
 
@@ -572,3 +585,133 @@ def test_subir_icono_hace_un_put_con_la_clave(tmp_path):
     subir_icono(f"http://127.0.0.1:{srv.server_port}/casa/icono/A?v=1", CLAVE, b"img", "image/png")
     srv.server_close()
     assert recibido == {"ruta": "/casa/icono/A?v=1", "auth": f"Bearer {CLAVE}", "tipo": "image/png", "datos": b"img"}
+
+
+# --- revisión final: subida trabada, logos aparte, error visible, hilos que no mueren ---
+
+def _inundar(proceso, parar):
+    def correr():
+        while not parar.is_set():
+            try:
+                proceso.emitir(b"\x00" * 4096)
+            except OSError:
+                return
+            time.sleep(0.02)                   # ~200 KB/s: llena los buffers sin desbordar la cola del Difusor
+    threading.Thread(target=correr, daemon=True).start()
+
+
+@pytest.fixture
+def relay_mudo():
+    r = RelayFalso(buffer_recepcion=4096)
+    r.audio_mudo = True
+    yield r
+    r.cerrar()
+
+
+def _trabada(p):
+    """True si el hilo de audio está metido en un envío al socket."""
+    import sys
+    import traceback
+    for hilo in threading.enumerate():
+        if hilo.name.startswith("nube-audio") and hilo.ident in sys._current_frames():
+            if any("sendall" in linea for linea in traceback.format_stack(sys._current_frames()[hilo.ident])):
+                return True
+    return False
+
+
+def test_subida_trabada_no_traba_las_ordenes_ni_el_cierre(relay_mudo, gst, caplog):
+    relay = relay_mudo
+    p = PuenteNube(RadioFalsa(), gst.registro(), relay.url, lambda: CLAVE, espera=EsperaCorta(),
+                   timeout_envio_audio=30)
+    p.iniciar()
+    c = _pedir(relay, [96])
+    assert esperar(lambda: _audios(relay, 96) and gst.de(96))
+    parar = threading.Event()
+    _inundar(gst.de(96)[0], parar)
+    try:
+        assert esperar(lambda: _trabada(p), 5)
+        relay.mandar(c, {"tipo": "demanda", "calidades": []})
+        relay.mandar(c, {"tipo": "siguiente", "id": "rapida"})
+        assert relay.recibir_tipo(c, "resultado", timeout=2)["id"] == "rapida"
+        inicio = time.monotonic()
+        p.cerrar()
+        assert time.monotonic() - inicio < 3
+    finally:
+        parar.set()
+        p.cerrar()
+
+
+def test_subida_trabada_se_detecta_y_se_reabre(relay_mudo, gst):
+    relay = relay_mudo
+    p = PuenteNube(RadioFalsa(), gst.registro(), relay.url, lambda: CLAVE, espera=EsperaCorta(),
+                   timeout_envio_audio=0.5)
+    p.iniciar()
+    _pedir(relay, [96])
+    assert esperar(lambda: _audios(relay, 96) and gst.de(96))
+    parar = threading.Event()
+    _inundar(gst.de(96)[0], parar)
+    try:
+        assert esperar(lambda: _trabada(p), 5)
+        assert esperar(lambda: len(_audios(relay, 96)) >= 2, 6)
+    finally:
+        parar.set()
+        p.cerrar()
+
+
+def test_los_logos_no_demoran_las_ordenes(relay, armar, tmp_path):
+    lento = threading.Event()
+
+    def subidor(*a):
+        lento.wait(5)
+
+    armar(_radio_con_logo(tmp_path), subir=subidor)
+    c = relay.control()
+    relay.mandar(c, {"tipo": "pedir_icono", "estacion": "Más Gasolina F.M."})
+    relay.mandar(c, {"tipo": "siguiente", "id": "ya"})
+    try:
+        assert relay.recibir_tipo(c, "resultado", timeout=1)["id"] == "ya"
+    finally:
+        lento.set()
+
+
+def test_info_trae_el_error_y_cuanto_hace_que_esta_conectado(relay, armar):
+    relay.rechazar = True
+    p = armar(espera_401=0.2)
+    assert esperar(lambda: p.info()["error"] is not None)
+    assert p.info()["conectado_hace"] is None and "clave" in p.info()["error"]
+    relay.rechazar = False
+    assert esperar(lambda: p.info()["conectado"])
+    assert p.info()["error"] is None and p.info()["conectado_hace"] >= 0
+
+
+def test_un_error_inesperado_no_mata_el_control(relay, armar, caplog):
+    radio = RadioFalsa()
+    original, fallas = radio.estado, []
+
+    def estado():
+        if not fallas:
+            fallas.append(1)
+            raise RuntimeError("se rompió algo")
+        return original()
+
+    radio.estado = estado
+    armar(radio)
+    assert esperar(lambda: len([x for x in relay.conexiones if x.ruta == "/casa/control"]) >= 2)
+    assert relay.recibir_tipo(relay.control(), "estado")["seq"] == 1
+    assert "se rompió algo" in caplog.text
+
+
+def test_un_error_inesperado_no_mata_el_audio(relay, armar, gst):
+    registro = gst.registro()
+    real, fallas = registro.de, []
+
+    def de(kbps):
+        if not fallas:
+            fallas.append(1)
+            raise RuntimeError("registro roto")
+        return real(kbps)
+
+    registro.de = de
+    armar(difusores=registro)
+    _pedir(relay, [96])
+    assert esperar(lambda: gst.de(96), 6)

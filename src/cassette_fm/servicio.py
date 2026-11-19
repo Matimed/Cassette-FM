@@ -167,7 +167,7 @@ def iniciar_nube(config: Config, rutas: Rutas, radio, router, difusores, crear_p
 
     def info() -> dict:
         datos = puente[0].info()
-        return {"conectado": datos["conectado"], "subiendo": datos["subiendo"]}
+        return {clave: datos[clave] for clave in ("conectado", "conectado_hace", "error", "subiendo")}
 
     return cerrar, info
 

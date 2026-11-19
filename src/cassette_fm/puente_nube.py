@@ -9,6 +9,7 @@ import logging
 import queue
 import random
 import socket
+import struct
 import threading
 import time
 import urllib.parse
@@ -77,6 +78,16 @@ class _Rechazado(Exception):
     """El relay no aceptó la clave."""
 
 
+def _cortar_socket(ws) -> None:
+    """Corta una conexión desde otro hilo sin esperar nada: el hilo que la usa ve el error y la cierra él."""
+    if ws is None:
+        return
+    try:
+        ws.socket.shutdown(socket.SHUT_RDWR)
+    except OSError:
+        pass
+
+
 class _Audio:
     """Una conexión de audio de una calidad: su hilo y cómo pararla."""
 
@@ -91,7 +102,7 @@ class PuenteNube:
     def __init__(self, radio, difusores, url: str, token: Callable[[], str], conectar=connect,
                  subir=None, reloj: Callable[[], float] = time.monotonic, ping_segundos: float = 20.0,
                  intervalo_estado: float = 0.5, espera_401: float = 300.0, gracia_control: float = 60.0,
-                 espera: Espera | None = None):
+                 espera: Espera | None = None, timeout_envio_audio: float = 10.0):
         self._radio = radio
         self._difusores = difusores
         self._url = url.rstrip("/")
@@ -104,6 +115,7 @@ class PuenteNube:
         self._espera_401 = espera_401
         self._gracia_control = gracia_control
         self._espera = espera or Espera()
+        self._timeout_envio = timeout_envio_audio
         self._parar = threading.Event()
         self._despertar = threading.Event()      # reconectar() corta la espera entre intentos
         self._lock = threading.Lock()
@@ -113,6 +125,8 @@ class PuenteNube:
         self._error: str | None = None
         self._cambio = threading.Event()
         self._ordenes: queue.Queue = queue.Queue()
+        self._logos: queue.Queue = queue.Queue()  # aparte de las órdenes: un PUT lento no demora un "sintonizar"
+        self._logos_pendientes: set[str] = set()
         self._hilos: list[threading.Thread] = []
         self._audios: dict[int, _Audio] = {}     # calidades pedidas por el relay, con su conexión
         self._control_caido_desde: float | None = None
@@ -121,7 +135,8 @@ class PuenteNube:
 
     def iniciar(self) -> None:
         self._radio.escuchar_cambios(self._cambio.set)
-        for nombre, objetivo in (("nube-control", self._bucle_control), ("nube-ordenes", self._bucle_ordenes)):
+        for nombre, objetivo in (("nube-control", self._bucle_control), ("nube-ordenes", self._bucle_ordenes),
+                                 ("nube-logos", self._bucle_logos)):
             hilo = threading.Thread(target=objetivo, daemon=True, name=nombre)
             hilo.start()
             self._hilos.append(hilo)
@@ -130,6 +145,7 @@ class PuenteNube:
         self._parar.set()
         self._despertar.set()
         self._ordenes.put(None)
+        self._logos.put(None)
         self._cerrar_control()
         for audio in self._pedir_calidades(set()):
             audio.hilo.join(timeout=5)
@@ -141,13 +157,16 @@ class PuenteNube:
         self._despertar.set()
         self._cerrar_control()
         with self._lock:
-            for audio in self._audios.values():
-                audio.reabrir.set()
+            audios = list(self._audios.values())
+        for audio in audios:
+            audio.reabrir.set()
+            _cortar_socket(audio.ws)          # aunque esté trabada en un envío
 
     def info(self) -> dict:
         with self._lock:
             subiendo = sorted(k for k, a in self._audios.items() if a.ws is not None)
-            return {"conectado": self._ws is not None, "desde": self._desde, "error": self._error,
+            hace = self._reloj() - self._desde if self._desde is not None else None
+            return {"conectado": self._ws is not None, "conectado_hace": hace, "error": self._error,
                     "subiendo": subiendo}
 
     # --- control ---
@@ -198,6 +217,8 @@ class PuenteNube:
                 self._control_caido_desde = None
             try:
                 self._sesion(ws)
+            except Exception:
+                _log.exception("puente a la nube: error inesperado en el control; se reconecta")
             finally:
                 with self._lock:
                     self._ws = self._desde = None
@@ -259,8 +280,13 @@ class PuenteNube:
         except (ValueError, TypeError, KeyError):
             _log.warning("puente a la nube: mensaje del relay que no se entiende; se ignora")
             return
-        if tipo in ("sintonizar", "siguiente", "anterior", "pedir_icono"):
+        if tipo in ("sintonizar", "siguiente", "anterior"):
             self._ordenes.put((ws, mensaje))
+        elif tipo == "pedir_icono":
+            nombre = mensaje.get("estacion")
+            if isinstance(nombre, str) and nombre not in self._logos_pendientes:
+                self._logos_pendientes.add(nombre)    # el mismo logo pedido dos veces se sube una
+                self._logos.put(nombre)
         elif tipo == "demanda":
             self._demanda(mensaje)
         else:
@@ -298,8 +324,7 @@ class PuenteNube:
                                               name=f"nube-audio-{kbps}")
                 audio.hilo.start()
         for audio in paradas:
-            if audio.ws is not None:
-                audio.ws.close()
+            _cortar_socket(audio.ws)           # sin close() acá: con el envío trabado colgaría a quien llama
         return paradas
 
     def _audio_vigente(self, kbps: int, audio: _Audio) -> bool:
@@ -329,17 +354,25 @@ class PuenteNube:
                 continue
             try:
                 ws.socket.setsockopt(socket.SOL_SOCKET, socket.SO_SNDBUF, _BUFFER_ENVIO_BYTES)
+                # un relay que deja de leer traba el envío (y con él el ping): pasado este plazo falla y se reabre
+                segundos = max(self._timeout_envio, 0.001)
+                ws.socket.setsockopt(socket.SOL_SOCKET, socket.SO_SNDTIMEO,
+                                     struct.pack("ll", int(segundos), int(segundos % 1 * 1_000_000)))
             except OSError:
                 pass
             with self._lock:
                 audio.ws = ws
-            if audio.parar.is_set():           # la pararon mientras se abría: close() no la alcanzó
-                ws.close()
+            audio.reabrir.clear()
+            if audio.parar.is_set():           # la pararon mientras se abría: el corte no la alcanzó
+                _cortar_socket(ws)
             try:
                 self._subir_audio(kbps, audio, ws)
                 espera.reiniciar()
             except (CodificadorNoDisponible, SinCapacidad) as e:
                 _log.warning("puente a la nube: no se puede codificar a %d kbps: %s", kbps, e)
+                audio.parar.wait(espera.siguiente())
+            except Exception:
+                _log.exception("puente a la nube: error inesperado en el audio de %d kbps; se reintenta", kbps)
                 audio.parar.wait(espera.siguiente())
             finally:
                 with self._lock:
@@ -394,9 +427,6 @@ class PuenteNube:
                 self._radio.siguiente(oir_aca=False)
             elif tipo == "anterior":
                 self._radio.anterior(oir_aca=False)
-            elif tipo == "pedir_icono":
-                self._subir_logo(mensaje.get("estacion"))
-                return None
             else:
                 return None
         except SinEstaciones:
@@ -405,6 +435,14 @@ class PuenteNube:
             _log.exception("puente a la nube: error al ejecutar %r", tipo)
             return {"ok": False, "error": "error interno"}
         return {"ok": True}
+
+    def _bucle_logos(self) -> None:
+        while True:
+            nombre = self._logos.get()
+            if nombre is None:
+                return
+            self._logos_pendientes.discard(nombre)
+            self._subir_logo(nombre)
 
     def _subir_logo(self, nombre) -> None:
         """Solo logos del mapa de la propia radio, por nombre: el relay nunca elige una ruta de esta PC."""

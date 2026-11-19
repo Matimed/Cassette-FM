@@ -252,6 +252,14 @@ def _lan(args, cfg, rutas) -> int:
     return 0
 
 
+def _duracion(segundos: float) -> str:
+    if segundos < 60:
+        return f"{int(segundos)} s"
+    if segundos < 3600:
+        return f"{int(segundos // 60)} min"
+    return f"{int(segundos // 3600)} h {int(segundos % 3600 // 60)} min"
+
+
 def _nube(args, cfg, rutas) -> int:
     from cassette_fm import lan_acceso
     token = (lan_acceso.regenerar_token(rutas.nube_token) if args.accion == "regenerar"
@@ -273,9 +281,14 @@ def _nube(args, cfg, rutas) -> int:
                 print("Conexión:  el servicio corre sin el puente (reinicialo para que tome la config)")
             elif nube.get("conectado"):
                 subiendo = ", ".join(str(k) for k in nube.get("subiendo") or [])
-                print(f"Conexión:  conectado · subiendo: {subiendo + ' kbps' if subiendo else 'nada (sin oyentes)'}")
+                hace = nube.get("conectado_hace")
+                desde = f" hace {_duracion(hace)}" if hace is not None else ""
+                print(f"Conexión:  conectado{desde} · subiendo: "
+                      f"{subiendo + ' kbps' if subiendo else 'nada (sin oyentes)'}")
             else:
                 print("Conexión:  sin conexión con el relay (se reintenta solo; mirá journalctl --user -u cassette-fm)")
+                if nube.get("error"):
+                    print(f"Último error: {nube['error']}")
     print(f"Clave:     {token}")
     return 0
 
