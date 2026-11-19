@@ -123,13 +123,23 @@ class Api:
 
     async def estado(self, request: web.Request) -> web.Response:
         return web.json_response({"en_linea": self._casa.en_linea, "visto_hace": self._casa.visto_hace(),
-                                  "calidades": list(CALIDADES), "radio": self._casa.radio()})
+                                  "calidades": list(CALIDADES), "radio": self._casa.radio(),
+                                  "permiso": request[IDENTIDAD].permiso})
 
     async def _orden(self, request: web.Request, tipo: str, **campos) -> web.Response:
         status, cuerpo = await self._casa.orden(tipo, **campos)
         return web.json_response(cuerpo, status=status)
 
+    @staticmethod
+    def _sin_permiso(request: web.Request) -> web.Response | None:
+        """403 si la clave es solo de escucha: se decide antes de leer el cuerpo y de hablar con la PC."""
+        if request[IDENTIDAD].permiso != "completa":
+            return _error(403, "esta clave es solo para escuchar")
+        return None
+
     async def sintonizar(self, request: web.Request) -> web.Response:
+        if (prohibido := self._sin_permiso(request)) is not None:
+            return prohibido
         cuerpo, error = await self._json(request)
         if error is not None:
             return error
@@ -139,10 +149,14 @@ class Api:
         return await self._orden(request, "sintonizar", estacion=estacion)
 
     async def siguiente(self, request: web.Request) -> web.Response:
+        if (prohibido := self._sin_permiso(request)) is not None:
+            return prohibido
         _, error = await self._json(request)
         return error or await self._orden(request, "siguiente")
 
     async def anterior(self, request: web.Request) -> web.Response:
+        if (prohibido := self._sin_permiso(request)) is not None:
+            return prohibido
         _, error = await self._json(request)
         return error or await self._orden(request, "anterior")
 

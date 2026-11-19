@@ -114,10 +114,10 @@ $("entrar").onsubmit = async (e) => {
   else $("error-entrar").textContent = (await r.json()).error || "no se pudo entrar";
 };
 
-function pintarEmisoras(radio) {
+function pintarEmisoras(radio, manda) {
   const nombres = radio.estaciones || [];
   const iconos = radio.iconos || {};
-  const firma = JSON.stringify([nombres, iconos]);
+  const firma = JSON.stringify([nombres, iconos, manda]);
   if (firma !== firmaEmisoras) {
     firmaEmisoras = firma;
     const lista = $("emisoras");
@@ -125,6 +125,7 @@ function pintarEmisoras(radio) {
     for (const nombre of nombres) {
       const b = document.createElement("button");
       b.dataset.nombre = nombre;
+      b.disabled = !manda;                // una clave de solo escucha ve las emisoras pero no las cambia
       if (iconos[nombre]) {
         const img = document.createElement("img");
         img.alt = "";
@@ -145,12 +146,14 @@ async function actualizar() {
   try { e = await (await api("GET", "/api/estado")).json(); } catch { return; }
   mostrar(true);
   const radio = e.radio;
+  const manda = e.permiso === "completa";             // "escucha": solo escuchar; "completa": también cambiar de emisora
+  $("anterior").hidden = $("siguiente").hidden = !manda;
   if (!e.en_linea) {
     $("ahora").textContent = "La radio está fuera de línea" + (radio ? " (lo último: " + radio.estacion + ")" : "");
   } else if (radio) {
     $("ahora").textContent = radio.encendida ? radio.estacion + " — " + (radio.pista || "") : "Radio apagada (estática)";
   }
-  if (radio) pintarEmisoras(radio);
+  if (radio) pintarEmisoras(radio, manda);
 }
 
 actualizar();

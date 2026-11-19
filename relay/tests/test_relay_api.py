@@ -97,7 +97,8 @@ def test_salir_borra_la_cookie(relay):
 
 def test_estado_fuera_de_linea(relay):
     status, _, cuerpo = relay.pedir("GET", "/api/estado", headers=BEARER)
-    assert json.loads(cuerpo) == {"en_linea": False, "visto_hace": None, "calidades": [64, 96, 160], "radio": None}
+    assert json.loads(cuerpo) == {"en_linea": False, "visto_hace": None, "calidades": [64, 96, 160], "radio": None,
+                               "permiso": "completa"}
 
 
 def test_estado_en_linea(relay):
@@ -349,3 +350,81 @@ def test_sesion_de_la_gracia_con_id_que_la_primera_lista_no_trae_se_corta(relay)
     assert esperar(lambda: relay.en_loop(lambda: relay.app[OYENTES].cuantos(64)) == 0)
     assert r.read() == b""
     conexion.close()
+
+
+# --- permisos ---
+
+BEARER_MAESTRA = BEARER
+
+
+def _con_clave(relay, ws, permiso):
+    _mandar_claves(ws, _lista(permiso))
+    assert esperar(lambda: _generada_entra(relay) == 204)
+
+
+def _cookie_de_generada(relay):
+    return _cookie(relay.pedir("POST", "/api/entrar", {"clave": GENERADA})[1])[1]
+
+
+@pytest.mark.parametrize("ruta,cuerpo", [("/api/sintonizar", {"estacion": "B"}), ("/api/siguiente", {}),
+                                         ("/api/anterior", {}), ("/api/sintonizar", None)])
+@pytest.mark.parametrize("como", ["bearer", "cookie"])
+def test_escucha_no_puede_dar_ordenes(relay, ruta, cuerpo, como):
+    ws = pc_en_linea(relay)
+    _con_clave(relay, ws, "escucha")
+    headers = BEARER_GENERADA if como == "bearer" else {"Cookie": _cookie_de_generada(relay)}
+    if cuerpo is None:                                               # ni siquiera se mira el cuerpo
+        status, _, datos = relay.pedir("POST", ruta, b"no es json", {**headers, "Content-Type": "text/plain"})
+    else:
+        status, _, datos = relay.pedir("POST", ruta, cuerpo, headers)
+    assert status == 403 and json.loads(datos) == {"error": "esta clave es solo para escuchar"}
+    assert not _ordenes_recibidas(ws)                                # la PC no se enteró de nada
+
+
+def _ordenes_recibidas(ws):
+    """Los mensajes que la PC (el control falso) recibió y son órdenes."""
+    salida = []
+    while True:
+        try:
+            m = json.loads(ws.recv(timeout=0.3))
+        except TimeoutError:
+            return salida
+        if m.get("tipo") in ("sintonizar", "siguiente", "anterior"):
+            salida.append(m)
+
+
+def test_completa_si_puede(relay):
+    ws = pc_en_linea(relay)
+    _con_clave(relay, ws, "completa")
+    _contestar(ws, "sintonizar")
+    status, _, datos = relay.pedir("POST", "/api/sintonizar", {"estacion": "B"}, BEARER_GENERADA)
+    assert (status, json.loads(datos)) == (200, {"ok": True})
+
+
+def test_estado_trae_el_permiso(relay):
+    ws = pc_en_linea(relay)
+    assert json.loads(relay.pedir("GET", "/api/estado", headers=BEARER)[2])["permiso"] == "completa"
+    _con_clave(relay, ws, "escucha")
+    e = json.loads(relay.pedir("GET", "/api/estado", headers=BEARER_GENERADA)[2])
+    assert e["permiso"] == "escucha" and e["radio"]["estacion"] == "A" and e["en_linea"] is True
+    conexion, r = _escuchar(relay, 64, BEARER_GENERADA)
+    assert r.status == 200                                            # escuchar sí puede
+    conexion.close()
+
+
+def test_logo_con_clave_de_escucha(relay):
+    ws = pc_en_linea(relay, iconos={"A": "v1"})
+    _con_clave(relay, ws, "escucha")
+    assert relay.pedir("GET", "/api/icono/A?v=v1", headers=BEARER_GENERADA)[0] in (200, 404)
+
+
+def test_la_maestra_entra_con_la_pc_desconectada(relay):
+    status, headers, _ = _entrar(relay)
+    assert status == 204
+    e = json.loads(relay.pedir("GET", "/api/estado", headers={"Cookie": _cookie(headers)[1]})[2])
+    assert e["en_linea"] is False and e["permiso"] == "completa"
+
+
+def test_pagina_usa_el_permiso(relay):
+    cuerpo = relay.pedir("GET", "/")[2]
+    assert b"permiso" in cuerpo and b"escucha" in cuerpo
