@@ -14,11 +14,26 @@ from .oyentes import Oyentes
 _log = logging.getLogger("cassette_relay.api")
 
 COOKIE = "sesion"
-_SNDBUF_OYENTE = 16 * 1024      # chico: que el atraso de un oyente lento se vea en su cola y no en el kernel
+_MAX_CUERPO = 4 * 1024          # los pedidos JSON de los oyentes son chicos
+_SNDBUF_OYENTE = 16 * 1024     # chico: que el atraso de un oyente lento se vea en su cola y no en el kernel
 
 
 def _error(status: int, texto: str) -> web.Response:
     return web.json_response({"error": texto}, status=status)
+
+
+async def _leer_acotado(request: web.Request, maximo: int) -> bytes | None:
+    """El cuerpo, o None si pasa de `maximo` (sin leer más de eso: `entrar` no pide clave antes de leer)."""
+    if (request.content_length or 0) > maximo:
+        return None
+    datos = bytearray()
+    while True:
+        trozo = await request.content.read(maximo + 1 - len(datos))
+        if not trozo:
+            return bytes(datos)
+        datos += trozo
+        if len(datos) > maximo:
+            return None
 
 
 def _bearer(request: web.Request) -> str | None:
@@ -67,7 +82,9 @@ class Api:
         """El cuerpo JSON, o una respuesta de error (415 si no es JSON, 400 si está roto)."""
         if request.content_type != "application/json":
             return None, _error(415, "el pedido tiene que ser JSON")
-        crudo = await request.read()
+        crudo = await _leer_acotado(request, _MAX_CUERPO)
+        if crudo is None:
+            return None, _error(413, "pedido demasiado grande")
         if not crudo:
             return {}, None
         try:
@@ -146,7 +163,10 @@ class Api:
             return _error(400, f"calidad: una de {list(CALIDADES)}")
         if not self._casa.en_linea:
             return _error(503, "la radio está fuera de línea")
-        respuesta = web.StreamResponse(headers={"Content-Type": "audio/mpeg", "Cache-Control": "no-store"})
+        encabezados = {"Content-Type": "audio/mpeg", "Cache-Control": "no-store"}
+        if request.method == "HEAD":               # reproductores que prueban la URL: ni oyente ni audio
+            return web.Response(headers=encabezados)
+        respuesta = web.StreamResponse(headers=encabezados)
         await respuesta.prepare(request)
         sock = request.transport.get_extra_info("socket") if request.transport else None
         if sock is not None:

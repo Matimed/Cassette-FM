@@ -253,3 +253,28 @@ def test_pagina_publica(relay):
     status, headers, cuerpo = relay.pedir("GET", "/")
     assert status == 200 and headers["Content-Type"].startswith("text/html")
     assert b"/api/entrar" in cuerpo and b"/api/escuchar" in cuerpo
+
+
+def test_head_de_escuchar_no_suma_oyente(relay):
+    ws = pc_en_linea(relay)
+    status, headers, cuerpo = relay.pedir("HEAD", "/api/escuchar?calidad=64", headers=BEARER)
+    assert status == 200 and headers["Content-Type"] == "audio/mpeg" and cuerpo == b""
+    assert relay.en_loop(lambda: relay.app[OYENTES].cuantos(64)) == 0
+    with pytest.raises(AssertionError):
+        recibir_tipo(ws, "demanda", timeout=0.5)
+
+
+def test_cuerpo_grande_sin_clave_413(relay):
+    grande = json.dumps({"clave": "x" * 10_000}).encode()
+    assert relay.pedir("POST", "/api/entrar", grande, {"Content-Type": "application/json"})[0] == 413
+
+
+def test_cuerpo_grande_en_trozos_413(relay):
+    s = socket.create_connection(("127.0.0.1", relay.puerto), timeout=5)
+    s.sendall(b"POST /api/entrar HTTP/1.1\r\nHost: x\r\nContent-Type: application/json\r\n"
+              b"Transfer-Encoding: chunked\r\n\r\n")
+    for _ in range(10):
+        s.sendall(b"400\r\n" + b"x" * 1024 + b"\r\n")
+    s.sendall(b"0\r\n\r\n")
+    assert s.recv(100).startswith(b"HTTP/1.1 413")
+    s.close()
