@@ -715,3 +715,25 @@ def test_un_error_inesperado_no_mata_el_audio(relay, armar, gst):
     armar(difusores=registro)
     _pedir(relay, [96])
     assert esperar(lambda: gst.de(96), 6)
+
+
+def test_latido_si_no_hay_nada_que_mandar(relay, armar):
+    armar(latido_segundos=0.3)
+    c = relay.control()
+    relay.recibir_tipo(c, "estado")
+    assert relay.recibir_tipo(c, "latido", timeout=1.5) == {"tipo": "latido"}
+
+
+def test_sin_latido_mientras_hay_otros_mensajes(relay, armar):
+    radio = RadioFalsa()
+    armar(radio, latido_segundos=0.5, intervalo_estado=0.05)
+    c = relay.control()
+    relay.recibir_tipo(c, "estado")
+    fin = time.monotonic() + 1.2
+    tipos = []
+    while time.monotonic() < fin:
+        radio.cambiar(segundo=time.monotonic())
+        time.sleep(0.1)
+        while not c.mensajes.empty():
+            tipos.append(json.loads(c.mensajes.get())["tipo"])
+    assert "estado" in tipos and "latido" not in tipos

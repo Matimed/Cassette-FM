@@ -97,6 +97,9 @@ Todas llevan `Authorization: Bearer <clave>`. El relay contesta 401 si la clave 
 - `resultado` — respuesta a cada orden: `{"tipo": "resultado", "id": "…", "ok": true}` o
   `{"tipo": "resultado", "id": "…", "ok": false, "error": "esa emisora no existe"}`. Si la orden cambió algo, el
   `estado` nuevo sale aparte, como cualquier cambio.
+- `latido` — `{"tipo": "latido"}` cuando pasaron 2 min sin mandar ningún otro mensaje (agregado con el
+  [relay](2026-11-19-relay-nube-design.md): Render duerme el servicio tras 15 min sin mensajes entrantes). El relay no
+  contesta nada.
 
 **Del relay a la PC**
 
@@ -181,6 +184,9 @@ url = "wss://relay.ejemplo.com"     # base del relay; obligatoria si activo = tr
   CLI; el applet no lo muestra por ahora).
 
 ### Relay de prueba (`scripts/relay-de-prueba.py`)
+
+> Reemplazado el 2026-11-19 por el relay real ([`relay/`](../../../relay/README.md)), que también corre en esta PC
+> para probar; el script se borró.
 
 Como el relay real todavía no existe, un relay mínimo de desarrollo (Python, `websockets`, escucha en localhost o en
 la LAN) que implementa el lado relay de este protocolo: acepta al puente, guarda el último `estado` y los logos, y les

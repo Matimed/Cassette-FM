@@ -69,9 +69,14 @@ carpeta del applet: [`superpowers/specs/2026-11-18-radio-lan-design.md`](superpo
 plan en [`superpowers/plans/2026-11-18-radio-lan.md`](superpowers/plans/2026-11-18-radio-lan.md).
 Puente a la nube (19/11): con `[nube]` esta PC se conecta hacia afuera a un relay (WebSocket de control con estado y
 órdenes; audio MP3 de 64/96/160 kbps solo mientras el relay pide cada calidad), para escuchar desde cualquier dispositivo sin
-Tailscale; el relay y la web son las entregas siguientes, por ahora hay `scripts/relay-de-prueba.py`:
-[`superpowers/specs/2026-11-19-puente-nube-design.md`](superpowers/specs/2026-11-19-puente-nube-design.md),
+Tailscale: [`superpowers/specs/2026-11-19-puente-nube-design.md`](superpowers/specs/2026-11-19-puente-nube-design.md),
 plan en [`superpowers/plans/2026-11-19-puente-nube.md`](superpowers/plans/2026-11-19-puente-nube.md).
+Relay en la nube (19/11): `relay/`, proyecto aparte en el mismo repo (aiohttp en Docker, para Render gratis con la imagen
+en Docker Hub): recibe al puente con `INGEST_TOKEN`, reparte el audio a varios oyentes (cola de 15 s, salto al vivo),
+le avisa a la PC qué calidades se escuchan y tiene una API privada con `APP_PASSWORD` (cookie firmada o Bearer) y una
+página de prueba; el puente manda un `latido` cada 2 min para que Render no lo duerma. Falta la web (entrega siguiente):
+[`superpowers/specs/2026-11-19-relay-nube-design.md`](superpowers/specs/2026-11-19-relay-nube-design.md),
+plan en [`superpowers/plans/2026-11-19-relay-nube.md`](superpowers/plans/2026-11-19-relay-nube.md).
 Prender desde volumen 0 sube a 50. Ojo al tocar el applet: `ReloadXlet` recarga `applet.js` pero no `logic.js` (queda en caché hasta reiniciar Cinnamon).
 
 ## Relevamiento previo (leer antes de diseñar)

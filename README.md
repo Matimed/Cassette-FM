@@ -523,9 +523,10 @@ del applet). Si algo falla, el tooltip lo dice (clave rechazada, no alcanzo a la
 
 Para escuchar y manejar la radio desde el teléfono con datos, una tablet o un smart TV, sin Tailscale ni instalar nada:
 esta PC se conecta **hacia afuera** a un relay en la nube (no abre puertos ni expone su IP) y el relay atiende a los
-oyentes. El relay y la web todavía no existen; lo que está hecho es el **puente** de esta PC (`puente_nube.py`) y un relay
-de prueba para la red de casa. Diseño y protocolo:
-[`docs/superpowers/specs/2026-11-19-puente-nube-design.md`](docs/superpowers/specs/2026-11-19-puente-nube-design.md).
+oyentes. Hay dos piezas hechas: el **puente** de esta PC (`puente_nube.py`) y el **relay** ([`relay/`](relay/README.md),
+un contenedor Docker para Render con una página de prueba); la web de verdad es lo que falta. Diseño y protocolo:
+[`docs/superpowers/specs/2026-11-19-puente-nube-design.md`](docs/superpowers/specs/2026-11-19-puente-nube-design.md) y
+[`docs/superpowers/specs/2026-11-19-relay-nube-design.md`](docs/superpowers/specs/2026-11-19-relay-nube-design.md).
 
 ```toml
 # ~/.config/cassette-fm/config.toml
@@ -535,16 +536,15 @@ url = "wss://relay.ejemplo.com"      # base del relay (ws:// solo contra localho
 ```
 
 - Un WebSocket de control permanente (`/casa/control`): la PC manda el estado (emisoras, la sintonizada, el tema y los
-  logos) y recibe órdenes (sintonizar, siguiente, anterior; nunca apagar ni el volumen de esta PC). Se reconecta solo.
+  logos) y recibe órdenes (sintonizar, siguiente, anterior; nunca apagar ni el volumen de esta PC). Se reconecta solo,
+  y si pasan 2 minutos sin nada que mandar manda un `latido` (así Render no duerme el relay).
 - El audio sale solo mientras el relay avisa que hay oyentes: un WebSocket por calidad pedida (MP3 de 64, 96 o 160 kbps;
   ~29, 43 o 72 MB por hora), con el mismo codificador que la LAN (a 160 lo comparten).
 - `cassette nube` muestra la conexión, lo que se está subiendo y la **clave** que hay que cargar en el relay;
   `cassette nube regenerar` la cambia sin reiniciar.
 
-**Probarlo en casa** con el relay de prueba: `url = "ws://127.0.0.1:9000"`, reiniciá el servicio y corré
-`.venv/bin/python scripts/relay-de-prueba.py` (usa la clave de `~/.config/cassette-fm/nube.token`). En
-`http://127.0.0.1:9000/` hay una página con las emisoras y un reproductor; con `--host 0.0.0.0` se abre desde el
-navegador del teléfono en el wifi de casa (sin clave para los oyentes: es solo para probar).
+**Probarlo en casa** antes de desplegarlo: el mismo relay corre en esta PC (`url = "ws://127.0.0.1:8080"`); cómo
+levantarlo, publicarlo en Docker Hub y crear el servicio en Render está en [`relay/README.md`](relay/README.md).
 
 ## Desarrollo
 

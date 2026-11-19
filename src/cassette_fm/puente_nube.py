@@ -102,7 +102,7 @@ class PuenteNube:
     def __init__(self, radio, difusores, url: str, token: Callable[[], str], conectar=connect,
                  subir=None, reloj: Callable[[], float] = time.monotonic, ping_segundos: float = 20.0,
                  intervalo_estado: float = 0.5, espera_401: float = 300.0, gracia_control: float = 60.0,
-                 espera: Espera | None = None, timeout_envio_audio: float = 10.0):
+                 espera: Espera | None = None, timeout_envio_audio: float = 10.0, latido_segundos: float = 120.0):
         self._radio = radio
         self._difusores = difusores
         self._url = url.rstrip("/")
@@ -116,6 +116,8 @@ class PuenteNube:
         self._gracia_control = gracia_control
         self._espera = espera or Espera()
         self._timeout_envio = timeout_envio_audio
+        self._latido = latido_segundos               # Render duerme el relay tras 15 min sin mensajes entrantes
+        self._ultimo_envio = 0.0
         self._parar = threading.Event()
         self._despertar = threading.Event()      # reconectar() corta la espera entre intentos
         self._lock = threading.Lock()
@@ -263,12 +265,15 @@ class PuenteNube:
                     seq += 1
                     self._mandar(ws, mensaje_estado(self._radio.estado(), seq))
                     ultimo = self._reloj()
+                if self._reloj() - self._ultimo_envio >= self._latido:
+                    self._mandar(ws, {"tipo": "latido"})
         except ConnectionClosed:
             pass
 
     def _mandar(self, ws, mensaje: dict) -> None:
         with self._envio:
             ws.send(json.dumps(mensaje, ensure_ascii=False))
+            self._ultimo_envio = self._reloj()
 
     def _recibir(self, ws, crudo) -> None:
         if isinstance(crudo, bytes):
