@@ -542,6 +542,11 @@ url = "wss://relay.ejemplo.com"      # base del relay (ws:// solo contra localho
   ~29, 43 o 72 MB por hora), con el mismo codificador que la LAN (a 160 lo comparten).
 - `cassette nube` muestra la conexión, lo que se está subiendo y la **clave** que hay que cargar en el relay;
   `cassette nube regenerar` la cambia sin reiniciar.
+- **Claves para escuchar:** en el relay queda una sola, la maestra (`MASTER_PASSWORD`, siempre con todos los permisos).
+  Las demás se crean desde esta PC: `cassette claves nueva Mamá` (solo escuchar) o `cassette claves nueva Papá
+  --completa` (escuchar y cambiar de emisora) muestran la clave **una sola vez**; `cassette claves` las lista y
+  `cassette claves borrar Mamá` la borra (quien la usaba queda afuera en segundos). Se guardan en
+  `~/.config/cassette-fm/claves.json`, solo con su huella, y el servicio se las pasa al relay solo.
 
 **Probarlo en casa** antes de desplegarlo: el mismo relay corre en esta PC (`url = "ws://127.0.0.1:8080"`); cómo
 levantarlo, publicarlo en Docker Hub y crear el servicio en Render está en [`relay/README.md`](relay/README.md).

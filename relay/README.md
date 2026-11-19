@@ -12,7 +12,7 @@ Diseño: [`docs/superpowers/specs/2026-11-19-relay-nube-design.md`](../docs/supe
 | Variable | Qué es |
 |---|---|
 | `INGEST_TOKEN` | La clave de la PC: el contenido de `~/.config/cassette-fm/nube.token` (la muestra `cassette nube`). |
-| `APP_PASSWORD` | La clave para escuchar y manejar la radio (al menos 8 caracteres). Cambiarla cierra las sesiones abiertas. |
+| `MASTER_PASSWORD` | La clave maestra: siempre escucha y maneja la radio, y funciona aunque la PC esté apagada (al menos 8 caracteres). Cambiarla cierra todas las sesiones. Es la única clave de oyentes que queda en el entorno: las demás se crean desde la PC (ver «Claves»). |
 | `PORT` | Puerto donde escucha (Render la pone sola). Por defecto 8080. |
 
 Si `cassette nube regenerar` cambia la clave de la PC, hay que actualizar `INGEST_TOKEN` en el relay.
@@ -28,8 +28,8 @@ Con Docker:
 docker build -t cassette-relay relay/
 begin
     set -lx INGEST_TOKEN (cat ~/.config/cassette-fm/nube.token)
-    set -lx APP_PASSWORD 'una-clave-para-escuchar'
-    docker run --rm -p 8080:8080 -e INGEST_TOKEN -e APP_PASSWORD cassette-relay
+    set -lx MASTER_PASSWORD 'una-clave-maestra'
+    docker run --rm -p 8080:8080 -e INGEST_TOKEN -e MASTER_PASSWORD cassette-relay
 end
 ```
 
@@ -38,7 +38,7 @@ Sin Docker (con el venv del proyecto):
 ```fish
 begin
     set -lx INGEST_TOKEN (cat ~/.config/cassette-fm/nube.token)
-    set -lx APP_PASSWORD 'una-clave-para-escuchar'
+    set -lx MASTER_PASSWORD 'una-clave-maestra'
     cd relay; ../.venv/bin/python -m cassette_relay
 end
 ```
@@ -68,7 +68,7 @@ docker push <usuario>/cassette-relay:latest
 
 1. *New* → *Web Service* → *Existing Image*, con `docker.io/<usuario>/cassette-relay:latest`.
 2. *Instance type*: **Free**.
-3. *Environment*: `INGEST_TOKEN` y `APP_PASSWORD` (no hace falta `PORT`).
+3. *Environment*: `INGEST_TOKEN` y `MASTER_PASSWORD` (no hace falta `PORT`).
 4. *Advanced* → *Health Check Path*: `/salud`.
 5. Crear. La URL queda como `https://<servicio>.onrender.com`.
 
@@ -95,17 +95,38 @@ url = "wss://<servicio>.onrender.com"
 - **Todo en memoria.** Si Render reinicia el relay, la PC se reconecta sola y vuelve a mandar el estado y los logos.
 - **750 horas por mes**, justo para un servicio prendido todo el mes.
 
+## Claves
+
+La maestra (`MASTER_PASSWORD`) es la única en el entorno. Las otras se manejan desde la PC, sin tocar el relay:
+
+```fish
+cassette claves nueva Mamá              # solo escuchar; muestra la clave una sola vez
+cassette claves nueva Papá --completa   # escuchar y cambiar de emisora
+cassette claves                         # lista (nombre, permiso, fecha)
+cassette claves borrar Mamá             # quien la usaba queda afuera en segundos
+```
+
+La PC guarda solo la huella de cada clave (`~/.config/cassette-fm/claves.json`) y le manda al relay la lista (sin
+nombres) por el puente, al conectar y cada vez que cambia. El relay la tiene en memoria. Por eso:
+
+- Una clave recién creada entra a los pocos segundos; borrarla corta su audio en el acto.
+- Si la PC está apagada, el relay conserva la última lista, pero solo la maestra puede entrar con clave; las sesiones
+  ya abiertas siguen.
+- Si el relay se reinicia (Render lo duerme), hasta que la PC reconecte y mande la lista valen las sesiones abiertas
+  con el permiso que tenían, y entra solo la maestra con clave.
+
 ## API de los oyentes
 
 Todas las rutas de `/api/` piden la cookie de sesión (la pone `POST /api/entrar`, dura 180 días) o
-`Authorization: Bearer <APP_PASSWORD>`. Después de 5 claves equivocadas en un minuto, entrar con clave queda
-bloqueado un minuto; quien ya entró sigue escuchando y manejando la radio.
+`Authorization: Bearer <clave>` (la maestra o una clave de la PC). Después de 5 claves equivocadas en un minuto,
+probar una clave queda bloqueado un minuto (también con el encabezado); quien ya entró con la cookie sigue.
+Las claves de solo escucha reciben **403** al sintonizar, ir al siguiente o al anterior.
 
 | Ruta | Qué hace |
 |---|---|
 | `POST /api/entrar` `{"clave": "…"}` | Pone la cookie de sesión. |
 | `POST /api/salir` | Borra la cookie. |
-| `GET /api/estado` | `{"en_linea", "visto_hace", "calidades", "radio"}` (`radio`: lo último que mandó la PC). |
+| `GET /api/estado` | `{"en_linea", "visto_hace", "calidades", "radio", "permiso"}` (`radio`: lo último que mandó la PC; `permiso`: `escucha` o `completa`). |
 | `POST /api/sintonizar` `{"estacion": "…"}` | Cambia de emisora (también `/api/siguiente` y `/api/anterior`). |
 | `GET /api/escuchar?calidad=64` | El MP3 en vivo (64, 96 o 160 kbps). |
 | `GET /api/icono/<emisora>?v=<versión>` | El logo de una emisora. |
@@ -115,7 +136,7 @@ Fuera de la página, mpv puede escuchar con la clave en un encabezado (queda en 
 un equipo propio):
 
 ```fish
-mpv --loop=inf --http-header-fields="Authorization: Bearer <APP_PASSWORD>" "https://<servicio>.onrender.com/api/escuchar?calidad=96"
+mpv --loop=inf --http-header-fields="Authorization: Bearer <clave>" "https://<servicio>.onrender.com/api/escuchar?calidad=96"
 ```
 
 VLC no puede mandar ese encabezado: desde VLC, mejor la página.

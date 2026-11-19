@@ -1,5 +1,9 @@
 # Relay en la nube — diseño
 
+> **Cambio posterior:** `APP_PASSWORD` pasó a ser `MASTER_PASSWORD` (la clave maestra) y hay claves de solo escucha o
+> completas, administradas desde la PC: [`2026-11-19-claves-relay-design.md`](2026-11-19-claves-relay-design.md).
+> Donde este documento dice `APP_PASSWORD`, leer la maestra.
+
 Estado: borrador para aprobar (2026-11-19). Segunda de las tres piezas del
 [puente a la nube](2026-11-19-puente-nube-design.md): implementa el lado relay del protocolo versión 1 que el puente
 de esta PC ya habla. La tercera pieza (la web) viene después y se monta sobre este relay.

@@ -73,7 +73,9 @@ Tailscale: [`superpowers/specs/2026-11-19-puente-nube-design.md`](superpowers/sp
 plan en [`superpowers/plans/2026-11-19-puente-nube.md`](superpowers/plans/2026-11-19-puente-nube.md).
 Relay en la nube (19/11): `relay/`, proyecto aparte en el mismo repo (aiohttp en Docker, para Render gratis con la imagen
 en Docker Hub): recibe al puente con `INGEST_TOKEN`, reparte el audio a varios oyentes (cola de 15 s, salto al vivo),
-le avisa a la PC qué calidades se escuchan y tiene una API privada con `APP_PASSWORD` (cookie firmada o Bearer) y una
+le avisa a la PC qué calidades se escuchan y tiene una API privada con la clave maestra `MASTER_PASSWORD` y claves de solo escucha o completas que se
+administran desde la PC con `cassette claves` (cookie firmada o Bearer; diseño en
+[`superpowers/specs/2026-11-19-claves-relay-design.md`](superpowers/specs/2026-11-19-claves-relay-design.md)) y una
 página de prueba; el puente manda un `latido` cada 2 min para que Render no lo duerma. Falta la web (entrega siguiente):
 [`superpowers/specs/2026-11-19-relay-nube-design.md`](superpowers/specs/2026-11-19-relay-nube-design.md),
 plan en [`superpowers/plans/2026-11-19-relay-nube.md`](superpowers/plans/2026-11-19-relay-nube.md).

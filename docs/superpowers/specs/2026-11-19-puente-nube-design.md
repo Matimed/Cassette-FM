@@ -100,6 +100,10 @@ Todas llevan `Authorization: Bearer <clave>`. El relay contesta 401 si la clave 
 - `latido` — `{"tipo": "latido"}` cuando pasaron 2 min sin mandar ningún otro mensaje (agregado con el
   [relay](2026-11-19-relay-nube-design.md): Render duerme el servicio tras 15 min sin mensajes entrantes). El relay no
   contesta nada.
+- `claves` — `{"tipo": "claves", "claves": [{"id": "…", "permiso": "escucha|completa", "huella": "…"}, …]}`: la
+  lista de claves de oyentes que el relay tiene que aceptar (sin nombres). Sale justo después de `hola` en cada
+  conexión (si el servicio ya leyó `claves.json`) y cada vez que la lista cambia. Diseño:
+  [claves del relay](2026-11-19-claves-relay-design.md).
 
 **Del relay a la PC**
 

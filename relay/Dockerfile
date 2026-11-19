@@ -1,4 +1,4 @@
-# Relay en la nube de cassette-fm. Sin claves adentro: INGEST_TOKEN y APP_PASSWORD llegan por el entorno.
+# Relay en la nube de cassette-fm. Sin claves adentro: INGEST_TOKEN y MASTER_PASSWORD llegan por el entorno.
 FROM python:3.12-slim
 
 ENV PYTHONUNBUFFERED=1 \
