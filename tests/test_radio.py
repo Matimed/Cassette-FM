@@ -1010,3 +1010,37 @@ def test_sintonizar_normal_sigue_prendiendo_el_monitor():
     radio, _, _, estado = crear(router=router, estado=Estado(monitor_local=False))
     radio.sintonizar("B")
     assert router.local_monitor_enabled is True and estado.monitor_local is True
+
+
+# --- varios interesados y rotar desde la red ---
+
+def test_varios_interesados_reciben_cada_cambio():
+    radio, _, _, _ = crear()
+    a, b, c = [], [], []
+    radio.al_cambiar = lambda: a.append(1)
+    radio.escuchar_cambios(lambda: b.append(1))
+    radio.escuchar_cambios(lambda: c.append(1))
+    radio.sintonizar("B")
+    assert a and len(a) == len(b) == len(c)
+
+
+def test_un_interesado_que_falla_no_frena_a_los_otros(caplog):
+    radio, _, _, _ = crear()
+    recibidos = []
+
+    def explota():
+        raise RuntimeError("x")
+
+    radio.escuchar_cambios(explota)
+    radio.escuchar_cambios(lambda: recibidos.append(1))
+    radio.sintonizar("B")
+    assert recibidos and "error al avisar" in caplog.text
+
+
+@pytest.mark.parametrize("metodo, esperada", [("siguiente", "B"), ("anterior", "Regueton 2000")])
+def test_rotar_desde_la_red_no_prende_el_monitor_ni_sube_el_volumen(metodo, esperada):
+    router = RouterFalso()
+    radio, rep, _, estado = crear(router=router, estado=Estado(estacion="A", volumen=0, monitor_local=False))
+    getattr(radio, metodo)(oir_aca=False)
+    assert rep.sintonizadas()[-1] == esperada and radio.encendida is True
+    assert router.local_monitor_enabled is False and estado.monitor_local is False and estado.volumen == 0

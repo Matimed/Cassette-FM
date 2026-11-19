@@ -107,6 +107,7 @@ class Radio:
         self.encendida = False
         # avisa cada cambio de emisora, de tema o de prendida/apagada; puede llegar con el lock tomado: no bloquear
         self.al_cambiar: Callable[[], None] | None = None
+        self._interesados: list[Callable[[], None]] = []     # además de al_cambiar (MPRIS): el puente a la nube
         reproductor.al_cambiar_pista = self._al_cambiar_pista
         reproductor.al_fallar = self._al_fallar
         reproductor.al_cambiar_agenda = self._al_cambiar_agenda
@@ -129,11 +130,14 @@ class Radio:
         with self._lock:
             self._sintonizar(self._buscar(nombre), oir_aca)
 
-    def siguiente(self) -> None:
-        self._rotar(+1)
+    def escuchar_cambios(self, funcion: Callable[[], None]) -> None:
+        self._interesados.append(funcion)
 
-    def anterior(self) -> None:
-        self._rotar(-1)
+    def siguiente(self, oir_aca: bool = True) -> None:
+        self._rotar(+1, oir_aca)
+
+    def anterior(self, oir_aca: bool = True) -> None:
+        self._rotar(-1, oir_aca)
 
     def encender(self) -> None:
         with self._lock:
@@ -243,12 +247,11 @@ class Radio:
             return self._estado.estacion, pista
 
     def _avisar_cambio(self) -> None:
-        if self.al_cambiar is None:
-            return
-        try:
-            self.al_cambiar()
-        except Exception:
-            _log.exception("error al avisar un cambio de la radio")
+        for funcion in ([self.al_cambiar] if self.al_cambiar is not None else []) + list(self._interesados):
+            try:
+                funcion()
+            except Exception:
+                _log.exception("error al avisar un cambio de la radio")
 
     def _fuente_actual(self) -> str | None:
         i = self._indice_actual()
@@ -275,7 +278,7 @@ class Radio:
         motivo = "es ambigua" if prefijo else "no existe"
         raise EstacionInexistente(f"la estación {nombre!r} {motivo}")
 
-    def _rotar(self, paso: int) -> None:
+    def _rotar(self, paso: int, oir_aca: bool = True) -> None:
         with self._lock:
             self._requerir_estaciones()
             actual = self._indice_actual()
@@ -283,7 +286,7 @@ class Radio:
                 destino = 0 if paso > 0 else len(self._estaciones) - 1
             else:
                 destino = (actual + paso) % len(self._estaciones)
-            self._sintonizar(self._estaciones[destino])
+            self._sintonizar(self._estaciones[destino], oir_aca)
 
     def _sintonizar(self, estacion: Estacion, oir_aca: bool = True) -> None:
         if oir_aca and self._estado.volumen == 0:
