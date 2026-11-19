@@ -132,6 +132,8 @@ class PuenteNube:
         self._hilos: list[threading.Thread] = []
         self._audios: dict[int, _Audio] = {}     # calidades pedidas por el relay, con su conexión
         self._control_caido_desde: float | None = None
+        self._claves: list[dict] | None = None   # la lista de claves del relay; None = nunca se puso
+        self._claves_cambio = threading.Event()
 
     # --- ciclo de vida ---
 
@@ -163,6 +165,13 @@ class PuenteNube:
         for audio in audios:
             audio.reabrir.set()
             _cortar_socket(audio.ws)          # aunque esté trabada en un envío
+
+    def poner_claves(self, claves: list[dict]) -> None:
+        """La lista de claves que el relay tiene que aceptar (`claves.para_relay`): sale al conectar y, si cambia,
+        por el control abierto. Sin llamarla nunca, el puente no manda ninguna."""
+        with self._lock:
+            self._claves = [dict(c) for c in claves]
+        self._claves_cambio.set()
 
     def info(self) -> dict:
         with self._lock:
@@ -249,6 +258,7 @@ class PuenteNube:
         seq = 0
         try:
             self._mandar(ws, {"tipo": "hola", "protocolo": PROTOCOLO, "calidades": list(CALIDADES)})
+            self._mandar_claves(ws)
             self._cambio.clear()
             seq += 1
             self._mandar(ws, mensaje_estado(self._radio.estado(), seq))
@@ -260,6 +270,8 @@ class PuenteNube:
                     crudo = None
                 if crudo is not None:
                     self._recibir(ws, crudo)
+                if self._claves_cambio.is_set():
+                    self._mandar_claves(ws)
                 if self._cambio.is_set() and self._reloj() - ultimo >= self._intervalo_estado:
                     self._cambio.clear()
                     seq += 1
@@ -269,6 +281,13 @@ class PuenteNube:
                     self._mandar(ws, {"tipo": "latido"})
         except ConnectionClosed:
             pass
+
+    def _mandar_claves(self, ws) -> None:
+        self._claves_cambio.clear()
+        with self._lock:
+            claves = self._claves
+        if claves is not None:
+            self._mandar(ws, {"tipo": "claves", "claves": claves})
 
     def _mandar(self, ws, mensaje: dict) -> None:
         with self._envio:

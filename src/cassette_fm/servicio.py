@@ -11,7 +11,7 @@ from cassette_fm.cliente_dj import ClienteDJ
 from cassette_fm.config import Config, Rutas, cargar_estado, guardar_estado
 from cassette_fm.emisoras import Catalogo
 from cassette_fm.intervenciones import RegistroIntervenciones
-from cassette_fm import lan_acceso
+from cassette_fm import claves, lan_acceso
 from cassette_fm.lan_server import crear_servidor_lan
 from cassette_fm.lan_stream import FUENTE_ESTATICA, FUENTE_MONITOR, Difusor, Difusores
 from cassette_fm.locutor import Locutor
@@ -149,6 +149,23 @@ def iniciar_nube(config: Config, rutas: Rutas, radio, router, difusores, crear_p
     token = lan_acceso.TokenVivo(rutas.nube_token, al_cambiar=lambda: puente[0].reconectar() if puente else None)
     token()
     puente.append(crear_puente(radio, difusores, nube.url, token))
+    estado_claves = {"mandada": None, "roto": False}
+
+    def sincronizar_claves() -> None:
+        """Pasa al puente la lista de `claves.json` cuando cambia; con el archivo roto rige la última buena."""
+        try:
+            lista = claves.para_relay(claves.leer(rutas.claves))
+        except claves.ErrorClaves as e:
+            if not estado_claves["roto"]:
+                _log.error("claves.json no se puede leer: %s; sigue rigiendo la última lista", e)
+                estado_claves["roto"] = True
+            return
+        estado_claves["roto"] = False
+        if lista != estado_claves["mandada"]:
+            estado_claves["mandada"] = lista
+            puente[0].poner_claves(lista)
+
+    sincronizar_claves()                      # antes de iniciar: sale con el primer hola
     puente[0].iniciar()
     parar = threading.Event()
 
@@ -156,6 +173,7 @@ def iniciar_nube(config: Config, rutas: Rutas, radio, router, difusores, crear_p
         while not parar.wait(intervalo_revision):
             try:
                 token()                       # una clave regenerada reconecta en un segundo
+                sincronizar_claves()          # claves nuevas o borradas rigen en un segundo
             except Exception:
                 _log.exception("error al revisar la clave de la nube")
 

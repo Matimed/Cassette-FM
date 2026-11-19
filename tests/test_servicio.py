@@ -775,9 +775,15 @@ class PuenteFalso:
         self.radio, self.difusores, self.url, self.token = radio, difusores, url, token
         self.iniciado = self.cerrado = False
         self.reconexiones = 0
+        self.listas = []                 # cada lista de claves que se le puso, en orden
+        self.listas_al_iniciar = None
         PuenteFalso.creados.append(self)
 
-    def iniciar(self): self.iniciado = True
+    def poner_claves(self, claves): self.listas.append(claves)
+
+    def iniciar(self):
+        self.iniciado = True
+        self.listas_al_iniciar = list(self.listas)
     def cerrar(self): self.cerrado = True
     def reconectar(self): self.reconexiones += 1
     def info(self): return {"conectado": True, "conectado_hace": 12.0, "error": None, "subiendo": [96]}
@@ -849,3 +855,74 @@ def test_si_iniciar_nube_falla_el_servicio_local_sigue_andando(tmp_path, dir_cor
     finally:
         parar.set()
         hilo.join(3)
+
+
+def test_nube_pone_las_claves_antes_de_iniciar(tmp_path):
+    from cassette_fm import claves
+    PuenteFalso.creados.clear()
+    rutas = _rutas_lan(tmp_path)
+    cerrar, _ = servicio.iniciar_nube(_nube(), rutas, RadioDeLan(), object(), object(), crear_puente=PuenteFalso)
+    cerrar()
+    assert PuenteFalso.creados[0].listas_al_iniciar == [[]]          # sin archivo: lista vacía
+    PuenteFalso.creados.clear()
+    _, registro = claves.crear(rutas.claves, "Mamá", "escucha")
+    cerrar, _ = servicio.iniciar_nube(_nube(), rutas, RadioDeLan(), object(), object(), crear_puente=PuenteFalso)
+    cerrar()
+    assert PuenteFalso.creados[0].listas_al_iniciar == [claves.para_relay([registro])]
+
+
+def test_nube_cambio_en_claves_json_llega_al_puente(tmp_path):
+    from cassette_fm import claves
+    PuenteFalso.creados.clear()
+    rutas = _rutas_lan(tmp_path)
+    cerrar, _ = servicio.iniciar_nube(_nube(), rutas, RadioDeLan(), object(), object(), crear_puente=PuenteFalso,
+                                      intervalo_revision=0.05)
+    try:
+        p = PuenteFalso.creados[0]
+        _, registro = claves.crear(rutas.claves, "Mamá", "completa")
+        assert esperar(lambda: p.listas[-1:] == [claves.para_relay([registro])])
+        claves.borrar(rutas.claves, "Mamá")
+        assert esperar(lambda: p.listas[-1:] == [[]])
+        n = len(p.listas)
+        time.sleep(0.3)
+        assert len(p.listas) == n                                      # sin cambios no repite
+    finally:
+        cerrar()
+
+
+def test_nube_archivo_roto_mantiene_la_ultima_lista(tmp_path, caplog):
+    from cassette_fm import claves
+    PuenteFalso.creados.clear()
+    rutas = _rutas_lan(tmp_path)
+    _, registro = claves.crear(rutas.claves, "Mamá", "escucha")
+    cerrar, _ = servicio.iniciar_nube(_nube(), rutas, RadioDeLan(), object(), object(), crear_puente=PuenteFalso,
+                                      intervalo_revision=0.05)
+    try:
+        p = PuenteFalso.creados[0]
+        buena = rutas.claves.read_text()
+        rutas.claves.write_text("{roto")
+        assert esperar(lambda: "claves.json" in caplog.text)
+        time.sleep(0.3)
+        assert p.listas == [claves.para_relay([registro])]
+        assert registro["huella"] not in caplog.text
+        assert caplog.text.count("no se puede leer") == 1                  # un aviso por episodio, no uno por vuelta
+        rutas.claves.write_text(buena)                                 # vuelve a ser válido y sin cambios: no repite
+        claves.crear(rutas.claves, "Papá", "completa")
+        assert esperar(lambda: len(p.listas) == 2 and len(p.listas[-1]) == 2)
+    finally:
+        cerrar()
+
+
+def test_nube_archivo_borrado_manda_lista_vacia(tmp_path):
+    from cassette_fm import claves
+    PuenteFalso.creados.clear()
+    rutas = _rutas_lan(tmp_path)
+    claves.crear(rutas.claves, "Mamá", "escucha")
+    cerrar, _ = servicio.iniciar_nube(_nube(), rutas, RadioDeLan(), object(), object(), crear_puente=PuenteFalso,
+                                      intervalo_revision=0.05)
+    try:
+        p = PuenteFalso.creados[0]
+        rutas.claves.unlink()
+        assert esperar(lambda: p.listas[-1:] == [[]])
+    finally:
+        cerrar()

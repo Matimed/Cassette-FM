@@ -737,3 +737,82 @@ def test_sin_latido_mientras_hay_otros_mensajes(relay, armar):
         while not c.mensajes.empty():
             tipos.append(json.loads(c.mensajes.get())["tipo"])
     assert "estado" in tipos and "latido" not in tipos
+
+
+# --- claves del relay ---
+
+LISTA = [{"id": "abcd1234", "permiso": "escucha", "huella": "a" * 64}]
+LISTA2 = [{"id": "abcd1234", "permiso": "escucha", "huella": "a" * 64},
+          {"id": "0f0f0f0f", "permiso": "completa", "huella": "b" * 64}]
+
+
+def test_claves_salen_despues_del_hola(relay, armar):
+    p = armar()
+    relay.recibir_tipo(relay.control(), "estado")
+    p.poner_claves(LISTA)
+    p.reconectar()
+    assert esperar(lambda: len([x for x in relay.conexiones if x.ruta == "/casa/control"]) >= 2)
+    c = relay.control()
+    assert relay.recibir(c)["tipo"] == "hola"
+    assert relay.recibir(c) == {"tipo": "claves", "claves": LISTA}
+
+
+def test_claves_puestas_antes_de_conectar(relay, armar):
+    p = armar()
+    relay.recibir_tipo(relay.control(), "estado")
+    from cassette_fm.puente_nube import PuenteNube
+    nuevo = PuenteNube(RadioFalsa(), None, relay.url, lambda: CLAVE, espera=EsperaCorta())
+    nuevo.poner_claves(LISTA)
+    nuevo.iniciar()
+    try:
+        assert esperar(lambda: len([x for x in relay.conexiones if x.ruta == "/casa/control"]) >= 2)
+        c = relay.control()
+        assert relay.recibir(c)["tipo"] == "hola"
+        assert relay.recibir(c) == {"tipo": "claves", "claves": LISTA}
+    finally:
+        nuevo.cerrar()
+
+
+def test_sin_poner_claves_no_manda_nada(relay, armar):
+    armar()
+    c = relay.control()
+    assert relay.recibir(c)["tipo"] == "hola"
+    assert relay.recibir(c)["tipo"] == "estado"
+    time.sleep(0.3)
+    assert all(m["tipo"] != "claves" for m in _pendientes(c))
+
+
+def _pendientes(c):
+    salida = []
+    while not c.mensajes.empty():
+        salida.append(json.loads(c.mensajes.get()))
+    return salida
+
+
+def test_cambio_de_claves_se_manda_sin_reconectar(relay, armar):
+    p = armar()
+    c = relay.control()
+    relay.recibir_tipo(c, "estado")
+    p.poner_claves(LISTA2)
+    assert relay.recibir_tipo(c, "claves") == {"tipo": "claves", "claves": LISTA2}
+    assert len([x for x in relay.conexiones if x.ruta == "/casa/control"]) == 1
+
+
+def test_claves_se_reenvian_al_reconectar(relay, armar):
+    p = armar()
+    p.poner_claves(LISTA)
+    c1 = relay.control()
+    relay.recibir_tipo(c1, "claves")
+    c1.ws.close()
+    assert esperar(lambda: len([x for x in relay.conexiones if x.ruta == "/casa/control"]) >= 2)
+    c2 = relay.control()
+    assert relay.recibir(c2)["tipo"] == "hola"
+    assert relay.recibir(c2) == {"tipo": "claves", "claves": LISTA}
+
+
+def test_poner_claves_vacia_se_manda(relay, armar):
+    p = armar()
+    c = relay.control()
+    relay.recibir_tipo(c, "estado")
+    p.poner_claves([])
+    assert relay.recibir_tipo(c, "claves") == {"tipo": "claves", "claves": []}
