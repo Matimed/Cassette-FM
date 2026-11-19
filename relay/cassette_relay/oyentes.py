@@ -6,14 +6,15 @@ import asyncio
 import logging
 from collections.abc import Callable
 
-from .config import CALIDADES
+from .config import CALIDADES, MAESTRA
 
 _log = logging.getLogger("cassette_relay.oyentes")
 
 
 class Oyente:
-    def __init__(self, kbps: int, tope: int):
+    def __init__(self, kbps: int, tope: int, id: str = MAESTRA):
         self.kbps = kbps
+        self.id = id                            # con qué clave entró (`MAESTRA` o el id de una clave de la PC)
         self.saltos = 0
         self.cerrado = False
         self._tope = tope
@@ -60,8 +61,8 @@ class Oyentes:
         self._en_gracia: dict[int, asyncio.TimerHandle] = {}
         self._avisado: list[int] = []
 
-    def agregar(self, kbps: int) -> Oyente:
-        oyente = Oyente(kbps, int(self._cola_segundos * kbps * 1000 / 8))
+    def agregar(self, kbps: int, id: str = MAESTRA) -> Oyente:
+        oyente = Oyente(kbps, int(self._cola_segundos * kbps * 1000 / 8), id)
         self._por_calidad[kbps].append(oyente)
         espera = self._en_gracia.pop(kbps, None)
         if espera is not None:
@@ -79,6 +80,19 @@ class Oyentes:
         if not lista:
             loop = asyncio.get_running_loop()
             self._en_gracia[oyente.kbps] = loop.call_later(self._gracia, self._vencio, oyente.kbps)
+
+    def cortar_fuera(self, vigentes: set[str]) -> int:
+        """Cierra a los oyentes que entraron con una clave que ya no está (nunca a los de la maestra). Cada oyente
+        cerrado termina su pedido y se saca solo de la cuenta."""
+        cerrados = 0
+        for lista in self._por_calidad.values():
+            for oyente in list(lista):
+                if oyente.id != MAESTRA and oyente.id not in vigentes and not oyente.cerrado:
+                    oyente.cerrar()
+                    cerrados += 1
+        if cerrados:
+            _log.info("se cortaron %d oyentes de claves que ya no valen", cerrados)
+        return cerrados
 
     def _vencio(self, kbps: int) -> None:
         self._en_gracia.pop(kbps, None)

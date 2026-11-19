@@ -26,10 +26,16 @@ def crear_app(ajustes: Ajustes, web_dir: Path | None = None) -> web.Application:
     casa: Casa | None = None
     oyentes = Oyentes(lambda calidades: casa.mandar_demanda(calidades), gracia=ajustes.gracia,
                       cola_segundos=ajustes.cola_segundos)
-    casa = Casa(ajustes, oyentes)
+    acceso = Acceso(ajustes.clave_maestra)
+
+    def aplicar_claves(claves: list[dict]) -> None:
+        acceso.poner_claves(claves)
+        oyentes.cortar_fuera({c["id"] for c in claves})        # una clave borrada deja de escuchar en el acto
+
+    casa = Casa(ajustes, oyentes, al_recibir_claves=aplicar_claves)
     app[CASA] = casa
     app[OYENTES] = oyentes
-    app[ACCESO] = Acceso(ajustes.clave_maestra)
+    app[ACCESO] = acceso
     app[AJUSTES] = ajustes
 
     async def al_cerrar(app: web.Application) -> None:

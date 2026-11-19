@@ -267,3 +267,52 @@ def test_hola_trae_la_demanda_vigente(relay):
     ws = casa(relay)
     ws.send(HOLA)
     assert recibir_tipo(ws, "demanda") == {"tipo": "demanda", "calidades": [160]}
+
+
+# --- claves ---
+
+from ayudas_relay import ACCESO, CLAVE  # noqa: E402
+from cassette_relay.acceso import Identidad, huella  # noqa: E402
+
+GENERADA = "k7qm-abcd-2345-6789"
+
+
+def _lista(permiso="escucha", ident="abcd1234"):
+    return [{"id": ident, "permiso": permiso, "huella": huella(GENERADA)}]
+
+
+def _mandar_claves(ws, claves):
+    ws.send(json.dumps({"tipo": "claves", "claves": claves}))
+
+
+def _probar(relay, clave):
+    return relay.en_loop(lambda: relay.app[ACCESO].probar(clave))
+
+
+def test_claves_validas_las_conoce_el_acceso(relay):
+    ws = pc_en_linea(relay)
+    assert _probar(relay, GENERADA)[0] == "mal"
+    _mandar_claves(ws, _lista())
+    assert esperar(lambda: _probar(relay, GENERADA) == ("ok", Identidad("abcd1234", "escucha")))
+
+
+@pytest.mark.parametrize("invalida", [
+    "no es lista", 3, None, [{"id": "abcd1234", "permiso": "escucha", "huella": "corta"}],
+    [{"id": "abcd1234", "permiso": "escucha", "huella": "a" * 64}] * 2,
+    [{"id": f"{i:08x}", "permiso": "escucha", "huella": "a" * 64} for i in range(201)],
+])
+def test_claves_invalidas_no_desarman_la_lista_vigente(relay, invalida, caplog):
+    ws = pc_en_linea(relay)
+    _mandar_claves(ws, _lista())
+    assert esperar(lambda: _probar(relay, GENERADA)[0] == "ok")
+    _mandar_claves(ws, invalida)
+    ws.send(json.dumps(estado(seq=2)))                    # el control sigue andando y ya procesó lo anterior
+    assert esperar(lambda: relay.en_loop(lambda: _casa(relay).radio())["estacion"] == "A" and "inválida" in caplog.text)
+    assert _probar(relay, GENERADA)[0] == "ok"
+
+
+def test_log_sin_huellas_ni_claves(relay, caplog):
+    ws = pc_en_linea(relay)
+    _mandar_claves(ws, _lista())
+    assert esperar(lambda: _probar(relay, GENERADA)[0] == "ok")
+    assert huella(GENERADA) not in caplog.text and GENERADA not in caplog.text

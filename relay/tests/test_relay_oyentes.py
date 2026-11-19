@@ -120,3 +120,14 @@ def test_oyente_quitado_no_recibe_mas():
         o.repartir(96, b"x")
         assert await a.tomar(0.05) in (None, b"")
     correr(escenario, gracia=0.01)
+
+
+def test_cortar_fuera_cierra_solo_a_las_claves_que_no_estan():
+    async def escenario(o, avisos):
+        a, b, maestra, otro = o.agregar(96, "aaaaaaaa"), o.agregar(96, "bbbbbbbb"), o.agregar(96), o.agregar(64, "bbbbbbbb")
+        assert o.cortar_fuera({"aaaaaaaa"}) == 2
+        assert (a.cerrado, b.cerrado, maestra.cerrado, otro.cerrado) == (False, True, False, True)
+        o.repartir(96, b"x")
+        assert await a.tomar(0.1) == b"x" and await b.tomar(0.1) == b""
+        assert o.cortar_fuera(set()) == 1 and a.cerrado and not maestra.cerrado
+    correr(escenario)

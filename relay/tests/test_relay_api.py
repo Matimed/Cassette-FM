@@ -283,3 +283,69 @@ def test_cuerpo_grande_en_trozos_413(relay):
     s.sendall(b"0\r\n\r\n")
     assert s.recv(100).startswith(b"HTTP/1.1 413")
     s.close()
+
+
+# --- claves: corte del audio de las claves borradas ---
+
+from ayudas_relay import ACCESO  # noqa: E402
+from cassette_relay.acceso import huella  # noqa: E402
+
+GENERADA = "k7qm-abcd-2345-6789"
+BEARER_GENERADA = {"Authorization": f"Bearer {GENERADA}"}
+
+
+def _lista(permiso="escucha", ident="abcd1234"):
+    return [{"id": ident, "permiso": permiso, "huella": huella(GENERADA)}]
+
+
+def _mandar_claves(ws, claves):
+    ws.send(json.dumps({"tipo": "claves", "claves": claves}))
+
+
+def _generada_entra(relay):
+    return relay.pedir("POST", "/api/entrar", {"clave": GENERADA})[0]
+
+
+def test_la_clave_generada_entra_solo_despues_de_la_lista(relay):
+    ws = pc_en_linea(relay)
+    assert _generada_entra(relay) == 401
+    _mandar_claves(ws, _lista())
+    assert esperar(lambda: _generada_entra(relay) == 204)
+
+
+def _audio_abierto(relay, ws, headers):
+    conexion, r = _escuchar(relay, 64, headers)
+    assert r.status == 200
+    assert esperar(lambda: relay.en_loop(lambda: relay.app[OYENTES].cuantos(64)) >= 1)
+    return conexion, r
+
+
+@pytest.mark.parametrize("lista_nueva", [[], _lista(ident="0f0f0f0f")])
+def test_borrar_la_clave_corta_su_audio_y_no_el_de_la_maestra(relay, lista_nueva):
+    ws = pc_en_linea(relay)
+    _mandar_claves(ws, _lista())
+    assert esperar(lambda: _generada_entra(relay) == 204)
+    conexion, r = _audio_abierto(relay, ws, BEARER_GENERADA)
+    maestra, rm = _escuchar(relay, 64, BEARER)
+    assert esperar(lambda: relay.en_loop(lambda: relay.app[OYENTES].cuantos(64)) == 2)
+    _mandar_claves(ws, lista_nueva)
+    assert esperar(lambda: relay.en_loop(lambda: relay.app[OYENTES].cuantos(64)) == 1)
+    assert r.read() == b""                                        # el audio de la clave borrada terminó
+    audio = casa(relay, "/casa/audio?calidad=64")
+    audio.send(b"y" * 100)
+    assert rm.read(100) == b"y" * 100                             # el de la maestra sigue
+    conexion.close()
+    maestra.close()
+
+
+def test_sesion_de_la_gracia_con_id_que_la_primera_lista_no_trae_se_corta(relay):
+    # el relay "recién despertó": nunca recibió una lista, y una cookie firmada con un id de clave todavía vale
+    acceso = relay.app[ACCESO]
+    from cassette_relay.acceso import Identidad
+    cookie = relay.en_loop(lambda: acceso.nueva_sesion(Identidad("abcd1234", "escucha")))
+    ws = pc_en_linea(relay)
+    conexion, r = _audio_abierto(relay, ws, {"Cookie": f"sesion={cookie}"})
+    _mandar_claves(ws, _lista(ident="0f0f0f0f"))
+    assert esperar(lambda: relay.en_loop(lambda: relay.app[OYENTES].cuantos(64)) == 0)
+    assert r.read() == b""
+    conexion.close()

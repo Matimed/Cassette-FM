@@ -145,3 +145,28 @@ def test_clave_igual():
     assert clave_igual(None, "abc") is False
     assert clave_igual("", "") is False
     assert clave_igual("ñandú", "ñandú") is True
+
+
+# --- validar_claves ---
+
+from cassette_relay.acceso import validar_claves  # noqa: E402
+
+
+def _c(ident="abcd1234", permiso="escucha", h="a" * 64):
+    return {"id": ident, "permiso": permiso, "huella": h}
+
+
+def test_validar_claves_validas():
+    assert validar_claves([_c(), _c("0f0f0f0f", "completa", "b" * 64)]) == [_c(), _c("0f0f0f0f", "completa", "b" * 64)]
+    assert validar_claves([]) == []
+    assert validar_claves([{**_c(), "nombre": "Mamá"}]) == [_c()]            # un campo de más se descarta
+    assert validar_claves([_c(f"{i:08x}") for i in range(200)]) is not None
+
+
+@pytest.mark.parametrize("datos", [
+    None, {}, "x", 3, [_c(f"{i:08x}") for i in range(201)], [_c(), _c()], [_c("abc1234")], [_c("abcd12345")],
+    [_c("ABCD1234")], [_c("abcd123g")], [_c(permiso="admin")], [_c(permiso=None)], [_c(h="a" * 63)],
+    [_c(h="g" * 64)], [_c(h=5)], [3], ["x"], [None], [{"id": "abcd1234"}], [_c(ident=12345678)],
+])
+def test_validar_claves_invalidas(datos):
+    assert validar_claves(datos) is None

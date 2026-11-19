@@ -10,7 +10,7 @@ from collections.abc import Callable
 
 from aiohttp import WSMsgType, web
 
-from .acceso import clave_igual
+from .acceso import clave_igual, validar_claves
 from .config import CALIDADES, PROTOCOLO, Ajustes
 from .oyentes import Oyentes
 
@@ -58,8 +58,10 @@ class _Control:
 
 
 class Casa:
-    def __init__(self, ajustes: Ajustes, oyentes: Oyentes, reloj: Callable[[], float] = time.monotonic):
+    def __init__(self, ajustes: Ajustes, oyentes: Oyentes, reloj: Callable[[], float] = time.monotonic,
+                 al_recibir_claves: Callable[[list[dict]], None] | None = None):
         self._a = ajustes
+        self._al_recibir_claves = al_recibir_claves
         self._oyentes = oyentes
         self._reloj = reloj
         self._control: _Control | None = None
@@ -185,6 +187,14 @@ class Casa:
             futuro = self._ordenes.get(str(mensaje.get("id")))
             if futuro is not None and not futuro.done():
                 futuro.set_result(mensaje)
+        elif tipo == "claves":
+            lista = validar_claves(mensaje.get("claves"))
+            if lista is None:
+                _log.warning("la PC mandó una lista de claves inválida; se ignora y sigue la anterior")
+            else:
+                _log.info("la PC mandó %d claves", len(lista))
+                if self._al_recibir_claves is not None:
+                    self._al_recibir_claves(lista)
         elif tipo == "latido":
             pass
         else:

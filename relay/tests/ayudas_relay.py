@@ -9,7 +9,7 @@ import pytest
 from aiohttp import web
 from websockets.sync.client import connect
 
-from cassette_relay.app import CASA, OYENTES, crear_app  # noqa: F401  (OYENTES: lo usan los tests)
+from cassette_relay.app import ACCESO, CASA, OYENTES, crear_app  # noqa: F401  (los usan los tests)
 from cassette_relay.config import Ajustes
 
 TOKEN = "token-de-la-casa-" + "x" * 30

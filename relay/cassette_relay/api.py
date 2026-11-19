@@ -179,7 +179,7 @@ class Api:
                 sock.setsockopt(socket.SOL_SOCKET, socket.SO_SNDBUF, _SNDBUF_OYENTE)
             except OSError:
                 pass
-        oyente = self._oyentes.agregar(kbps)
+        oyente = self._oyentes.agregar(kbps, request[IDENTIDAD].id)
         loop = asyncio.get_running_loop()
         ultimo_audio = loop.time()
         try:
