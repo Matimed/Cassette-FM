@@ -19,7 +19,7 @@ from cassette_fm.radio import SinEstaciones
 _log = logging.getLogger("cassette_fm")
 
 _CAMPOS = ("encendida", "estacion", "pista", "estaciones", "fuente", "segundo")
-_TIPOS_IMAGEN = {".png": "image/png", ".jpg": "image/jpeg", ".jpeg": "image/jpeg", ".webp": "image/webp",
+TIPOS_IMAGEN = {".png": "image/png", ".jpg": "image/jpeg", ".jpeg": "image/jpeg", ".webp": "image/webp",
                  ".gif": "image/gif"}
 _MAX_LOGO_BYTES = 4 * 1024 * 1024
 _BUFFER_ENVIO_BYTES = 8192      # ~0,4 s de audio (el kernel lo duplica): con uno grande el atraso de un oyente se esconde ahí
@@ -28,7 +28,7 @@ _BUFFER_ENVIO_BYTES = 8192      # ~0,4 s de audio (el kernel lo duplica): con un
 def version_logo(ruta: Path) -> str | None:
     """Cambia cuando cambia el archivo (tamaño y fecha); None si no es una imagen servible."""
     try:
-        if ruta.suffix.lower() not in _TIPOS_IMAGEN or not ruta.is_file():
+        if ruta.suffix.lower() not in TIPOS_IMAGEN or not ruta.is_file():
             return None
         info = ruta.stat()
     except OSError:
@@ -158,7 +158,7 @@ def crear_servidor_lan(radio, difusor, token, host: str, puerto: int) -> Threadi
             except OSError:
                 return self._error(404, "esa emisora no tiene logo")
             self.send_response(200)
-            self.send_header("Content-Type", _TIPOS_IMAGEN[ruta.suffix.lower()])
+            self.send_header("Content-Type", TIPOS_IMAGEN[ruta.suffix.lower()])
             self.send_header("Content-Length", str(len(datos)))
             self.send_header("ETag", etag)
             self.send_header("Cache-Control", "private, max-age=3600")

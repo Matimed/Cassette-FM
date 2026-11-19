@@ -492,3 +492,83 @@ def test_nube_160_y_lan_comparten_codificador(relay, armar, gst):
     assert oyente_lan.get(timeout=2) == b"compartido"
     assert len(gst.de(160)) == 1
     registro.de(160).desuscribir(oyente_lan)
+
+
+# --- logos ---
+
+from cassette_fm.puente_nube import url_icono  # noqa: E402
+
+
+def test_url_icono():
+    assert url_icono("wss://relay.x.com", "Más Gasolina F.M.", "abc") == \
+        "https://relay.x.com/casa/icono/M%C3%A1s%20Gasolina%20F.M.?v=abc"
+    assert url_icono("ws://127.0.0.1:9000", "a/b?c", "v1") == "http://127.0.0.1:9000/casa/icono/a%2Fb%3Fc?v=v1"
+
+
+class Subidor:
+    def __init__(self, falla=None):
+        self.subidas = []
+        self.falla = falla
+
+    def __call__(self, url, token, datos, tipo):
+        if self.falla:
+            raise self.falla
+        self.subidas.append((url, token, datos, tipo))
+
+
+def _radio_con_logo(tmp_path):
+    logo = tmp_path / "logo.png"
+    logo.write_bytes(b"\x89PNG-datos")
+    radio = RadioFalsa()
+    radio.datos["iconos"] = {"Más Gasolina F.M.": str(logo)}
+    return radio
+
+
+def test_pedir_icono_sube_el_logo(relay, armar, tmp_path):
+    subidor = Subidor()
+    armar(_radio_con_logo(tmp_path), subir=subidor)
+    c = relay.control()
+    version = relay.recibir_tipo(c, "estado")["iconos"]["Más Gasolina F.M."]
+    relay.mandar(c, {"tipo": "pedir_icono", "estacion": "Más Gasolina F.M."})
+    assert esperar(lambda: subidor.subidas)
+    assert subidor.subidas == [(url_icono(relay.url, "Más Gasolina F.M.", version), CLAVE, b"\x89PNG-datos",
+                                "image/png")]
+
+
+def test_pedir_icono_de_emisora_sin_logo_no_sube(relay, armar, tmp_path):
+    subidor = Subidor()
+    armar(_radio_con_logo(tmp_path), subir=subidor)
+    c = relay.control()
+    relay.mandar(c, {"tipo": "pedir_icono", "estacion": "A"})
+    relay.mandar(c, {"tipo": "siguiente", "id": 1})
+    assert relay.recibir_tipo(c, "resultado")["id"] == 1 and subidor.subidas == []
+
+
+def test_logo_que_falla_al_subir_no_corta_el_control(relay, armar, tmp_path, caplog):
+    armar(_radio_con_logo(tmp_path), subir=Subidor(falla=OSError("sin red")))
+    c = relay.control()
+    relay.mandar(c, {"tipo": "pedir_icono", "estacion": "Más Gasolina F.M."})
+    relay.mandar(c, {"tipo": "siguiente", "id": 2})
+    assert relay.recibir_tipo(c, "resultado")["id"] == 2 and "sin red" in caplog.text
+    assert len([x for x in relay.conexiones if x.ruta == "/casa/control"]) == 1
+
+
+def test_subir_icono_hace_un_put_con_la_clave(tmp_path):
+    from http.server import BaseHTTPRequestHandler, HTTPServer
+    from cassette_fm.puente_nube import subir_icono
+    recibido = {}
+
+    class H(BaseHTTPRequestHandler):
+        def log_message(self, *a): pass
+
+        def do_PUT(self):
+            recibido.update(ruta=self.path, auth=self.headers["Authorization"], tipo=self.headers["Content-Type"],
+                            datos=self.rfile.read(int(self.headers["Content-Length"])))
+            self.send_response(204)
+            self.end_headers()
+
+    srv = HTTPServer(("127.0.0.1", 0), H)
+    threading.Thread(target=srv.handle_request, daemon=True).start()
+    subir_icono(f"http://127.0.0.1:{srv.server_port}/casa/icono/A?v=1", CLAVE, b"img", "image/png")
+    srv.server_close()
+    assert recibido == {"ruta": "/casa/icono/A?v=1", "auth": f"Bearer {CLAVE}", "tipo": "image/png", "datos": b"img"}

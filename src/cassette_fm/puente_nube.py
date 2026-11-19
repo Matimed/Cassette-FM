@@ -11,13 +11,15 @@ import random
 import socket
 import threading
 import time
+import urllib.parse
+import urllib.request
 from collections.abc import Callable
 from pathlib import Path
 
 from websockets.exceptions import ConnectionClosed, InvalidHandshake, InvalidStatus, WebSocketException
 from websockets.sync.client import connect
 
-from cassette_fm.lan_server import estado_publico, version_logo
+from cassette_fm.lan_server import TIPOS_IMAGEN, estado_publico, version_logo
 from cassette_fm.lan_stream import CodificadorNoDisponible, SinCapacidad
 from cassette_fm.radio import SinEstaciones
 
@@ -39,6 +41,20 @@ def mensaje_estado(estado: dict, seq: int) -> dict:
         if version:
             iconos[nombre] = version
     return {"tipo": "estado", "seq": seq, **estado_publico(estado), "iconos": iconos}
+
+
+def url_icono(base: str, emisora: str, version: str) -> str:
+    """Al mismo host del relay por HTTP(S): wss → https, ws → http."""
+    esquema, resto = base.split("://", 1)
+    http = "https" if esquema == "wss" else "http"
+    return f"{http}://{resto}/casa/icono/{urllib.parse.quote(emisora, safe='')}?v={urllib.parse.quote(version)}"
+
+
+def subir_icono(url: str, token: str, datos: bytes, tipo: str) -> None:
+    pedido = urllib.request.Request(url, data=datos, method="PUT",
+                                    headers={"Authorization": f"Bearer {token}", "Content-Type": tipo})
+    with urllib.request.urlopen(pedido, timeout=15) as respuesta:
+        respuesta.read()
 
 
 class Espera:
@@ -81,7 +97,7 @@ class PuenteNube:
         self._url = url.rstrip("/")
         self._token = token
         self._conectar = conectar
-        self._subir = subir
+        self._subir = subir or subir_icono
         self._reloj = reloj
         self._ping = ping_segundos
         self._intervalo_estado = intervalo_estado
@@ -378,6 +394,9 @@ class PuenteNube:
                 self._radio.siguiente(oir_aca=False)
             elif tipo == "anterior":
                 self._radio.anterior(oir_aca=False)
+            elif tipo == "pedir_icono":
+                self._subir_logo(mensaje.get("estacion"))
+                return None
             else:
                 return None
         except SinEstaciones:
@@ -386,3 +405,17 @@ class PuenteNube:
             _log.exception("puente a la nube: error al ejecutar %r", tipo)
             return {"ok": False, "error": "error interno"}
         return {"ok": True}
+
+    def _subir_logo(self, nombre) -> None:
+        """Solo logos del mapa de la propia radio, por nombre: el relay nunca elige una ruta de esta PC."""
+        ruta = (self._radio.estado().get("iconos") or {}).get(nombre) if isinstance(nombre, str) else None
+        version = version_logo(Path(ruta)) if ruta else None
+        if version is None:
+            _log.warning("puente a la nube: el relay pidió un logo que no hay (%r)", str(nombre)[:60])
+            return
+        try:
+            datos = Path(ruta).read_bytes()
+            self._subir(url_icono(self._url, nombre, version), self._token(), datos,
+                        TIPOS_IMAGEN[Path(ruta).suffix.lower()])
+        except Exception as e:
+            _log.warning("puente a la nube: no se pudo subir el logo de %r: %s", nombre, e)
