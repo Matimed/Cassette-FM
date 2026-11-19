@@ -668,6 +668,28 @@ def esperar(condicion, timeout=3.0):
     return False
 
 
+def test_lan_usa_el_difusor_160_del_registro_y_no_lo_cierra(tmp_path):
+    class Registro:
+        def __init__(self):
+            self.pedidos, self.cerrado, self.difusor = [], False, DifusorDeServicioFalso()
+
+        def de(self, kbps):
+            self.pedidos.append(kbps)
+            return self.difusor
+
+        def revisar_fuente(self): pass
+        def cortar_oyentes(self): pass
+        def cerrar(self): self.cerrado = True
+
+    registro, puerto = Registro(), puerto_libre()
+    cerrar = servicio.iniciar_lan(_lan(puerto), _rutas_lan(tmp_path), RadioDeLan(), object(), difusores=registro)
+    try:
+        assert esperar(lambda: _intentar(lambda: _http(puerto)) == 401)
+    finally:
+        cerrar()
+    assert set(registro.pedidos) == {160} and not registro.cerrado and not registro.difusor.cerrado
+
+
 def test_lan_sin_bus_no_abre_el_puerto_y_deja_el_error_en_el_log(tmp_path, caplog):
     puerto = puerto_libre()
     assert servicio.iniciar_lan(_lan(puerto), _rutas_lan(tmp_path), RadioDeLan(), None) is None

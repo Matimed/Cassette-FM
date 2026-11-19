@@ -238,3 +238,56 @@ def test_la_cola_por_oyente_tolera_baches_normales_pero_no_acumula_atrasos_enorm
     d = Difusor(lambda: FUENTE_MONITOR)
     segundos = d._cola_max * 4096 * 8 / 160_000
     assert 3.0 <= segundos <= 8.0
+
+
+# --- calidades ---
+
+from cassette_fm.lan_stream import Difusores  # noqa: E402
+
+
+def test_difusor_codifica_a_su_calidad(banco):
+    d = banco.difusor(kbps=64)
+    d.suscribir()
+    assert "bitrate=64" in banco.procesos[0].comando and d.kbps == 64
+    d.cerrar()
+
+
+def test_difusores_crea_uno_por_calidad_y_lo_reusa(banco):
+    creados = []
+
+    def crear(fuente, **kw):
+        creados.append(kw)
+        return banco.difusor(**kw)
+
+    r = Difusores(lambda: banco.fuente, crear=crear, max_oyentes=3)
+    assert r.de(96) is r.de(96)
+    assert r.de(64) is not r.de(96)
+    assert [(k["kbps"], k["max_oyentes"]) for k in creados] == [(96, 3), (64, 3)]
+    r.cerrar()
+
+
+def test_la_cola_tolera_el_mismo_tiempo_en_cualquier_calidad(banco):
+    r = Difusores(lambda: banco.fuente, crear=lambda f, **kw: banco.difusor(**kw))
+    for kbps in (64, 96, 160):
+        d = r.de(kbps)
+        segundos = d._cola_max * 4096 * 8 / (kbps * 1000)
+        assert 4.0 <= segundos <= 6.0, (kbps, segundos)
+    r.cerrar()
+
+
+def test_difusores_revisa_corta_y_cierra_todos():
+    class Falso:
+        def __init__(self, **kw):
+            self.revisiones = self.cortes = 0
+            self.cerrado = False
+
+        def revisar_fuente(self): self.revisiones += 1
+        def cortar_oyentes(self): self.cortes += 1
+        def cerrar(self): self.cerrado = True
+
+    r = Difusores(lambda: FUENTE_MONITOR, crear=lambda f, **kw: Falso(**kw))
+    a, b = r.de(64), r.de(160)
+    r.revisar_fuente()
+    r.cortar_oyentes()
+    r.cerrar()
+    assert (a.revisiones, b.revisiones, a.cortes, b.cortes, a.cerrado, b.cerrado) == (1, 1, 1, 1, True, True)

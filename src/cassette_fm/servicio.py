@@ -13,7 +13,7 @@ from cassette_fm.emisoras import Catalogo
 from cassette_fm.intervenciones import RegistroIntervenciones
 from cassette_fm import lan_acceso
 from cassette_fm.lan_server import crear_servidor_lan
-from cassette_fm.lan_stream import FUENTE_ESTATICA, FUENTE_MONITOR, Difusor
+from cassette_fm.lan_stream import FUENTE_ESTATICA, FUENTE_MONITOR, Difusor, Difusores
 from cassette_fm.locutor import Locutor
 from cassette_fm.mpris import ServicioMpris
 from cassette_fm.mpv import ClienteMpv
@@ -65,7 +65,8 @@ def reproductor_spotify(config: Config, rutas: Rutas, cliente):
     return rep[0], soloist
 
 
-def iniciar_lan(config: Config, rutas: Rutas, radio, router, crear_difusor=Difusor, ip_ts=None,
+def iniciar_lan(config: Config, rutas: Rutas, radio, router, difusores: Difusores | None = None,
+                crear_difusor=Difusor, ip_ts=None,
                 tailscale_instalado=None, intervalo_reintento: float = 30.0,
                 intervalo_revision: float = 1.0) -> Callable[[], None] | None:
     """Levanta el servidor de la radio por la red (`[lan] activo`). Devuelve la función que lo cierra, o None si no
@@ -78,8 +79,11 @@ def iniciar_lan(config: Config, rutas: Rutas, radio, router, crear_difusor=Difus
         _log.error("[lan] necesita el bus de audio: el servidor de la red no se abre (poné `bus_audio = true`)")
         return None
     lan_acceso.leer_o_crear_token(rutas.lan_token)          # crea el archivo si falta
-    difusor = crear_difusor(lambda: FUENTE_MONITOR if radio.encendida else FUENTE_ESTATICA,
-                            max_oyentes=lan.max_oyentes)
+    propios = difusores is None          # sin registro compartido (tests): la LAN crea, revisa y cierra el suyo
+    if propios:
+        difusores = Difusores(lambda: FUENTE_MONITOR if radio.encendida else FUENTE_ESTATICA, crear=crear_difusor,
+                              max_oyentes=lan.max_oyentes)
+    difusor = difusores.de(160)
     token = lan_acceso.TokenVivo(rutas.lan_token, al_cambiar=difusor.cortar_oyentes)
     token()
     parar = threading.Event()
@@ -108,7 +112,8 @@ def iniciar_lan(config: Config, rutas: Rutas, radio, router, crear_difusor=Difus
         while not parar.wait(intervalo_revision):
             try:
                 token()                       # una clave regenerada corta a los oyentes en un segundo
-                difusor.revisar_fuente()
+                if propios:
+                    difusores.revisar_fuente()
             except Exception:
                 _log.exception("error al revisar el stream de la red")
 
@@ -120,7 +125,8 @@ def iniciar_lan(config: Config, rutas: Rutas, radio, router, crear_difusor=Difus
         for servidor in actual:
             servidor.shutdown()
             servidor.server_close()
-        difusor.cerrar()
+        if propios:
+            difusores.cerrar()
 
     return cerrar
 

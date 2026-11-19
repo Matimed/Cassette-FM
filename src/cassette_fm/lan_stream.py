@@ -57,7 +57,8 @@ class Difusor:
     def __init__(self, fuente_actual: Callable[[], str], lanzar: Callable[[list[str]], subprocess.Popen] = lanzar_gst,
                  max_oyentes: int = 4, gracia_segundos: float = 5.0, cola_max: int = 25,
                  estabilidad_segundos: float = 2.0, reloj: Callable[[], float] = time.monotonic,
-                 arranque_segundos: float = 1.0):
+                 arranque_segundos: float = 1.0, kbps: int = 160):
+        self.kbps = kbps
         self._fuente_actual = fuente_actual
         self._lanzar = lanzar
         self._max = max_oyentes
@@ -131,7 +132,7 @@ class Difusor:
 
     def _arrancar(self) -> None:
         fuente = self._fuente_actual()
-        proceso = self._lanzar(comando_gst(fuente))
+        proceso = self._lanzar(comando_gst(fuente, kbps=self.kbps))
         self._proceso, self._fuente_en_uso, self._candidata = proceso, fuente, None
         self._listo, self._fallo = threading.Event(), None
         threading.Thread(target=self._leer, args=(proceso, self._listo), daemon=True, name="lan-codificador").start()
@@ -211,3 +212,41 @@ class Difusor:
                     _cerrar_cola(cola)
             if not self._oyentes and self._sin_oyentes_desde is None:
                 self._sin_oyentes_desde = self._reloj()
+
+
+_COLA_A_160 = 25    # bloques por oyente a 160 kbps (~5 s); a otras calidades, los que duren lo mismo
+
+
+class Difusores:
+    """Un `Difusor` por calidad, creado la primera vez que se lo pide: la LAN y la nube comparten el mismo
+    codificador cuando piden la misma calidad."""
+
+    def __init__(self, fuente_actual: Callable[[], str], crear: Callable[..., Difusor] = Difusor, **opciones):
+        self._fuente_actual = fuente_actual
+        self._crear = crear
+        self._opciones = opciones
+        self._lock = threading.Lock()
+        self._difusores: dict[int, Difusor] = {}
+
+    def de(self, kbps: int) -> Difusor:
+        with self._lock:
+            if kbps not in self._difusores:
+                self._difusores[kbps] = self._crear(
+                    self._fuente_actual, kbps=kbps, cola_max=max(2, round(_COLA_A_160 * kbps / 160)), **self._opciones)
+            return self._difusores[kbps]
+
+    def _todos(self) -> list[Difusor]:
+        with self._lock:
+            return list(self._difusores.values())
+
+    def revisar_fuente(self) -> None:
+        for difusor in self._todos():
+            difusor.revisar_fuente()
+
+    def cortar_oyentes(self) -> None:
+        for difusor in self._todos():
+            difusor.cortar_oyentes()
+
+    def cerrar(self) -> None:
+        for difusor in self._todos():
+            difusor.cerrar()
