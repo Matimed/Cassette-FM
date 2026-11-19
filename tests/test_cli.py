@@ -942,3 +942,113 @@ def test_cassette_nube_dice_hace_cuanto_esta_conectado(tmp_path, monkeypatch, ca
         "conectado": True, "subiendo": [], "conectado_hace": 185.0, "error": None}})
     assert main(["nube"]) == 0
     assert "hace 3 min" in capsys.readouterr().out
+
+
+# --- cassette claves ---
+
+def _claves_tmp(monkeypatch, tmp_path, nube=False):
+    from cassette_fm.config import Config, ConfigNube
+    r = _rutas_tmp(monkeypatch, tmp_path)
+    cfg = Config(nube=ConfigNube(activo=True, url="wss://relay.ejemplo.com")) if nube else Config()
+    monkeypatch.setattr("cassette_fm.config.cargar_config", lambda archivo: cfg)
+    return r
+
+
+def _crear_clave(r, nombre="Mamá", permiso="escucha"):
+    from cassette_fm import claves
+    return claves.crear(r.claves, nombre, permiso)
+
+
+def test_claves_nueva_imprime_la_clave_una_vez(tmp_path, monkeypatch, capsys):
+    import re
+    from cassette_fm import claves
+    r = _claves_tmp(monkeypatch, tmp_path, nube=True)
+    assert main(["claves", "nueva", "Mamá"]) == 0
+    salida = capsys.readouterr().out
+    clave = re.search(r"[0-9a-z]{4}(?:-[0-9a-z]{4}){3}", salida).group(0)
+    assert "no se vuelve a mostrar" in salida and "escucha" in salida
+    assert claves.leer(r.claves)[0]["huella"] == claves.huella(clave)
+    assert main(["claves"]) == 0
+    assert clave not in capsys.readouterr().out
+
+
+def test_claves_nueva_completa(tmp_path, monkeypatch, capsys):
+    from cassette_fm import claves
+    r = _claves_tmp(monkeypatch, tmp_path)
+    assert main(["claves", "nueva", "Papá", "--completa"]) == 0
+    assert claves.leer(r.claves)[0]["permiso"] == "completa"
+    with pytest.raises(SystemExit) as e:
+        main(["claves", "nueva", "X", "--escucha", "--completa"])
+    assert e.value.code == 2
+
+
+def test_claves_nueva_repetida_sale_con_1(tmp_path, monkeypatch, capsys):
+    r = _claves_tmp(monkeypatch, tmp_path)
+    _crear_clave(r)
+    antes = r.claves.read_text()
+    assert main(["claves", "nueva", "mamá"]) == 1
+    assert "ya hay una clave" in capsys.readouterr().err and r.claves.read_text() == antes
+
+
+def test_claves_lista_vacia_recuerda_la_maestra(tmp_path, monkeypatch, capsys):
+    _claves_tmp(monkeypatch, tmp_path)
+    assert main(["claves"]) == 0
+    assert "MASTER_PASSWORD" in capsys.readouterr().out
+
+
+def test_claves_lista_muestra_nombre_permiso_y_fecha(tmp_path, monkeypatch, capsys):
+    r = _claves_tmp(monkeypatch, tmp_path)
+    _, reg = _crear_clave(r)
+    assert main(["claves"]) == 0
+    salida = capsys.readouterr().out
+    assert "Mamá" in salida and "escucha" in salida and reg["creada"][:10] in salida
+    assert reg["huella"] not in salida and reg["id"] not in salida
+
+
+def test_claves_borrar_con_si(tmp_path, monkeypatch, capsys):
+    from cassette_fm import claves
+    r = _claves_tmp(monkeypatch, tmp_path)
+    _crear_clave(r)
+    assert main(["claves", "borrar", "mamá", "--si"]) == 0
+    assert claves.leer(r.claves) == []
+
+
+def test_claves_borrar_sin_terminal_exige_si(tmp_path, monkeypatch, capsys):
+    from cassette_fm import claves
+    r = _claves_tmp(monkeypatch, tmp_path)
+    _crear_clave(r)
+    monkeypatch.setattr("sys.stdin", SimpleNamespace(isatty=lambda: False))
+    assert main(["claves", "borrar", "Mamá"]) == 1
+    assert "--si" in capsys.readouterr().err and len(claves.leer(r.claves)) == 1
+
+
+def test_claves_borrar_pregunta_y_responde_no(tmp_path, monkeypatch, capsys):
+    from cassette_fm import claves
+    r = _claves_tmp(monkeypatch, tmp_path)
+    _crear_clave(r)
+    monkeypatch.setattr("sys.stdin", SimpleNamespace(isatty=lambda: True))
+    monkeypatch.setattr("builtins.input", lambda _: "n")
+    assert main(["claves", "borrar", "Mamá"]) == 1
+    assert len(claves.leer(r.claves)) == 1
+    monkeypatch.setattr("builtins.input", lambda _: "s")
+    assert main(["claves", "borrar", "Mamá"]) == 0
+    assert claves.leer(r.claves) == []
+
+
+def test_claves_borrar_inexistente(tmp_path, monkeypatch, capsys):
+    _claves_tmp(monkeypatch, tmp_path)
+    assert main(["claves", "borrar", "Nadie", "--si"]) == 1
+    assert "no hay ninguna clave" in capsys.readouterr().err
+
+
+def test_claves_avisa_si_la_nube_esta_apagada(tmp_path, monkeypatch, capsys):
+    _claves_tmp(monkeypatch, tmp_path, nube=False)
+    assert main(["claves", "nueva", "Mamá"]) == 0
+    assert "[nube]" in capsys.readouterr().out
+
+
+def test_claves_archivo_roto_sale_con_1(tmp_path, monkeypatch, capsys):
+    r = _claves_tmp(monkeypatch, tmp_path)
+    r.claves.write_text("{roto")
+    assert main(["claves"]) == 1
+    assert "JSON roto" in capsys.readouterr().err

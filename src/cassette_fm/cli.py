@@ -100,6 +100,19 @@ def _armar_parser() -> argparse.ArgumentParser:
     nube = sub.add_parser("nube", help="el puente a un relay en la nube: estado de la conexión y clave para el relay "
                                        "(o `regenerar` la clave)")
     nube.add_argument("accion", nargs="?", choices=["regenerar"])
+    claves = sub.add_parser("claves", help="las claves para escuchar la radio desde el relay en la nube: sin "
+                                           "argumentos las lista; `nueva` y `borrar` las administran")
+    claves_sub = claves.add_subparsers(dest="accion")
+    nueva_clave = claves_sub.add_parser("nueva", help="crea una clave (se muestra una sola vez)")
+    nueva_clave.add_argument("nombre", help="para quién es (entre comillas si tiene espacios)")
+    permiso = nueva_clave.add_mutually_exclusive_group()
+    permiso.add_argument("--escucha", action="store_const", const="escucha", dest="permiso",
+                         help="solo escuchar (por defecto)")
+    permiso.add_argument("--completa", action="store_const", const="completa", dest="permiso",
+                         help="escuchar y cambiar de emisora")
+    borrar_clave = claves_sub.add_parser("borrar", help="borra una clave: quien la usaba queda afuera")
+    borrar_clave.add_argument("nombre", help="el nombre de la clave (sin importar mayúsculas)")
+    borrar_clave.add_argument("--si", action="store_true", help="no preguntar")
     spotify = sub.add_parser("spotify", help="Spotify como fuente de emisoras: sesión y estado")
     spotify_sub = spotify.add_subparsers(dest="accion", required=True)
     spotify_sub.add_parser("login", help="abre el navegador para darle permiso a cassette-fm en tu cuenta")
@@ -249,6 +262,51 @@ def _lan(args, cfg, rutas) -> int:
     direccion = lan_acceso.direccion_para_mostrar(cfg.lan.escuchar)
     print(f"Dirección: http://{direccion}:{cfg.lan.puerto}")
     print(f"Clave:     {token}")
+    return 0
+
+
+def _claves(args, cfg, rutas) -> int:
+    """Crea, borra y lista las claves del relay (`claves.json`); el servicio se las pasa al relay solo."""
+    from cassette_fm import claves
+    try:
+        if args.accion == "nueva":
+            clave, registro = claves.crear(rutas.claves, args.nombre, args.permiso or "escucha")
+            queda = ("escuchar y cambiar de emisora" if registro["permiso"] == "completa" else "solo escuchar")
+            print(f"Clave para {registro['nombre']} ({registro['permiso']}: {queda}):")
+            print(f"    {clave}")
+            print("Anotala ahora: no se vuelve a mostrar (solo se guarda su huella).")
+            if not cfg.nube.activo:
+                print("El puente a la nube está apagado: las claves rigen cuando actives [nube] en config.toml.")
+        elif args.accion == "borrar":
+            registro = next((r for r in claves.leer(rutas.claves)
+                             if r["nombre"].strip().casefold() == args.nombre.strip().casefold()), None)
+            if registro is None:
+                raise claves.ErrorClaves(f"no hay ninguna clave con el nombre «{args.nombre.strip()}»")
+            if not args.si:
+                if not sys.stdin.isatty():
+                    print(f"para borrar la clave de «{registro['nombre']}» sin preguntar, agregá --si",
+                          file=sys.stderr)
+                    return 1
+                try:
+                    respuesta = input(f"¿Borro la clave de «{registro['nombre']}» ({registro['permiso']})? "
+                                      f"Quien la use queda afuera. (s/N) ")
+                except EOFError:
+                    respuesta = ""
+                if respuesta.strip().casefold() not in _SI:
+                    print("No se borró nada.")
+                    return 1
+            claves.borrar(rutas.claves, registro["nombre"])
+            print(f"✗ {registro['nombre']} · la clave ya no sirve")
+        else:
+            lista = claves.leer(rutas.claves)
+            if not lista:
+                print("No hay claves. Creá una con `cassette claves nueva NOMBRE`; "
+                      "la maestra (MASTER_PASSWORD del relay) siempre funciona.")
+            for r in lista:
+                print(f"{r['nombre']:<24} {r['permiso']:<9} {r['creada'][:10]}")
+    except claves.ErrorClaves as e:
+        print(e, file=sys.stderr)
+        return 1
     return 0
 
 
@@ -580,6 +638,8 @@ def main(argv: list[str] | None = None) -> int:
         return _lan(args, cfg, rutas)
     if args.comando == "nube":
         return _nube(args, cfg, rutas)
+    if args.comando == "claves":
+        return _claves(args, cfg, rutas)
     if args.comando == "serve":
         from cassette_fm import servicio
         logging.basicConfig(level=logging.INFO, format="%(levelname)s %(name)s: %(message)s")
