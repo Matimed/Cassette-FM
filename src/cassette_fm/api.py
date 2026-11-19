@@ -1,5 +1,6 @@
 import json
 import logging
+from collections.abc import Callable
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
@@ -22,7 +23,9 @@ class _SolicitudInvalida(Exception):
 
 
 def crear_servidor(radio, host: str = "127.0.0.1", puerto: int = 7710,
-                   emisoras: Path | None = None) -> ThreadingHTTPServer:
+                   emisoras: Path | None = None,
+                   extra_estado: Callable[[], dict] | None = None) -> ThreadingHTTPServer:
+    """`extra_estado`: campos que se suman a `/estado` (p. ej. el puente a la nube)."""
     class Manejador(BaseHTTPRequestHandler):
         def log_message(self, *args):
             pass
@@ -59,7 +62,7 @@ def crear_servidor(radio, host: str = "127.0.0.1", puerto: int = 7710,
 
         def _get(self):
             if self.path == "/estado":
-                self._responder(200, radio.estado())
+                self._responder(200, radio.estado() | (extra_estado() if extra_estado is not None else {}))
             elif self.path == "/dj":
                 self._responder(200, radio.dj_estado())
             elif self.path == "/dj/modo":

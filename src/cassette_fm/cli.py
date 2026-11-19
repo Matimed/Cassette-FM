@@ -97,6 +97,9 @@ def _armar_parser() -> argparse.ArgumentParser:
     voces.add_argument("--json", action="store_true", help="en JSON (para el applet)")
     lan = sub.add_parser("lan", help="la radio por la red: dirección y clave para otra PC (o `regenerar` la clave)")
     lan.add_argument("accion", nargs="?", choices=["regenerar"])
+    nube = sub.add_parser("nube", help="el puente a un relay en la nube: estado de la conexión y clave para el relay "
+                                       "(o `regenerar` la clave)")
+    nube.add_argument("accion", nargs="?", choices=["regenerar"])
     spotify = sub.add_parser("spotify", help="Spotify como fuente de emisoras: sesión y estado")
     spotify_sub = spotify.add_subparsers(dest="accion", required=True)
     spotify_sub.add_parser("login", help="abre el navegador para darle permiso a cassette-fm en tu cuenta")
@@ -245,6 +248,34 @@ def _lan(args, cfg, rutas) -> int:
               "reiniciá el servicio.")
     direccion = lan_acceso.direccion_para_mostrar(cfg.lan.escuchar)
     print(f"Dirección: http://{direccion}:{cfg.lan.puerto}")
+    print(f"Clave:     {token}")
+    return 0
+
+
+def _nube(args, cfg, rutas) -> int:
+    from cassette_fm import lan_acceso
+    token = (lan_acceso.regenerar_token(rutas.nube_token) if args.accion == "regenerar"
+             else lan_acceso.leer_o_crear_token(rutas.nube_token))
+    if args.accion == "regenerar":
+        print("Clave nueva: el puente se reconecta con ella enseguida. Cargala también en el relay (la vieja ya no "
+              "sirve).")
+    if not cfg.nube.activo:
+        print("El puente a la nube está apagado: poné `activo = true` y `url = \"wss://…\"` (la del relay) en la "
+              "sección [nube] de config.toml y reiniciá el servicio.")
+    else:
+        print(f"Relay:     {cfg.nube.url}")
+        try:
+            nube = _llamar(cfg.puerto, "GET", "/estado").get("nube")
+        except (_ServicioCaido, _ErrorCli) as e:
+            print(f"Conexión:  ? ({e})")
+        else:
+            if nube is None:
+                print("Conexión:  el servicio corre sin el puente (reinicialo para que tome la config)")
+            elif nube.get("conectado"):
+                subiendo = ", ".join(str(k) for k in nube.get("subiendo") or [])
+                print(f"Conexión:  conectado · subiendo: {subiendo + ' kbps' if subiendo else 'nada (sin oyentes)'}")
+            else:
+                print("Conexión:  sin conexión con el relay (se reintenta solo; mirá journalctl --user -u cassette-fm)")
     print(f"Clave:     {token}")
     return 0
 
@@ -534,6 +565,8 @@ def main(argv: list[str] | None = None) -> int:
         return _spotify(args, cfg, rutas)
     if args.comando == "lan":
         return _lan(args, cfg, rutas)
+    if args.comando == "nube":
+        return _nube(args, cfg, rutas)
     if args.comando == "serve":
         from cassette_fm import servicio
         logging.basicConfig(level=logging.INFO, format="%(levelname)s %(name)s: %(message)s")

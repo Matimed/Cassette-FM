@@ -876,3 +876,52 @@ def test_cassette_lan_con_lan_apagado_avisa_como_activarlo_y_igual_muestra_los_d
     assert main(["lan"]) == 0
     salida = capsys.readouterr().out
     assert "[lan]" in salida and "activo = true" in salida and "http://" in salida
+
+
+from cassette_fm import cli  # noqa: E402
+
+
+def test_cassette_nube_muestra_url_conexion_y_clave(tmp_path, monkeypatch, capsys):
+    r = _rutas_lan(tmp_path, monkeypatch, '[nube]\nactivo = true\nurl = "wss://relay.ejemplo.com"\n')
+    monkeypatch.setattr(cli, "_llamar", lambda *a, **k: {"nube": {"conectado": True, "subiendo": [64, 96]}})
+    assert main(["nube"]) == 0
+    salida = capsys.readouterr().out
+    token = r.nube_token.read_text().strip()
+    assert "wss://relay.ejemplo.com" in salida and token in salida and "conectado" in salida and "64, 96" in salida
+
+
+def test_cassette_nube_desconectada_lo_dice(tmp_path, monkeypatch, capsys):
+    _rutas_lan(tmp_path, monkeypatch, '[nube]\nactivo = true\nurl = "wss://relay.ejemplo.com"\n')
+    monkeypatch.setattr(cli, "_llamar", lambda *a, **k: {"nube": {"conectado": False, "subiendo": []}})
+    assert main(["nube"]) == 0
+    assert "sin conexión" in capsys.readouterr().out
+
+
+def test_cassette_nube_regenerar(tmp_path, monkeypatch, capsys):
+    r = _rutas_lan(tmp_path, monkeypatch, '[nube]\nactivo = true\nurl = "wss://relay.ejemplo.com"\n')
+    monkeypatch.setattr(cli, "_llamar", lambda *a, **k: {})
+    main(["nube"])
+    viejo = r.nube_token.read_text().strip()
+    capsys.readouterr()
+    assert main(["nube", "regenerar"]) == 0
+    nuevo = r.nube_token.read_text().strip()
+    salida = capsys.readouterr().out
+    assert nuevo != viejo and nuevo in salida and "relay" in salida
+
+
+def test_cassette_nube_apagada_explica_como_prenderla(tmp_path, monkeypatch, capsys):
+    _rutas_lan(tmp_path, monkeypatch)
+    monkeypatch.setattr(cli, "_llamar", lambda *a, **k: {})
+    assert main(["nube"]) == 0
+    salida = capsys.readouterr().out
+    assert "[nube]" in salida and "activo = true" in salida and "url" in salida
+
+
+def test_cassette_nube_con_la_radio_parada(tmp_path, monkeypatch, capsys):
+    _rutas_lan(tmp_path, monkeypatch, '[nube]\nactivo = true\nurl = "wss://relay.ejemplo.com"\n')
+
+    def caido(*a, **k):
+        raise cli._ServicioCaido("cassette-fm no está corriendo")
+    monkeypatch.setattr(cli, "_llamar", caido)
+    assert main(["nube"]) == 0
+    assert "no está corriendo" in capsys.readouterr().out

@@ -310,3 +310,16 @@ def test_monitor_con_falla_de_pactl_503(servidor):
     servidor.radio.error = AudioRouterError("no se encontró `pactl`")
     codigo, resp = pedir(servidor, "POST", "/monitor", {"activo": True})
     assert codigo == 503 and "pactl" in resp["error"]
+
+
+def test_estado_agrega_lo_extra_solo_si_se_pide():
+    radio = RadioFalsa()
+    srv = crear_servidor(radio, "127.0.0.1", 0, extra_estado=lambda: {"nube": {"conectado": False, "subiendo": []}})
+    threading.Thread(target=lambda: srv.serve_forever(poll_interval=0.02), daemon=True).start()
+    srv.base = f"http://127.0.0.1:{srv.server_address[1]}"
+    try:
+        codigo, cuerpo = pedir(srv, "GET", "/estado")
+        assert codigo == 200 and cuerpo == radio.estado() | {"nube": {"conectado": False, "subiendo": []}}
+    finally:
+        srv.shutdown()
+        srv.server_close()

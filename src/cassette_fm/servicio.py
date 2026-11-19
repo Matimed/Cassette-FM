@@ -131,6 +131,47 @@ def iniciar_lan(config: Config, rutas: Rutas, radio, router, difusores: Difusore
     return cerrar
 
 
+def iniciar_nube(config: Config, rutas: Rutas, radio, router, difusores, crear_puente=None,
+                 intervalo_revision: float = 1.0) -> tuple[Callable[[], None], Callable[[], dict]] | None:
+    """Conecta con el relay de la nube (`[nube] activo`). Devuelve (cerrar, info), o None si no corresponde (apagado
+    o sin bus de audio). Una clave regenerada con `cassette nube regenerar` rige sin reiniciar."""
+    nube = config.nube
+    if not nube.activo:
+        return None
+    if router is None or difusores is None:
+        _log.error("[nube] necesita el bus de audio: el puente a la nube no arranca (poné `bus_audio = true`)")
+        return None
+    if crear_puente is None:
+        from cassette_fm.puente_nube import PuenteNube
+        crear_puente = PuenteNube
+    lan_acceso.leer_o_crear_token(rutas.nube_token)          # crea el archivo si falta
+    puente: list = []
+    token = lan_acceso.TokenVivo(rutas.nube_token, al_cambiar=lambda: puente[0].reconectar() if puente else None)
+    token()
+    puente.append(crear_puente(radio, difusores, nube.url, token))
+    puente[0].iniciar()
+    parar = threading.Event()
+
+    def revisar():
+        while not parar.wait(intervalo_revision):
+            try:
+                token()                       # una clave regenerada reconecta en un segundo
+            except Exception:
+                _log.exception("error al revisar la clave de la nube")
+
+    threading.Thread(target=revisar, daemon=True, name="nube-revision").start()
+
+    def cerrar() -> None:
+        parar.set()
+        puente[0].cerrar()
+
+    def info() -> dict:
+        datos = puente[0].info()
+        return {"conectado": datos["conectado"], "subiendo": datos["subiendo"]}
+
+    return cerrar, info
+
+
 def servir(config: Config, rutas: Rutas, avisar: Callable[[str, str], None] | None = None,
            parar: threading.Event | None = None, extra_args_mpv: Sequence[str] = (),
            bus_mpris: str | None = None) -> None:
@@ -200,21 +241,43 @@ def servir(config: Config, rutas: Rutas, avisar: Callable[[str, str], None] | No
     if planificador is not None:
         planificador.iniciar()
         _log.info("planificador del DJ activo (servicio en %s)", config.dj.url)
+    difusores = None
+    if router is not None and (config.lan.activo or config.nube.activo):
+        # un codificador por calidad, compartido por la LAN y la nube
+        difusores = Difusores(lambda: FUENTE_MONITOR if radio.encendida else FUENTE_ESTATICA,
+                              max_oyentes=config.lan.max_oyentes)
     try:
-        cerrar_lan = iniciar_lan(config, rutas, radio, router)
+        cerrar_lan = iniciar_lan(config, rutas, radio, router, difusores=difusores)
     except Exception:
         _log.exception("la radio por la red no arrancó; la radio local sigue andando")
         cerrar_lan = None
-    servidor = crear_servidor(radio, "127.0.0.1", config.puerto, emisoras=rutas.emisoras)
+    try:
+        nube = iniciar_nube(config, rutas, radio, router, difusores)
+    except Exception:
+        _log.exception("el puente a la nube no arrancó; la radio local sigue andando")
+        nube = None
+    parar_difusores = threading.Event()
+    if difusores is not None:
+        def revisar_difusores():
+            while not parar_difusores.wait(1.0):
+                try:
+                    difusores.revisar_fuente()
+                except Exception:
+                    _log.exception("error al revisar el stream de la red")
+
+        threading.Thread(target=revisar_difusores, daemon=True, name="difusores-revision").start()
+    servidor = crear_servidor(radio, "127.0.0.1", config.puerto, emisoras=rutas.emisoras,
+                              extra_estado=(lambda: {"nube": nube[1]()}) if nube is not None else None)
     hilo = threading.Thread(target=lambda: servidor.serve_forever(poll_interval=0.05), daemon=True)
     hilo.start()
     _log.info("escuchando en 127.0.0.1:%d", servidor.server_address[1])
     try:
         parar.wait()
     finally:
-        pasos = [servidor.shutdown, servidor.server_close, mpris.cerrar]
-        if cerrar_lan is not None:
-            pasos.insert(0, cerrar_lan)
+        pasos = [paso for paso in (nube[0] if nube is not None else None, cerrar_lan) if paso is not None]
+        if difusores is not None:               # después de la nube y la LAN, que son sus oyentes
+            pasos.append(lambda: (parar_difusores.set(), difusores.cerrar()))
+        pasos += [servidor.shutdown, servidor.server_close, mpris.cerrar]
         if planificador is not None:
             pasos.append(planificador.cerrar)     # antes de apagar la radio y de cerrar el locutor y mpv
         pasos.append(radio.apagar)

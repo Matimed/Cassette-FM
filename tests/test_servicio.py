@@ -764,3 +764,88 @@ def test_si_iniciar_lan_falla_el_servicio_local_sigue_andando(tmp_path, dir_cort
     finally:
         parar.set()
         hilo.join(3)
+
+
+# --- puente a la nube ---
+
+class PuenteFalso:
+    creados = []
+
+    def __init__(self, radio, difusores, url, token):
+        self.radio, self.difusores, self.url, self.token = radio, difusores, url, token
+        self.iniciado = self.cerrado = False
+        self.reconexiones = 0
+        PuenteFalso.creados.append(self)
+
+    def iniciar(self): self.iniciado = True
+    def cerrar(self): self.cerrado = True
+    def reconectar(self): self.reconexiones += 1
+    def info(self): return {"conectado": True, "desde": 1.0, "error": None, "subiendo": [96]}
+
+
+def _nube(url="wss://relay.ejemplo.com"):
+    from cassette_fm.config import ConfigNube
+    return Config(bus_audio=True, nube=ConfigNube(activo=True, url=url))
+
+
+def test_nube_apagada_no_arranca_nada(tmp_path):
+    PuenteFalso.creados.clear()
+    antes = set(threading.enumerate())
+    assert servicio.iniciar_nube(Config(), _rutas_lan(tmp_path), RadioDeLan(), object(), object(),
+                                 crear_puente=PuenteFalso) is None
+    assert PuenteFalso.creados == [] and set(threading.enumerate()) == antes
+    assert not _rutas_lan(tmp_path).nube_token.exists()
+
+
+def test_nube_sin_bus_no_arranca(tmp_path, caplog):
+    PuenteFalso.creados.clear()
+    assert servicio.iniciar_nube(_nube(), _rutas_lan(tmp_path), RadioDeLan(), None, None,
+                                 crear_puente=PuenteFalso) is None
+    assert PuenteFalso.creados == [] and "bus_audio" in caplog.text
+
+
+def test_nube_arranca_con_la_clave_y_cierra(tmp_path):
+    PuenteFalso.creados.clear()
+    rutas, difusores = _rutas_lan(tmp_path), object()
+    cerrar, info = servicio.iniciar_nube(_nube(), rutas, RadioDeLan(), object(), difusores, crear_puente=PuenteFalso)
+    p = PuenteFalso.creados[0]
+    assert p.iniciado and p.difusores is difusores and p.url == "wss://relay.ejemplo.com"
+    assert p.token() == rutas.nube_token.read_text().strip() and len(p.token()) >= 32
+    assert info() == {"conectado": True, "subiendo": [96]}
+    cerrar()
+    assert p.cerrado
+
+
+def test_nube_clave_regenerada_reconecta(tmp_path):
+    from cassette_fm import lan_acceso
+    PuenteFalso.creados.clear()
+    rutas = _rutas_lan(tmp_path)
+    cerrar, _ = servicio.iniciar_nube(_nube(), rutas, RadioDeLan(), object(), object(), crear_puente=PuenteFalso,
+                                      intervalo_revision=0.05)
+    try:
+        lan_acceso.regenerar_token(rutas.nube_token)
+        assert esperar(lambda: PuenteFalso.creados[0].reconexiones >= 1)
+        assert PuenteFalso.creados[0].token() == rutas.nube_token.read_text().strip()
+    finally:
+        cerrar()
+
+
+def test_si_iniciar_nube_falla_el_servicio_local_sigue_andando(tmp_path, dir_corto, crear_mp3, monkeypatch):
+    def explota(*a, **k):
+        raise PermissionError("no se puede escribir nube.token")
+
+    monkeypatch.setattr(servicio, "iniciar_nube", explota)
+    musica = tmp_path / "musica"
+    crear_mp3(musica / "A" / "a.mp3", 30, titulo="Tema A")
+    rutas = Rutas(config=tmp_path / "config.toml", estado=tmp_path / "st" / "estado.json",
+                  cache=tmp_path / "cache" / "d.json", runtime=dir_corto)
+    puerto, parar = puerto_libre(), threading.Event()
+    hilo = threading.Thread(target=servir, kwargs=dict(
+        config=Config(raiz_musica=musica, puerto=puerto, avisos=False), rutas=rutas, parar=parar,
+        extra_args_mpv=["--ao=null"]), daemon=True)
+    hilo.start()
+    try:
+        assert "nube" not in esperar_servicio(puerto)
+    finally:
+        parar.set()
+        hilo.join(3)
