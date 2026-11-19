@@ -10,7 +10,7 @@ requires-python = ">=3.12"
 dependencies = ["mutagen", "websockets>=12", "dbus-fast>=2"]
 
 [project.optional-dependencies]
-dev = ["pytest"]
+dev = ["pytest", "aiohttp==3.14.5"]
 dj = ["kokoro-onnx", "soundfile"]
 piper = ["piper-tts"]
 
@@ -22,4 +22,5 @@ cassette-dj = "cassette_fm.dj.cli:main"
 where = ["src"]
 
 [tool.pytest.ini_options]
-testpaths = ["tests"]
+testpaths = ["tests", "relay/tests"]
+pythonpath = ["relay", "tests"]
