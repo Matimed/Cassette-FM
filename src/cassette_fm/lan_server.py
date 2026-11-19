@@ -25,7 +25,7 @@ _MAX_LOGO_BYTES = 4 * 1024 * 1024
 _BUFFER_ENVIO_BYTES = 8192      # ~0,4 s de audio (el kernel lo duplica): con uno grande el atraso de un oyente se esconde ahí
 
 
-def _version_logo(ruta: Path) -> str | None:
+def version_logo(ruta: Path) -> str | None:
     """Cambia cuando cambia el archivo (tamaño y fecha); None si no es una imagen servible."""
     try:
         if ruta.suffix.lower() not in _TIPOS_IMAGEN or not ruta.is_file():
@@ -42,7 +42,7 @@ def iconos_publicos(rutas: Mapping[str, str]) -> dict[str, str]:
     """{emisora: "/icon/<id>?v=<versión>"} solo de los logos que existen; nunca rutas de esta PC."""
     publicos = {}
     for nombre, ruta in rutas.items():
-        version = _version_logo(Path(ruta))
+        version = version_logo(Path(ruta))
         if version:
             publicos[nombre] = f"/icon/{urllib.parse.quote(nombre, safe='')}?v={version}"
     return publicos
@@ -143,7 +143,7 @@ def crear_servidor_lan(radio, difusor, token, host: str, puerto: int) -> Threadi
             # el logo sale del mapa que tiene la propia radio, por nombre: el cliente nunca elige una ruta
             nombre = urllib.parse.unquote(self._ruta()[len("/icon/"):])
             ruta = (radio.estado().get("iconos") or {}).get(nombre)
-            version = _version_logo(Path(ruta)) if ruta else None
+            version = version_logo(Path(ruta)) if ruta else None
             if version is None:
                 return self._error(404, "esa emisora no tiene logo")
             ruta = Path(ruta)
