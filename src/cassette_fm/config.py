@@ -1,5 +1,6 @@
 import json
 import os
+import urllib.parse
 import re
 import tomllib
 from collections.abc import Mapping
@@ -75,6 +76,13 @@ class ConfigLan:
 
 
 @dataclass(frozen=True)
+class ConfigNube:
+    """Escuchar y manejar la radio desde cualquier lado a través de un relay (puente_nube.py): apagado por defecto."""
+    activo: bool = False
+    url: str | None = None      # base del relay: wss://host[:puerto] (ws:// solo contra localhost)
+
+
+@dataclass(frozen=True)
 class Config:
     raiz_musica: Path = Path.home() / "Música"
     puerto: int = 7710
@@ -86,6 +94,7 @@ class Config:
     estaciones_dj: Mapping[str, ConfigDJ] = field(default_factory=dict)   # overrides ya fusionados
     spotify: ConfigSpotify = ConfigSpotify()
     lan: ConfigLan = ConfigLan()
+    nube: ConfigNube = ConfigNube()
 
 
 def configuracion_dj(config: Config, estacion: str) -> ConfigDJ:
@@ -146,6 +155,10 @@ class Rutas:
         return self.config.with_name("lan.token")
 
     @property
+    def nube_token(self) -> Path:
+        return self.config.with_name("nube.token")
+
+    @property
     def planificador(self) -> Path:
         return self.estado.parent / "planificador.json"
 
@@ -181,6 +194,7 @@ def cargar_config(archivo: Path) -> Config:
     tabla_dj = datos.pop("dj", None)
     spotify = _leer_spotify(archivo, datos.pop("spotify", None))
     lan = _leer_lan(archivo, datos.pop("lan", None))
+    nube = _leer_nube(archivo, datos.pop("nube", None))
     conocidas = {"raiz_musica", "puerto", "avisos", "normalizar", "bus_audio", "ajuste_volumen_db"}
     datos = {k: v for k, v in datos.items() if k in conocidas}
     if "ajuste_volumen_db" in datos:
@@ -197,7 +211,7 @@ def cargar_config(archivo: Path) -> Config:
     if "raiz_musica" in datos:
         datos["raiz_musica"] = Path(datos["raiz_musica"]).expanduser()
     dj, por_estacion = _leer_dj(archivo, tabla_dj)
-    return Config(**datos, dj=dj, estaciones_dj=por_estacion, spotify=spotify, lan=lan)
+    return Config(**datos, dj=dj, estaciones_dj=por_estacion, spotify=spotify, lan=lan, nube=nube)
 
 
 def _leer_lan(archivo: Path, tabla) -> ConfigLan:
@@ -222,6 +236,43 @@ def _leer_lan(archivo: Path, tabla) -> ConfigLan:
             raise ErrorConfig(f"{archivo}: 'lan.escuchar' no puede quedar vacío (\"auto\" o una IP)")
         campos["escuchar"] = valor
     return ConfigLan(**campos)
+
+
+_HOSTS_LOCALES = ("127.0.0.1", "localhost", "::1")
+
+
+def _leer_nube(archivo: Path, tabla) -> ConfigNube:
+    if tabla is None:
+        return ConfigNube()
+    if not isinstance(tabla, dict):
+        raise ErrorConfig(f"{archivo}: 'nube' tiene que ser una tabla")
+    campos = {}
+    if "activo" in tabla:
+        if not isinstance(tabla["activo"], bool):
+            raise ErrorConfig(f"{archivo}: 'nube.activo' tiene que ser true o false")
+        campos["activo"] = tabla["activo"]
+    if "url" in tabla:
+        campos["url"] = _url_relay(archivo, _texto(archivo, "nube.url", tabla["url"]).strip())
+    if campos.get("activo") and not campos.get("url"):
+        raise ErrorConfig(f"{archivo}: 'nube.url' hace falta con la nube activa (p. ej. \"wss://relay.ejemplo.com\")")
+    return ConfigNube(**campos)
+
+
+def _url_relay(archivo: Path, valor: str) -> str:
+    """wss://host[:puerto], o ws:// contra esta misma PC: la clave no viaja en claro por internet."""
+    error = ErrorConfig(f"{archivo}: 'nube.url' tiene que ser wss://host[:puerto] (sin ruta, consulta ni usuario; "
+                        f"ws:// solo contra localhost)")
+    try:
+        partes = urllib.parse.urlsplit(valor)
+        partes.port
+    except ValueError:
+        raise error from None
+    if (partes.scheme not in ("wss", "ws") or not partes.hostname or partes.path not in ("", "/") or partes.query
+            or partes.fragment or partes.username or partes.password):
+        raise error
+    if partes.scheme == "ws" and partes.hostname not in _HOSTS_LOCALES:
+        raise error
+    return f"{partes.scheme}://{partes.netloc}"
 
 
 def _leer_spotify(archivo: Path, tabla) -> "ConfigSpotify":

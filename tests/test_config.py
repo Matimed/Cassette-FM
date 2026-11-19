@@ -401,3 +401,53 @@ def test_la_clave_de_la_lan_vive_junto_a_la_config(tmp_path):
     r = Rutas(config=tmp_path / "c" / "config.toml", estado=tmp_path / "e.json", cache=tmp_path / "d.json",
               runtime=tmp_path)
     assert r.lan_token == tmp_path / "c" / "lan.token"
+
+
+# --- [nube] ---
+
+from cassette_fm.config import ConfigNube  # noqa: E402
+
+
+def test_nube_por_defecto_apagada(tmp_path):
+    archivo = tmp_path / "config.toml"
+    archivo.write_text("")
+    assert cargar_config(archivo).nube == ConfigNube(activo=False, url=None)
+
+
+@pytest.mark.parametrize("url, esperada", [("wss://relay.ejemplo.com", "wss://relay.ejemplo.com"),
+                                           ("wss://relay.ejemplo.com:8443/", "wss://relay.ejemplo.com:8443"),
+                                           ("ws://127.0.0.1:9000", "ws://127.0.0.1:9000"),
+                                           ("ws://localhost:9000", "ws://localhost:9000")])
+def test_nube_url_valida(tmp_path, url, esperada):
+    archivo = tmp_path / "config.toml"
+    archivo.write_text(f'[nube]\nactivo = true\nurl = "{url}"\n')
+    assert cargar_config(archivo).nube == ConfigNube(activo=True, url=esperada)
+
+
+@pytest.mark.parametrize("valor", ['"https://x.com"', '"ws://relay.ejemplo.com"', '"wss://x.com/ruta"',
+                                   '"wss://x.com?a=1"', '"wss://user:pw@x.com"', '""', "3", '"wss://"'])
+def test_nube_url_invalida(tmp_path, valor):
+    archivo = tmp_path / "config.toml"
+    archivo.write_text(f"[nube]\nurl = {valor}\n")
+    with pytest.raises(ErrorConfig, match="nube.url"):
+        cargar_config(archivo)
+
+
+def test_nube_activa_sin_url_es_error(tmp_path):
+    archivo = tmp_path / "config.toml"
+    archivo.write_text("[nube]\nactivo = true\n")
+    with pytest.raises(ErrorConfig, match="nube.url"):
+        cargar_config(archivo)
+
+
+def test_nube_activo_no_booleano(tmp_path):
+    archivo = tmp_path / "config.toml"
+    archivo.write_text('[nube]\nactivo = "si"\n')
+    with pytest.raises(ErrorConfig, match="nube.activo"):
+        cargar_config(archivo)
+
+
+def test_la_clave_de_la_nube_vive_junto_a_la_de_la_lan(tmp_path):
+    r = Rutas(config=tmp_path / "c" / "config.toml", estado=tmp_path / "e.json", cache=tmp_path / "d.json",
+              runtime=tmp_path)
+    assert r.nube_token == tmp_path / "c" / "nube.token"
