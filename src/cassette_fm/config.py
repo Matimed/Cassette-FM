@@ -159,6 +159,10 @@ class Rutas:
         return self.config.with_name("nube.token")
 
     @property
+    def claves(self) -> Path:
+        return self.config.with_name("claves.json")
+
+    @property
     def planificador(self) -> Path:
         return self.estado.parent / "planificador.json"
 
