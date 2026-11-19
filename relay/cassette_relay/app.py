@@ -4,6 +4,7 @@ from pathlib import Path
 from aiohttp import web
 
 from .acceso import Acceso
+from .api import Api
 from .casa import MAX_LOGO, Casa
 from .config import Ajustes
 from .oyentes import Oyentes
@@ -39,4 +40,13 @@ def crear_app(ajustes: Ajustes, web_dir: Path | None = None) -> web.Application:
     app.router.add_get("/casa/control", casa.control)
     app.router.add_get("/casa/audio", casa.audio)
     app.router.add_put("/casa/icono/{nombre:.+}", casa.subir_icono)
+    Api(ajustes, casa, oyentes, app[ACCESO]).rutas(app)
+
+    carpeta = web_dir or WEB_POR_DEFECTO
+
+    async def pagina(request: web.Request) -> web.FileResponse:
+        return web.FileResponse(carpeta / "index.html", headers={"Cache-Control": "no-cache"})
+    app.router.add_get("/", pagina)
+    if carpeta.is_dir():
+        app.router.add_static("/web", carpeta)
     return app

@@ -1,0 +1,160 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>cassette-fm</title>
+<style>
+  :root { color-scheme: light dark; --borde: #8884; --acento: #d9822b; }
+  body { font-family: system-ui, sans-serif; margin: 0 auto; padding: 16px; max-width: 720px; }
+  h1 { font-size: 1.4rem; margin: 0 0 12px; }
+  form, .fila { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; margin: 8px 0; }
+  input, select, button { font: inherit; padding: 8px 12px; }
+  #emisoras { display: grid; grid-template-columns: repeat(auto-fill, minmax(96px, 1fr)); gap: 8px; margin-top: 12px; }
+  #emisoras button { display: flex; flex-direction: column; align-items: center; gap: 4px; border: 1px solid var(--borde);
+    border-radius: 8px; background: none; cursor: pointer; }
+  #emisoras button.actual { border-color: var(--acento); outline: 2px solid var(--acento); }
+  #emisoras img { width: 64px; height: 64px; object-fit: contain; }
+  #ahora { min-height: 1.5em; }
+  .error { color: #c33; }
+  [hidden] { display: none !important; }
+</style>
+</head>
+<body>
+<h1>cassette-fm</h1>
+
+<form id="entrar" hidden>
+  <input id="clave" type="password" placeholder="Clave" autocomplete="current-password" required>
+  <button>Entrar</button>
+  <span id="error-entrar" class="error"></span>
+</form>
+
+<main id="radio" hidden>
+  <p id="ahora">…</p>
+  <div class="fila">
+    <button id="tocar">▶ Escuchar</button>
+    <label>Calidad
+      <select id="calidad">
+        <option value="64">64 kbps (datos móviles)</option>
+        <option value="96" selected>96 kbps</option>
+        <option value="160">160 kbps</option>
+      </select>
+    </label>
+    <button id="anterior">⏮</button>
+    <button id="siguiente">⏭</button>
+    <button id="salir">Salir</button>
+  </div>
+  <audio id="audio" preload="none"></audio>
+  <span id="error" class="error"></span>
+  <div id="emisoras"></div>
+</main>
+
+<script>
+const $ = (id) => document.getElementById(id);
+const audio = $("audio");
+let escuchando = false;
+let firmaEmisoras = "";
+
+function abrirAudio() {
+  audio.src = "/api/escuchar?calidad=" + $("calidad").value + "&t=" + Date.now();
+  audio.play().catch(() => {});
+}
+
+function cerrarAudio() {
+  audio.pause();
+  audio.removeAttribute("src");
+  audio.load();
+}
+
+// Render corta un pedido a los 100 min y los datos móviles se caen: mientras se quiera escuchar, se reabre solo.
+function reabrir() { if (escuchando) setTimeout(() => { if (escuchando) abrirAudio(); }, 1000); }
+audio.addEventListener("error", reabrir);
+audio.addEventListener("ended", reabrir);
+
+$("tocar").onclick = () => {
+  escuchando = !escuchando;
+  $("tocar").textContent = escuchando ? "⏸ Parar" : "▶ Escuchar";
+  escuchando ? abrirAudio() : cerrarAudio();
+};
+$("calidad").onchange = () => { if (escuchando) abrirAudio(); };
+
+async function api(metodo, ruta, cuerpo) {
+  const opciones = { method: metodo, headers: {} };
+  if (metodo === "POST") {
+    opciones.headers["Content-Type"] = "application/json";
+    opciones.body = JSON.stringify(cuerpo || {});
+  }
+  const r = await fetch(ruta, opciones);
+  if (r.status === 401) { mostrar(false); throw new Error("sin acceso"); }
+  return r;
+}
+
+async function orden(ruta, cuerpo) {
+  $("error").textContent = "";
+  const r = await api("POST", ruta, cuerpo);
+  if (!r.ok) { $("error").textContent = (await r.json()).error || "no se pudo"; return; }
+  if (escuchando) abrirAudio();       // entrar en la emisora nueva sin arrastrar lo que había en el buffer
+  actualizar();
+}
+$("anterior").onclick = () => orden("/api/anterior");
+$("siguiente").onclick = () => orden("/api/siguiente");
+$("salir").onclick = async () => { await api("POST", "/api/salir"); escuchando = false; cerrarAudio(); mostrar(false); };
+
+function mostrar(adentro) {
+  $("entrar").hidden = adentro;
+  $("radio").hidden = !adentro;
+}
+
+$("entrar").onsubmit = async (e) => {
+  e.preventDefault();
+  $("error-entrar").textContent = "";
+  const r = await fetch("/api/entrar", { method: "POST", headers: { "Content-Type": "application/json" },
+                                         body: JSON.stringify({ clave: $("clave").value }) });
+  if (r.ok) { $("clave").value = ""; mostrar(true); actualizar(); }
+  else $("error-entrar").textContent = (await r.json()).error || "no se pudo entrar";
+};
+
+function pintarEmisoras(radio) {
+  const nombres = radio.estaciones || [];
+  const iconos = radio.iconos || {};
+  const firma = JSON.stringify([nombres, iconos]);
+  if (firma !== firmaEmisoras) {
+    firmaEmisoras = firma;
+    const lista = $("emisoras");
+    lista.replaceChildren();
+    for (const nombre of nombres) {
+      const b = document.createElement("button");
+      b.dataset.nombre = nombre;
+      if (iconos[nombre]) {
+        const img = document.createElement("img");
+        img.alt = "";
+        img.src = "/api/icono/" + encodeURIComponent(nombre) + "?v=" + encodeURIComponent(iconos[nombre]);
+        img.onerror = () => img.remove();
+        b.append(img);
+      }
+      b.append(nombre);
+      b.onclick = () => orden("/api/sintonizar", { estacion: nombre });
+      lista.append(b);
+    }
+  }
+  for (const b of $("emisoras").children) b.classList.toggle("actual", b.dataset.nombre === radio.estacion);
+}
+
+async function actualizar() {
+  let e;
+  try { e = await (await api("GET", "/api/estado")).json(); } catch { return; }
+  mostrar(true);
+  const radio = e.radio;
+  if (!e.en_linea) {
+    $("ahora").textContent = "La radio está fuera de línea" + (radio ? " (lo último: " + radio.estacion + ")" : "");
+  } else if (radio) {
+    $("ahora").textContent = radio.encendida ? radio.estacion + " — " + (radio.pista || "") : "Radio apagada (estática)";
+  }
+  if (radio) pintarEmisoras(radio);
+}
+
+actualizar();
+setInterval(() => { if (!$("radio").hidden) actualizar(); }, 3000);
+</script>
+</body>
+</html>
