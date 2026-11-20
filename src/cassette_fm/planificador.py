@@ -17,7 +17,8 @@ from cassette_fm.biblioteca import Estacion, Pedido, Pista
 from cassette_fm.cliente_dj import ClienteDJ, ErrorDJ
 from cassette_fm.config import ConfigDJ, Frecuencia
 from cassette_fm.intervenciones import Intervencion, RegistroIntervenciones
-from cassette_fm.planificacion import Hueco, Ultima, armar_pedido, elegir_hueco
+from cassette_fm.planificacion import Hueco, Ultima, armar_pedido, elegir_hueco, inicio_de_la_voz, sortear_posicion
+from cassette_fm.posiciones import POSICIONES
 
 _log = logging.getLogger("cassette_fm")
 
@@ -38,6 +39,9 @@ class _Trabajo:
     estado: str = "enviado"      # lo último que contó el servicio
     peticion: str | None = None  # "antes"/"despues": anuncia una petición (no se cancela si cambia la agenda)
     pedido: str | None = None    # clave del tema pedido que anuncia
+    pista_origen: str | None = None      # clave del tema que termina en el corte (`inicio_tema` es el corte)
+    duracion_origen: float | None = None  # su duración: acota cuánto antes del corte puede empezar la voz
+    posicion: str = "inicio"     # dónde cae la voz respecto del corte: inicio | entre | final
 
 
 @dataclass(frozen=True)
@@ -50,6 +54,7 @@ class _Peticion:
     anterior: Pista | None
     pedido: str                  # clave del tema pedido
     seguidas: bool = False       # un "antes" cuyo anterior también es un pedido: el DJ cierra uno y abre el otro
+    origen: Pista | None = None  # el tema que termina en el corte (aunque no tenga nombre, a diferencia de `anterior`)
 
 
 def _firma(estacion: Estacion) -> str:
@@ -174,7 +179,7 @@ class Planificador:
             seguidas = nombrado is not None and any(p.pista.clave == anterior.clave and p.inicio <= ahora
                                                     for p in estacion.pedidos)
             self._pendientes.append(_Peticion(estacion.nombre, "antes", pista, fin_actual, nombrado, pista.clave,
-                                              seguidas))
+                                              seguidas, origen=anterior))
 
     def al_desencolado(self, clave: str) -> None:
         """Sacaron de la cola el encolado ya avisado sin que empezara: su "antes" ya no va a sonar."""
@@ -208,7 +213,7 @@ class Planificador:
             for i in self._registro.todas():
                 if i.estacion != estacion.nombre or i.peticion != "antes" or i.pista_destino != clave:
                     continue
-                if abs(i.inicio - cfg.retraso_voz_segundos - nuevo.inicio) <= cfg.tolerancia_desfase_segundos:
+                if abs(i.corte_estimado(cfg.retraso_voz_segundos) - nuevo.inicio) <= cfg.tolerancia_desfase_segundos:
                     return                     # el "antes" ya está reservado: va a sonar
                 # empezó lejos de donde se esperaba (salteado el tema actual): el "antes" no va a sonar
                 self._registro.quitar(i)
@@ -221,7 +226,8 @@ class Planificador:
                 return
             siguiente, inicio = next(transiciones(estacion, nuevo.inicio + 0.001))
             if _con_nombre(siguiente):
-                self._pendientes.append(_Peticion(estacion.nombre, "despues", siguiente, inicio, nuevo.pista, clave))
+                self._pendientes.append(_Peticion(estacion.nombre, "despues", siguiente, inicio, nuevo.pista, clave,
+                                                  origen=nuevo.pista))
 
     def _antes_reservado(self, estacion: str, clave: str, inicio_tema: float, tolerancia: float) -> bool:
         """Con el lock tomado: ¿ya hay un "antes" de ese pedido en ese borde, reservado o en preparación? (tras
@@ -229,7 +235,7 @@ class Planificador:
         retraso = self._configuracion(estacion).retraso_voz_segundos
         t = self._trabajo
         return (any(i.estacion == estacion and i.peticion == "antes" and i.pista_destino == clave
-                    and abs(i.inicio - retraso - inicio_tema) <= tolerancia for i in self._registro.todas())
+                    and abs(i.corte_estimado(retraso) - inicio_tema) <= tolerancia for i in self._registro.todas())
                 or (t is not None and t.estacion == estacion and t.peticion == "antes" and t.pista_destino == clave))
 
     def _olvidar_anuncios(self, modo: str, cual: Callable[[str, str, float], bool]) -> None:
@@ -239,7 +245,7 @@ class Planificador:
                             if not (p.modo == modo and cual(p.estacion, p.pista.clave, p.inicio_tema))]
         for i in self._registro.todas():
             if i.peticion == modo and cual(i.estacion, i.pista_destino,
-                                           i.inicio - self._configuracion(i.estacion).retraso_voz_segundos):
+                                           i.corte_estimado(self._configuracion(i.estacion).retraso_voz_segundos)):
                 self._registro.quitar(i)
         t = self._trabajo
         if t is not None and t.peticion == modo and cual(t.estacion, t.pista_destino, t.inicio_tema):
@@ -277,8 +283,7 @@ class Planificador:
             except ErrorDJ as e:
                 raise ValueError(str(e)) from None
             with self._lock:
-                self._trabajo = _Trabajo(id_, estacion.nombre, hueco.inicio_tema, hueco.inicio_voz,
-                                         hueco.pista.clave, ahora, cfg.duracion_maxima_segundos)
+                self._trabajo = self._trabajo_de(id_, estacion.nombre, hueco, ahora, cfg)
                 self._guardar()
                 self._no_antes_de = 0.0       # un pedido manual no hereda esperas de caídas anteriores
                 self._espera_trabajo = 0.0
@@ -477,19 +482,22 @@ class Planificador:
             if self._trabajo is not t:       # mientras tanto cambió la agenda de la estación: el hueco ya no vale
                 audio.unlink(missing_ok=True)
                 return
+            inicio = inicio_de_la_voz(t.posicion, t.inicio_tema, float(duracion), cfg, self._azar, t.duracion_origen)
+            if t.posicion != "inicio" and inicio < self._reloj() + 1.0:
+                # un texto pensado para sonar antes del corte no sirve después
+                audio.unlink(missing_ok=True)
+                _log.info("el clip %s llegó tarde para una voz que empieza antes del corte: se descarta", t.id)
+                return self._abandonar(cfg)
             try:
-                intervencion = Intervencion(t.id, t.estacion, t.inicio_voz, float(duracion), audio,
-                                            str(estado.get("texto") or ""), t.pista_destino, t.peticion)
+                intervencion = Intervencion(t.id, t.estacion, inicio, float(duracion), audio,
+                                            str(estado.get("texto") or ""), t.pista_destino, t.peticion,
+                                            corte=t.inicio_tema, pista_origen=t.pista_origen, posicion=t.posicion)
                 self._locutor.registrar(intervencion)
             except ValueError as e:
                 audio.unlink(missing_ok=True)
                 _log.warning("no se pudo reservar la intervención %s de %r: %s", t.id, t.estacion, e)
-                self._trabajo = None
-                self._guardar()
-                self._espera_trabajo = self._siguiente(self._espera_trabajo, cfg)
-                self._no_antes_de = max(self._no_antes_de, self._reloj() + self._espera_trabajo)
-                return
-            self._ultima[t.estacion] = Ultima(t.inicio_tema, t.inicio_voz + float(duracion))
+                return self._abandonar(cfg)
+            self._ultima[t.estacion] = Ultima(t.inicio_tema, inicio + float(duracion))
             if t.peticion:
                 self._ultima_peticion.add(t.estacion)
             else:
@@ -500,6 +508,20 @@ class Planificador:
             self._espera_trabajo = 0.0
             self._trabajo = None
             self._guardar()
+
+    @staticmethod
+    def _trabajo_de(id_: str, estacion: str, hueco: Hueco, ahora: float, cfg: ConfigDJ, **extra) -> _Trabajo:
+        origen = hueco.origen
+        return _Trabajo(id_, estacion, hueco.inicio_tema, hueco.inicio_voz, hueco.pista.clave, ahora,
+                        cfg.duracion_maxima_segundos, pista_origen=origen.clave if origen else None,
+                        duracion_origen=origen.duracion if origen else None, posicion=hueco.posicion, **extra)
+
+    def _abandonar(self, cfg: ConfigDJ) -> None:
+        """Con el lock tomado: el trabajo no se pudo reservar; se suelta y no se vuelve a pedir enseguida."""
+        self._trabajo = None
+        self._guardar()
+        self._espera_trabajo = self._siguiente(self._espera_trabajo, cfg)
+        self._no_antes_de = max(self._no_antes_de, self._reloj() + self._espera_trabajo)
 
     def _iniciar(self) -> None:
         with self._lock:
@@ -528,8 +550,7 @@ class Planificador:
             if self._epoca.get(estacion.nombre, 0) != epoca:     # la agenda cambió durante el POST
                 self._a_cancelar.append(id_)
                 return
-            self._trabajo = _Trabajo(id_, estacion.nombre, hueco.inicio_tema, hueco.inicio_voz,
-                                     hueco.pista.clave, ahora, cfg.duracion_maxima_segundos)
+            self._trabajo = self._trabajo_de(id_, estacion.nombre, hueco, ahora, cfg)
             self._guardar()
 
     def _iniciar_peticion(self, p: _Peticion) -> None:
@@ -549,8 +570,12 @@ class Planificador:
         self._cancelaciones_pendientes()
         id_ = uuid.uuid4().hex
         with self._lock:
-            pedido = armar_pedido(id_, p.estacion, Hueco(p.pista, p.inicio_tema, inicio_voz, p.anterior), cfg,
-                                  self._recientes.get(p.estacion, []), peticion="seguidas" if p.seguidas else p.modo)
+            # un "antes" que empieza antes del corte necesita tiempo de generar el clip: con poco margen, "inicio"
+            margen = p.inicio_tema - ahora if p.modo == "antes" else None
+            hueco = Hueco(p.pista, p.inicio_tema, inicio_voz, p.anterior, sortear_posicion(cfg, self._azar, margen),
+                          p.origen)
+            pedido = armar_pedido(id_, p.estacion, hueco, cfg, self._recientes.get(p.estacion, []),
+                                  peticion="seguidas" if p.seguidas else p.modo)
         try:
             devuelto = self._cliente.enviar(pedido)
             if devuelto != id_:
@@ -563,8 +588,7 @@ class Planificador:
         with self._lock:
             if self._trabajo is not None and not self._trabajo.peticion:
                 self._a_cancelar.append(self._trabajo.id)    # el normal de otra emisora: si no, queda en el servicio
-            self._trabajo = _Trabajo(id_, p.estacion, p.inicio_tema, inicio_voz, p.pista.clave, ahora,
-                                     cfg.duracion_maxima_segundos, peticion=p.modo, pedido=p.pedido)
+            self._trabajo = self._trabajo_de(id_, p.estacion, hueco, ahora, cfg, peticion=p.modo, pedido=p.pedido)
             self._guardar()
 
     # --- fallos y esperas ---
@@ -644,7 +668,11 @@ class Planificador:
                              inicio_voz=float(d["inicio_voz"]), pista_destino=str(d["pista_destino"]),
                              enviado_en=float(d["enviado_en"]), duracion_maxima=float(d["duracion_maxima"]),
                              peticion=d.get("peticion") if d.get("peticion") in ("antes", "despues") else None,
-                             pedido=str(d["pedido"]) if d.get("pedido") else None)
+                             pedido=str(d["pedido"]) if d.get("pedido") else None,
+                             pista_origen=str(d["pista_origen"]) if d.get("pista_origen") else None,
+                             duracion_origen=(float(d["duracion_origen"])
+                                              if d.get("duracion_origen") is not None else None),
+                             posicion=d["posicion"] if d.get("posicion") in POSICIONES else "inicio")
                 if _ID.fullmatch(t.id):
                     self._trabajo = t
         except (KeyError, TypeError, ValueError):

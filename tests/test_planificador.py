@@ -99,7 +99,7 @@ class LocutorFalso:
 
 CFG = ConfigDJ(margen_minutos=0.0, frecuencia=Frecuencia("temas", 1, 1), retraso_voz_segundos=1.0,
                espera_reintento_segundos=5.0, espera_reintento_maxima_segundos=40.0,
-               espera_trabajo_maxima_segundos=600.0)
+               espera_trabajo_maxima_segundos=600.0, posicion_voz="inicio")
 
 
 @pytest.fixture
@@ -1077,3 +1077,157 @@ def test_saltear_hasta_el_pedido_descarta_el_antes_y_pide_el_despues(con_peticio
     m.p.paso()
     assert antes["id"] not in [i.id for i in m.registro.todas()]
     assert [p["peticion"] for p in _peticiones(m)] == ["antes", "despues"]
+
+
+# --- la voz alrededor del corte (posiciones inicio, entre y final) ---
+
+def _origen_y_corte(est, ahora=T0):
+    """El tema que suena en `ahora` (el origen del primer corte) y el epoch de ese corte."""
+    origen, _ = next(secuencia(est, ahora))
+    return origen, next(iter(transiciones(est, ahora)))[1]
+
+
+def _registrada_con(m, posicion, duracion=3.0, nombre="E"):
+    m.cfgs[nombre] = replace(CFG, posicion_voz=posicion)
+    est, pedido = sintonizar_y_pedir(m, nombre)
+    m.listo(pedido["id"], duracion=duracion)
+    m.p.paso()
+    return est, pedido
+
+
+def test_el_pedido_y_el_trabajo_guardado_llevan_posicion_origen_y_su_duracion(mundo):
+    mundo.cfgs["E"] = replace(CFG, posicion_voz="final")
+    est, pedido = sintonizar_y_pedir(mundo)
+    origen, _ = _origen_y_corte(est)
+    assert pedido["posicion"] == "final"
+    guardado = json.loads(mundo.archivo.read_text())["en_curso"]
+    assert (guardado["posicion"], guardado["pista_origen"], guardado["duracion_origen"]) == (
+        "final", origen.clave, origen.duracion)
+    mundo.p = mundo.nuevo()                                  # se reinicia la radio: el trabajo se retoma
+    mundo.listo(pedido["id"])
+    mundo.p.paso()
+    (i,) = mundo.locutor.registradas
+    assert (i.posicion, i.pista_origen) == ("final", origen.clave)
+
+
+def test_final_reserva_la_voz_terminando_poco_antes_del_corte(mundo):
+    est, _ = _registrada_con(mundo, "final", duracion=3.0)
+    (i,) = mundo.locutor.registradas
+    origen, corte = _origen_y_corte(est)
+    assert i.corte == pytest.approx(corte) and i.posicion == "final" and i.pista_origen == origen.clave
+    assert corte - 5.0 - 1e-6 <= i.inicio <= corte - 3.0 + 1e-6          # termina entre 0 y 2 s antes del corte
+    assert json.loads(mundo.archivo.read_text())["ultima"]["E"] == pytest.approx([corte, i.inicio + 3.0])
+
+
+def test_entre_reserva_la_voz_con_el_corte_dentro_del_clip(mundo):
+    est, _ = _registrada_con(mundo, "entre", duracion=10.0)
+    (i,) = mundo.locutor.registradas
+    _, corte = _origen_y_corte(est)
+    assert corte - 7.0 - 1e-6 <= i.inicio <= corte - 3.0 + 1e-6 and i.posicion == "entre"
+
+
+def test_inicio_reserva_la_voz_despues_del_corte_como_siempre(mundo):
+    est, _ = _registrada_con(mundo, "inicio", duracion=3.0)
+    (i,) = mundo.locutor.registradas
+    _, corte = _origen_y_corte(est)
+    assert i.inicio == pytest.approx(corte + CFG.retraso_voz_segundos) and i.posicion == "inicio"
+    assert i.corte == pytest.approx(corte)
+
+
+@pytest.mark.parametrize("posicion", ["entre", "final"])
+def test_una_voz_que_empieza_antes_del_corte_y_llega_tarde_se_descarta(mundo, posicion, caplog):
+    mundo.cfgs["E"] = replace(CFG, posicion_voz=posicion)
+    est, pedido = sintonizar_y_pedir(mundo)
+    _, corte = _origen_y_corte(est)
+    mundo.listo(pedido["id"], duracion=3.0)
+    mundo.reloj.t = corte - 1.0                              # el inicio calculado (corte - 3 o antes) ya pasó
+    with caplog.at_level(logging.INFO, logger="cassette_fm"):
+        mundo.p.paso()
+    assert mundo.locutor.registradas == []
+    assert not (mundo.clips / f"{pedido['id']}.wav").exists()
+    assert mundo.p.estado()["en_curso"] is None
+    assert json.loads(mundo.archivo.read_text())["ultima"] == {}
+
+
+def test_inicio_que_llega_con_el_inicio_pasado_sigue_registrando_como_hoy(mundo):
+    est, pedido = sintonizar_y_pedir(mundo)
+    _, corte = _origen_y_corte(est)
+    mundo.listo(pedido["id"], duracion=3.0)
+    mundo.reloj.t = corte + 2.0                              # la voz de "inicio" arrancó en corte + 1
+    mundo.p.paso()
+    assert [i.id for i in mundo.locutor.registradas] == [pedido["id"]]
+
+
+def test_un_estado_guardado_sin_los_campos_nuevos_se_retoma_como_inicio(mundo):
+    _, pedido = sintonizar_y_pedir(mundo)
+    datos = json.loads(mundo.archivo.read_text())
+    for campo in ("posicion", "pista_origen", "duracion_origen"):
+        datos["en_curso"].pop(campo, None)
+    mundo.archivo.write_text(json.dumps(datos))
+    mundo.p = mundo.nuevo()
+    mundo.listo(pedido["id"])
+    mundo.p.paso()
+    (i,) = mundo.locutor.registradas
+    assert i.posicion == "inicio" and i.pista_origen is None
+    datos["en_curso"]["posicion"] = "medio"                  # una posición inválida también cae en "inicio"
+    mundo.archivo.write_text(json.dumps(datos))
+    assert mundo.nuevo().estado()["en_curso"] is not None
+
+
+def test_peticion_antes_con_tiempo_usa_la_posicion_configurada(con_peticiones):
+    m = con_peticiones
+    m.cfgs["E"] = replace(CFG, posicion_voz="final")
+    est = estacion()
+    m.p.al_sintonizar(est)
+    m.p.al_encolado(PEDIDO, est, _fin_del_tema(est, T0))     # quedan 200 s: sobra tiempo para generar
+    m.p.paso()
+    [p] = _peticiones(m)
+    assert p["peticion"] == "antes" and p["posicion"] == "final"
+
+
+def test_peticion_antes_sin_tiempo_de_generar_un_clip_largo_cae_en_inicio(con_peticiones):
+    m = con_peticiones
+    m.cfgs["E"] = replace(CFG, posicion_voz="final")
+    est = estacion()
+    m.p.al_sintonizar(est)
+    fin = _fin_del_tema(est, T0)
+    m.reloj.t = fin - 40          # más que el margen de la petición (30) pero menos que margen + duración máxima (45)
+    m.p.al_encolado(PEDIDO, est, fin)
+    m.p.paso()
+    [p] = _peticiones(m)
+    assert p["peticion"] == "antes" and p["posicion"] == "inicio"
+
+
+def test_peticion_despues_respeta_la_posicion_configurada(con_peticiones):
+    m = con_peticiones
+    m.cfgs["E"] = replace(CFG, posicion_voz="entre")
+    est = estacion()
+    m.p.al_sintonizar(est)
+    fin = _fin_del_tema(est, T0)
+    m.reloj.t = fin - 10
+    m.p.al_encolado(PEDIDO, est, fin)
+    m.reloj.t = fin
+    nueva = con_pedido(est, PEDIDO, fin)
+    m.p.al_cambiar_agenda(nueva, nueva.pedidos[0])
+    m.p.paso()
+    [p] = _peticiones(m)
+    assert p["peticion"] == "despues" and p["posicion"] == "entre"
+
+
+def test_un_antes_reservado_en_final_se_reconoce_por_su_corte_con_tolerancia_estrecha(con_peticiones):
+    m = con_peticiones
+    m.cfgs["E"] = replace(CFG, posicion_voz="final", tolerancia_desfase_segundos=2.0)
+    est = estacion()
+    m.p.al_sintonizar(est)
+    fin, antes = _registrar_antes(m, est)
+    (i,) = m.registro.todas()
+    assert i.posicion == "final" and i.inicio < fin - 2.5     # la voz empieza bastante antes del corte
+    m.p = m.nuevo()                                           # reinicio: Soloist vuelve a mandar la cola
+    m.p.al_sintonizar(est)
+    m.p.al_encolado(PEDIDO, est, fin)
+    m.p.paso()
+    assert _peticiones(m) == [antes]                          # no se pide otra: se reconoce el "antes" reservado
+    m.reloj.t = fin
+    nueva = con_pedido(est, PEDIDO, fin)
+    m.p.al_cambiar_agenda(nueva, nueva.pedidos[0])
+    assert [x.id for x in m.registro.todas()] == [antes["id"]]   # y al empezar el pedido sigue valiendo
