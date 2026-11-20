@@ -14,8 +14,9 @@ _log = logging.getLogger("cassette_fm")
 class Locutor:
     """Reproduce la voz del DJ en un segundo mpv y baja la música mientras habla.
 
-    La voz se dispara por el inicio REAL del tema en mpv (`pista_iniciada`); el reloj solo sirve para
-    entrar a mitad de frase cuando se sintoniza con la ventana ya abierta (`al_sintonizar`)."""
+    La voz se dispara por el inicio REAL de un tema (`pista_iniciada`): el del tema destino si la voz empieza después
+    del corte, o el del tema de origen si empieza antes (con el desfase medido en ese arranque). El reloj solo sirve
+    para entrar a mitad de frase cuando se sintoniza con la ventana ya abierta (`al_sintonizar`)."""
 
     def __init__(self, voz, musica, registro: RegistroIntervenciones,
                  configuracion: Callable[[str], ConfigDJ], reloj: Callable[[], float] = time.time):
@@ -34,12 +35,11 @@ class Locutor:
         self._entrada: int | None = None         # id de la entrada de mpv que está sonando
         self._cfg_actual: ConfigDJ | None = None
         self._estacion_voz: str | None = None    # estación de la intervención que suena
-        self._estacion_anclaje: str | None = None
-        self._anclada: Intervencion | None = None   # la que espera el retraso para hablar
+        self._anclajes: list[tuple[threading.Timer, Intervencion]] = []   # las que esperan su momento para hablar
+        self._actual: tuple[str, float] | None = None   # (clave del tema que suena, desfase medido al empezar)
         self._en_voz: Intervencion | None = None    # la que está sonando
         self._voz_id = 0
         self._t_seguridad: threading.Timer | None = None
-        self._t_anclaje: threading.Timer | None = None
         voz.al_evento = self._evento_voz
 
     @property
@@ -57,13 +57,20 @@ class Locutor:
         with self._lock:
             self._registro.agregar(i)
             ahora = self._reloj()
-            if self._sintonizada == i.estacion and i.inicio <= ahora < i.fin:
+            if self._sintonizada != i.estacion:
+                return
+            if i.inicio <= ahora < i.fin:
                 self._hablar(i, ahora - i.inicio)
+            elif (i.inicio > ahora and i.inicio < i.corte_estimado(cfg.retraso_voz_segundos)
+                    and self._actual is not None and self._actual[0] == i.pista_origen):
+                # la voz empieza antes del corte y el tema de origen ya está sonando: nadie va a avisar su arranque
+                self._anclar(i, i.inicio - (ahora - self._actual[1]), self._sesion)
 
     def al_sintonizar(self, estacion: str) -> None:
         with self._lock:
             self._sesion += 1
-            self._cancelar_anclaje()
+            self._cancelar_anclajes()
+            self._actual = None
             self._cortar()
             self._reproducidas.clear()
             self._expirar()
@@ -87,29 +94,36 @@ class Locutor:
             self._registro.quitar_estacion(estacion, salvo_peticiones=True, desde=desde)
             if desde is not None:
                 return
-            if self._estacion_anclaje == estacion and not (self._anclada and self._anclada.peticion):
-                self._cancelar_anclaje()
+            self._cancelar_anclajes(estacion, salvo_peticiones=True)
             if self._hablando and self._estacion_voz == estacion and not (self._en_voz and self._en_voz.peticion):
                 self._cortar()
 
-    def pista_iniciada(self, pista: Pista, estacion: str) -> None:
+    def pista_iniciada(self, pista: Pista, estacion: str, desfase: float = 0.0) -> None:
+        """Empezó `pista` (de verdad, no por el reloj). `desfase`: cuánto va la música respecto del reloj de la agenda
+        en este arranque (> 0: atrasada; 0 si no se conoce, p. ej. el primer tema tras sintonizar)."""
         with self._lock:
             if estacion != self._sintonizada:
                 return
             cfg = self._configuracion(estacion)
             ahora = self._reloj()
+            self._actual = (pista.clave, desfase)
+            self._cancelar_anclajes()          # lo armado en un arranque anterior ya no vale (saltearon, cambió la agenda)
+            sesion = self._sesion
             for i in self._registro.candidatas(estacion):
-                if (i.pista_destino == pista.clave and i.id not in self._reproducidas
-                        and abs(ahora - (i.inicio - cfg.retraso_voz_segundos)) <= cfg.tolerancia_desfase_segundos):
-                    self._reproducidas.add(i.id)     # evita dispararla otra vez en esta sintonía
-                    sesion = self._sesion
-                    self._cancelar_anclaje()
-                    self._estacion_anclaje = estacion
-                    self._anclada = i
-                    self._t_anclaje = threading.Timer(cfg.retraso_voz_segundos, self._hablar_anclada, (i, sesion))
-                    self._t_anclaje.daemon = True
-                    self._t_anclaje.start()
-                    return
+                if i.id in self._reproducidas:
+                    continue
+                corte = i.corte_estimado(cfg.retraso_voz_segundos)
+                if i.inicio >= corte:        # la voz empieza después del corte: se ancla al tema destino
+                    if pista.clave != i.pista_destino or abs(ahora - corte) > cfg.tolerancia_desfase_segundos:
+                        continue
+                    espera = i.inicio - corte
+                else:                        # empieza antes: se ancla al tema de origen, con el desfase de su arranque
+                    if pista.clave != i.pista_origen:
+                        continue
+                    espera = i.inicio - (ahora - desfase)
+                    if not 0 <= espera <= pista.duracion + cfg.tolerancia_desfase_segundos:
+                        continue             # el tema que arrancó no es el esperado
+                self._anclar(i, espera, sesion)
 
     def vigentes(self) -> list[Intervencion]:
         with self._lock:
@@ -126,7 +140,8 @@ class Locutor:
     def detener(self) -> None:
         with self._lock:
             self._sesion += 1
-            self._cancelar_anclaje()
+            self._cancelar_anclajes()
+            self._actual = None
             self._cortar()
             self._sintonizada = None
             self._reproducidas.clear()
@@ -144,8 +159,18 @@ class Locutor:
             else:
                 _log.warning("la intervención %s de %r venció sin sonar", i.id, i.estacion)
 
+    def _anclar(self, i: Intervencion, espera: float, sesion: int) -> None:
+        """Con el lock tomado: `i` habla dentro de `espera` segundos (queda marcada como reproducida para no
+        dispararla dos veces en esta sintonía)."""
+        self._reproducidas.add(i.id)
+        t = threading.Timer(max(espera, 0.0), self._hablar_anclada, (i, sesion))
+        t.daemon = True
+        self._anclajes.append((t, i))
+        t.start()
+
     def _hablar_anclada(self, i: Intervencion, sesion: int) -> None:
         with self._lock:
+            self._anclajes = [(t, x) for t, x in self._anclajes if x is not i]
             if sesion == self._sesion:
                 self._hablar(i, 0.0)
 
@@ -213,10 +238,16 @@ class Locutor:
             if voz_id == self._voz_id:
                 self._terminar()
 
-    def _cancelar_anclaje(self) -> None:
-        if self._t_anclaje is not None:
-            self._t_anclaje.cancel()
-            self._t_anclaje = None
+    def _cancelar_anclajes(self, estacion: str | None = None, salvo_peticiones: bool = False) -> None:
+        """Cancela los temporizadores pendientes (los de `estacion`, o todos). Con `salvo_peticiones`, los de los
+        anuncios de peticiones siguen: están anclados a su tema, que sigue valiendo."""
+        quedan = []
+        for t, i in self._anclajes:
+            if (estacion is None or i.estacion == estacion) and not (salvo_peticiones and i.peticion):
+                t.cancel()
+            else:
+                quedan.append((t, i))
+        self._anclajes = quedan
 
     def _evento_voz(self, evento: dict) -> None:
         if evento.get("event") != "end-file":

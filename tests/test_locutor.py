@@ -1,6 +1,7 @@
 import itertools
 import logging
 import time
+from dataclasses import replace
 from pathlib import Path
 
 import pytest
@@ -77,10 +78,12 @@ def mundo(tmp_path, crear_wav):
     m.cfg = CFG
     m.locutor = Locutor(voz, musica, registro, lambda n: m.cfg, reloj)
 
-    def iv(inicio, dur=10.0, estacion="E", destino="/m/t.mp3"):
+    def iv(inicio, dur=10.0, estacion="E", destino="/m/t.mp3", corte=None, origen=None, posicion="inicio",
+           peticion=None):
         n = next(cuenta)
         audio = crear_wav(clips / f"c{n}.wav", dur)
-        return Intervencion(f"i{n}", estacion, inicio, dur, audio, "texto", destino)
+        return Intervencion(f"i{n}", estacion, inicio, dur, audio, "texto", destino, peticion,
+                            corte=corte, pista_origen=origen, posicion=posicion)
 
     m.iv = iv
     return m
@@ -407,3 +410,158 @@ def test_descartar_desde_un_instante_no_desancla_la_del_tema_actual(mundo):
     mundo.locutor.pista_iniciada(Pista(Path("/m/t.mp3"), 200.0, "t"), "E")   # queda anclada
     mundo.locutor.descartar_estacion("E", desde=T0 + 150)
     assert esperar(lambda: mundo.voz.cargas())                              # igual habla
+
+
+# --- la voz que empieza antes del corte (se dispara desde el arranque del tema de origen) ---
+
+def _origen(duracion=1.0, ruta="/m/o.mp3"):
+    return Pista(Path(ruta), duracion, "o")
+
+
+def _final(mundo, inicio, corte, **kw):
+    return mundo.iv(T0 + inicio, corte=T0 + corte, origen="/m/o.mp3", destino="/m/d.mp3", posicion="final", **kw)
+
+
+def test_la_voz_final_se_ancla_al_tema_de_origen(mundo):
+    mundo.locutor.al_sintonizar("E")
+    mundo.locutor.registrar(_final(mundo, 0.3, 0.8))
+    mundo.locutor.pista_iniciada(_origen(), "E", 0.0)
+    time.sleep(0.15)
+    assert mundo.voz.cargas() == []                          # todavía no: faltan ~0,3 s
+    assert esperar(lambda: mundo.voz.cargas())
+    assert start_de(mundo.voz.cargas()[0]) == pytest.approx(0.0)
+
+
+def test_el_desfase_corre_la_voz(mundo):
+    mundo.locutor.al_sintonizar("E")
+    mundo.locutor.registrar(_final(mundo, 0.6, 1.2))
+    mundo.locutor.pista_iniciada(_origen(), "E", 0.3)        # la música va 0,3 s atrasada: sale a los ~0,9 s
+    time.sleep(0.7)
+    assert mundo.voz.cargas() == []
+    assert esperar(lambda: mundo.voz.cargas())
+
+
+def test_saltear_el_origen_cancela_la_voz_pendiente(mundo):
+    mundo.locutor.al_sintonizar("E")
+    mundo.locutor.registrar(_final(mundo, 0.5, 1.0))
+    mundo.locutor.pista_iniciada(_origen(), "E", 0.0)
+    mundo.locutor.pista_iniciada(_origen(ruta="/m/otro.mp3"), "E", 0.0)       # saltearon: arrancó otro tema
+    time.sleep(0.8)
+    assert mundo.voz.cargas() == [] and not mundo.locutor.hablando
+
+
+def test_sintonizar_en_el_origen_cerca_del_corte_habla_en_su_momento_y_una_sola_vez(mundo):
+    mundo.reloj.t = T0 + 0.1
+    mundo.locutor.al_sintonizar("E")
+    mundo.locutor.registrar(_final(mundo, 0.3, 0.8))
+    mundo.locutor.pista_iniciada(_origen(), "E", 0.0)        # el origen se sintonizó a mitad: arranque alineado
+    time.sleep(0.1)
+    assert mundo.voz.cargas() == []
+    assert esperar(lambda: mundo.voz.cargas())
+    mundo.locutor.pista_iniciada(_origen(), "E", 0.0)
+    time.sleep(0.3)
+    assert len(mundo.voz.cargas()) == 1
+
+
+def test_sintonizar_con_la_ventana_ya_abierta_entra_a_mitad_de_frase_y_el_origen_no_la_repite(mundo):
+    mundo.reloj.t = T0 + 0.5
+    mundo.locutor.al_sintonizar("E")
+    mundo.locutor.registrar(_final(mundo, 0.3, 0.8))
+    assert start_de(mundo.voz.cargas()[0]) == pytest.approx(0.2)
+    mundo.locutor.pista_iniciada(_origen(), "E", 0.0)
+    time.sleep(0.3)
+    assert len(mundo.voz.cargas()) == 1
+
+
+def test_un_origen_que_no_alcanza_para_la_espera_no_dispara(mundo):
+    mundo.cfg = replace(CFG, tolerancia_desfase_segundos=0.1)
+    mundo.locutor.al_sintonizar("E")
+    mundo.locutor.registrar(_final(mundo, 0.5, 1.0))
+    mundo.locutor.pista_iniciada(_origen(duracion=0.2), "E", 0.0)       # espera 0,5 > 0,2 + 0,1: no es el tema esperado
+    time.sleep(0.8)
+    assert mundo.voz.cargas() == []
+
+
+def test_dos_intervenciones_seguidas_arman_dos_temporizadores_en_el_mismo_arranque(mundo):
+    mundo.cfg = replace(CFG, minimo_restante_segundos=0.1)        # clips de 0,2 s
+    mundo.locutor.al_sintonizar("E")
+    x = mundo.iv(T0 + 0.05, dur=0.2, corte=T0, destino="/m/t.mp3")                   # de "inicio": destino /m/t.mp3
+    y = mundo.iv(T0 + 0.5, dur=0.2, corte=T0 + 0.9, origen="/m/t.mp3", destino="/m/y.mp3", posicion="final")
+    mundo.locutor.registrar(x)
+    mundo.locutor.registrar(y)
+    mundo.locutor.pista_iniciada(Pista(Path("/m/t.mp3"), 1.0, "t"), "E", 0.0)
+    assert esperar(lambda: len(mundo.voz.cargas()) == 1)
+    mundo.voz.fin()                                                                  # termina la de "inicio"
+    assert esperar(lambda: len(mundo.voz.cargas()) == 2)
+
+
+def test_registrar_con_el_origen_ya_sonando_arma_por_reloj(mundo):
+    mundo.locutor.al_sintonizar("E")
+    mundo.locutor.pista_iniciada(_origen(), "E", 0.0)
+    mundo.locutor.registrar(_final(mundo, 0.3, 0.8))
+    time.sleep(0.1)
+    assert mundo.voz.cargas() == []
+    assert esperar(lambda: mundo.voz.cargas())
+
+
+def test_registrar_con_el_origen_ya_sonando_cuenta_el_desfase_de_ese_tema(mundo):
+    mundo.locutor.al_sintonizar("E")
+    mundo.locutor.pista_iniciada(_origen(), "E", 0.3)
+    mundo.locutor.registrar(_final(mundo, 0.3, 0.8))
+    time.sleep(0.4)
+    assert mundo.voz.cargas() == []                          # 0,3 + 0,3 de desfase
+    assert esperar(lambda: mundo.voz.cargas())
+
+
+def test_la_espera_de_un_destino_es_inicio_menos_corte(mundo):
+    mundo.locutor.al_sintonizar("E")
+    mundo.locutor.registrar(mundo.iv(T0 + 0.4, corte=T0 + 0.1, destino="/m/t.mp3"))       # espera 0,3 s (no el retraso)
+    mundo.locutor.pista_iniciada(Pista(Path("/m/t.mp3"), 200.0, "t"), "E", 0.0)
+    time.sleep(0.15)
+    assert mundo.voz.cargas() == []
+    assert esperar(lambda: mundo.voz.cargas())
+
+
+def test_descartar_la_estacion_cancela_el_anclaje_de_origen(mundo):
+    mundo.locutor.al_sintonizar("E")
+    mundo.locutor.registrar(_final(mundo, 0.4, 0.9))
+    mundo.locutor.pista_iniciada(_origen(), "E", 0.0)
+    mundo.locutor.descartar_estacion("E")
+    time.sleep(0.7)
+    assert mundo.voz.cargas() == [] and mundo.registro.todas() == []
+
+
+def test_detener_cancela_el_anclaje_de_origen(mundo):
+    mundo.locutor.al_sintonizar("E")
+    mundo.locutor.registrar(_final(mundo, 0.4, 0.9))
+    mundo.locutor.pista_iniciada(_origen(), "E", 0.0)
+    mundo.locutor.detener()
+    time.sleep(0.7)
+    assert mundo.voz.cargas() == []
+
+
+def test_cambiar_de_estacion_cancela_el_anclaje_de_origen(mundo):
+    mundo.locutor.al_sintonizar("E")
+    mundo.locutor.registrar(_final(mundo, 0.4, 0.9))
+    mundo.locutor.pista_iniciada(_origen(), "E", 0.0)
+    mundo.locutor.al_sintonizar("OTRA")
+    time.sleep(0.7)
+    assert mundo.voz.cargas() == []
+
+
+def test_una_peticion_anclada_al_origen_no_se_desancla_al_descartar(mundo):
+    mundo.locutor.al_sintonizar("E")
+    pedida = _final(mundo, 0.3, 0.8, peticion="antes")
+    mundo.locutor.registrar(pedida)
+    mundo.locutor.pista_iniciada(_origen(), "E", 0.0)
+    mundo.locutor.descartar_estacion("E")
+    assert esperar(lambda: mundo.voz.cargas())               # igual habla
+    assert mundo.registro.todas() == [pedida]
+
+
+def test_otro_tema_de_otra_estacion_no_arma_nada(mundo):
+    mundo.locutor.al_sintonizar("E")
+    mundo.locutor.registrar(_final(mundo, 0.3, 0.8))
+    mundo.locutor.pista_iniciada(_origen(), "OTRA", 0.0)
+    time.sleep(0.6)
+    assert mundo.voz.cargas() == []
