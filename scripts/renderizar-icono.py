@@ -22,6 +22,10 @@ DESTINOS = [
     (RAIZ / "relay/web/favicon-32.png", 32, FONDO_OSCURO, 22, 0.8, True, BLANCO),
     (RAIZ / "relay/web/apple-touch-icon.png", 180, FONDO_OSCURO, 0, 0.74, True, BLANCO),
     (RAIZ / "applet/cassette-fm@cassette-fm/icon.png", 256, FONDO_OSCURO, 22, 0.8, True, BLANCO),
+    # la app instalada en Android: "any" (esquinas redondeadas) y "maskable" (a sangre completa, con el casete dentro de la zona segura)
+    (RAIZ / "relay/web/icono-192.png", 192, FONDO_OSCURO, 22, 0.8, True, BLANCO),
+    (RAIZ / "relay/web/icono-512.png", 512, FONDO_OSCURO, 22, 0.8, True, BLANCO),
+    (RAIZ / "relay/web/icono-maskable-512.png", 512, FONDO_OSCURO, 0, 0.56, True, BLANCO),
     (RAIZ / "applet/cassette-fm@cassette-fm/casete-panel.png", 128, None, 0, 1.0, False, "#ffffff"),
 ]
 

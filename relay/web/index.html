@@ -7,6 +7,7 @@
 <title>cassette-fm</title>
 <link rel="icon" href="/web/favicon-32.png" sizes="32x32" type="image/png">
 <link rel="apple-touch-icon" href="/web/apple-touch-icon.png">
+<link rel="manifest" href="/manifest.webmanifest">
 <style>
   :root { --u: 1px; color-scheme: dark; --acento: #d9822b; --fondo: #0e0e13; --caja: rgba(20, 20, 26, 0.6); --tenue: rgba(255, 255, 255, 0.72); }
   * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
@@ -248,27 +249,39 @@ function pintarReproduccion() {
 }
 function alternar() {
   escuchando = !escuchando;
-  if (escuchando) { aplicarVolumen(); abrirAudio(); } else { pararEstatica(); cerrarAudio(); }
+  if (escuchando) { aplicarVolumen(); abrirAudio(); if (volumenNativo) { const e = prepararEstatica(); if (e) e.ctx.suspend().catch(() => {}); } } else { pararEstatica(); cerrarAudio(); }
   pintarReproduccion();
 }
 
 /* ---------- estática: tapa el silencio mientras se sintoniza ---------- */
-// Al elegir otra emisora, la señal vieja se silencia y suena estática hasta que el audio nuevo empieza a sonar.
-let est = null, estActiva = false, timerEstatica = 0, esperandoAudio = false;
-const NIVEL_ESTATICA = 0.22;
+// Al elegir otra emisora suena la misma estática que en la PC (clips.generar_estatica: ruido blanco con algo de grave, a -24 dBFS)
+// hasta que el audio nuevo empieza a sonar. La señal vieja NO se silencia (ni con muted ni con volumen 0): Chrome en Android no
+// cuenta como "reproduciendo" a un audio mudo, tira el control multimedia y, con la app minimizada, congela la página; entonces
+// nunca llegaba a sintonizar. Se la baja a un hilo de volumen donde se puede (en iPhone el volumen del <audio> no se toca).
+let est = null, estActiva = false, timerEstatica = 0, timerReintento = 0, esperandoAudio = false;
+const NIVEL_ESTATICA = 1;          // respecto del volumen del control: igual que en la PC
+const VOLUMEN_BAJO_ESTATICA = 0.1; // lo que queda de la señal vieja mientras suena la estática
+function generarEstatica(ctx) {
+  const fs = 22050, n = fs * 3, buf = ctx.createBuffer(1, n, fs), d = buf.getChannelData(0);
+  let semilla = 4;                  // siempre la misma estática (mulberry32)
+  const azar = () => { semilla = (semilla + 0x6D2B79F5) | 0; let t = Math.imul(semilla ^ (semilla >>> 15), 1 | semilla); t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t; return ((t ^ (t >>> 14)) >>> 0) / 4294967296; };
+  let bajo = 0, suma = 0;
+  for (let i = 0; i < n; i++) {
+    const blanco = azar() * 2 - 1; bajo = 0.92 * bajo + 0.08 * blanco;      // algo de grave: menos siseo y más radio
+    d[i] = 0.55 * blanco + 0.45 * bajo * 4; suma += d[i] * d[i];
+  }
+  const escala = Math.pow(10, -24 / 20) / Math.sqrt(suma / n), fundido = Math.floor(0.03 * fs);
+  for (let i = 0; i < n; i++) d[i] *= escala * Math.min(1, i / fundido, (n - 1 - i) / fundido);     // sin clicks al repetir
+  return buf;
+}
 function prepararEstatica() {
   if (est) return est;
   const AC = window.AudioContext || window.webkitAudioContext; if (!AC) return null;
   try {
-    const ctx = new AC(), n = Math.floor(ctx.sampleRate * 2);
-    const buf = ctx.createBuffer(1, n, ctx.sampleRate), d = buf.getChannelData(0);
-    let amp = 1, meta = 1;      // ruido blanco con chisporroteo: la amplitud sube y baja al azar, como una radio mal sintonizada
-    for (let i = 0; i < n; i++) { if (i % 600 === 0) meta = 0.35 + Math.random() * 0.65; amp += (meta - amp) * 0.02; d[i] = (Math.random() * 2 - 1) * amp; }
-    const fuente = ctx.createBufferSource(); fuente.buffer = buf; fuente.loop = true;
-    const alto = ctx.createBiquadFilter(); alto.type = "highpass"; alto.frequency.value = 500;
-    const bajo = ctx.createBiquadFilter(); bajo.type = "lowpass"; bajo.frequency.value = 7000;
+    const ctx = new AC();
+    const fuente = ctx.createBufferSource(); fuente.buffer = generarEstatica(ctx); fuente.loop = true;
     const gain = ctx.createGain(); gain.gain.value = 0;
-    fuente.connect(alto); alto.connect(bajo); bajo.connect(gain); gain.connect(ctx.destination); fuente.start();
+    fuente.connect(gain); gain.connect(ctx.destination); fuente.start();
     est = { ctx, gain };
   } catch { est = null; }
   return est;
@@ -277,15 +290,16 @@ function empezarEstatica() {
   if (!escuchando) return;
   const e = prepararEstatica(); if (!e) return;
   if (e.ctx.state === "suspended") e.ctx.resume().catch(() => {});
-  estActiva = true; esperandoAudio = false; audio.muted = true;
+  estActiva = true; esperandoAudio = false;
+  if (volumenNativo) audio.volume = Math.min(volumen / 100, VOLUMEN_BAJO_ESTATICA);
   e.gain.gain.setTargetAtTime(NIVEL_ESTATICA * volumen / 100, e.ctx.currentTime, 0.03);
   document.body.classList.add("cargando");
-  clearTimeout(timerEstatica); timerEstatica = setTimeout(pararEstatica, 8000);    // por si algo no llega: nunca queda sonando sola
+  clearTimeout(timerEstatica); timerEstatica = setTimeout(pararEstatica, 12000);    // por si algo no llega: nunca queda sonando sola
 }
 function pararEstatica() {
-  clearTimeout(timerEstatica); esperandoAudio = false;
+  clearTimeout(timerEstatica); clearTimeout(timerReintento); esperandoAudio = false;
   if (!estActiva) return;
-  estActiva = false; audio.muted = false;
+  estActiva = false; aplicarVolumen();
   if (est) {
     est.gain.gain.setTargetAtTime(0, est.ctx.currentTime, 0.08);
     setTimeout(() => { if (!estActiva && est) est.ctx.suspend().catch(() => {}); }, 700);
@@ -451,7 +465,13 @@ async function despachar() {
   enviando = true; pendiente = { nombre, hasta: Date.now() + 6000 };
   try {
     const r = await api("POST", "/api/sintonizar", { estacion: nombre });
-    if (r.ok) { confirmada = nombre; if (escuchando) { abrirAudio(); esperandoAudio = true; } }   // entrar en la emisora nueva sin arrastrar el buffer
+    if (r.ok) {
+      confirmada = nombre;
+      if (escuchando) {
+        abrirAudio(); esperandoAudio = true;
+        clearTimeout(timerReintento); timerReintento = setTimeout(() => { if (esperandoAudio && escuchando) abrirAudio(); }, 5000);   // no sonó: se pide de nuevo
+      }
+    }   // entrar en la emisora nueva sin arrastrar el buffer
     else { pararEstatica(); aviso(await mensajeDe(r)); pendiente = null; confirmada = estado && estado.radio ? estado.radio.estacion : null; volverAlServidor(); }
   } catch { pendiente = null; pararEstatica(); }
   enviando = false;
@@ -572,9 +592,11 @@ if ("mediaSession" in navigator) {
   navigator.mediaSession.setActionHandler("previoustrack", () => { if (manda) mover(-1); });
 }
 
+if ("serviceWorker" in navigator) navigator.serviceWorker.register("/sw.js").catch(() => {});   // para poder instalarla como app
+
 pintarVolumen(); medir();
 actualizar(true);
-setInterval(() => { if (!$("radio").hidden && !document.hidden) actualizar(); }, 3000);
+setInterval(() => { if (!$("radio").hidden && (!document.hidden || escuchando)) actualizar(); }, 3000);
 document.addEventListener("visibilitychange", () => { if (!document.hidden && !$("radio").hidden) actualizar(); });
 </script>
 </body>

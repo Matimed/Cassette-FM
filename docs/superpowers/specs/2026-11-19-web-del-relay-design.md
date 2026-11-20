@@ -51,11 +51,24 @@ transformaciones CSS y un bucle `requestAnimationFrame` que anima una posición 
 
 ## Estática al cambiar de emisora
 
-Entre elegir otra emisora y que el audio nuevo suene hay un silencio (el pedido, el buffer del stream). Se tapa con
-estática generada en el navegador (Web Audio: ruido blanco con chisporroteo, filtrado, al volumen del control × 0,22).
-Arranca al elegir (con el audio viejo silenciado), se apaga con el evento `playing` del audio nuevo y tiene un tope de
-8 s. No suena con clave de solo escucha (no puede cambiar), ni si el cambio vuelve a la emisora que ya suena, ni si se
-pausó. En iPhone el contexto de audio se crea en el primer cambio (hace falta un gesto) y se suspende al terminar.
+Entre elegir otra emisora y que el audio nuevo suene hay un silencio (el pedido, el buffer del stream). Se tapa con la
+**misma estática que la PC** (`clips.generar_estatica`: ruido blanco con algo de grave, −24 dBFS, fundidos de 30 ms; portada a
+JS y comprobada: mismo nivel, autocorrelación y picos), al volumen del control. Arranca al elegir y se apaga con el evento
+`playing` del audio nuevo; tope de 12 s, y si a los 5 s de pedir el audio nuevo no sonó, se pide de nuevo. No suena con clave
+de solo escucha, ni si el cambio vuelve a la emisora que ya suena, ni si se pausó.
+
+**La señal vieja no se silencia** (ni `muted` ni volumen 0): se baja a volumen 0,1 donde se puede (no en iPhone). Chrome en
+Android no cuenta como "reproduciendo" a un audio mudo: tira el control multimedia y, con la app minimizada, congela la página
+(con `muted`, cambiar de emisora desde la notificación cortaba todo y nunca sintonizaba). Con la app minimizada la página sigue
+sondeando el estado mientras suena, para que el título del control multimedia esté al día.
+
+## App instalada (Android)
+
+`/manifest.webmanifest` (`display: standalone`, `background_color` y `theme_color` `#0e0e13`, íconos de 192 y 512 y uno
+*maskable* a sangre completa) y un service worker mínimo (`/sw.js`, sin `fetch` que intercepte nada: el audio en vivo no puede
+pasar por ahí). Chrome ya no muestra su barra, y el splash es oscuro. Chrome da el visto bueno de instalabilidad (se comprobó
+con `Page.getInstallabilityErrors`). Quien tenía un acceso directo creado antes del manifest tiene que borrarlo y volver a
+instalar. No se pidió `fullscreen`: `standalone` es lo normal (queda la barra de estado del sistema).
 
 ## Ícono
 

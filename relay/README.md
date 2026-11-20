@@ -95,6 +95,12 @@ url = "wss://<servicio>.onrender.com"
 - **Todo en memoria.** Si Render reinicia el relay, la PC se reconecta sola y vuelve a mandar el estado y los logos.
 - **750 horas por mes**, justo para un servicio prendido todo el mes.
 
+## Instalarla como app (Android)
+
+Abrí `https://<servicio>.onrender.com/` en Chrome → menú ⋮ → *Instalar app*. Queda con su ícono, sin la barra de Chrome y con
+el splash oscuro; la reproducción sigue con la pantalla apagada y se maneja desde las notificaciones. Si antes habías creado un
+acceso directo ("Agregar a la pantalla principal" sin manifest), borralo y volvé a instalar.
+
 ## Claves
 
 La maestra (`MASTER_PASSWORD`) es la única en el entorno. Las otras se manejan desde la PC, sin tocar el relay:

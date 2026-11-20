@@ -269,6 +269,29 @@ def test_iconos_de_la_pagina_son_publicos(relay):
     assert b'href="/web/favicon-32.png"' in pagina and b'href="/web/apple-touch-icon.png"' in pagina
 
 
+def test_manifest_para_instalar_como_app(relay):
+    import json as _json
+    status, headers, cuerpo = relay.pedir("GET", "/manifest.webmanifest")
+    assert status == 200 and headers["Content-Type"].startswith("application/manifest+json")
+    m = _json.loads(cuerpo)
+    assert m["display"] == "standalone" and m["start_url"] == "/" and m["scope"] == "/"
+    assert m["name"] and m["short_name"]
+    assert m["background_color"] == m["theme_color"] == "#0e0e13"          # el splash y la barra, oscuros como el ícono
+    tamanos = {(i["sizes"], i.get("purpose", "any")) for i in m["icons"]}
+    assert {("192x192", "any"), ("512x512", "any"), ("512x512", "maskable")} <= tamanos
+    for icono in m["icons"]:                                                # todos los íconos existen, sin iniciar sesión
+        status, headers, cuerpo = relay.pedir("GET", icono["src"])
+        assert status == 200 and headers["Content-Type"].startswith("image/png") and cuerpo[:4] == b"\x89PNG", icono["src"]
+    pagina = relay.pedir("GET", "/")[2]
+    assert b'rel="manifest" href="/manifest.webmanifest"' in pagina and b'serviceWorker.register("/sw.js")' in pagina
+
+
+def test_service_worker_minimo_en_la_raiz(relay):
+    status, headers, cuerpo = relay.pedir("GET", "/sw.js")
+    assert status == 200 and "javascript" in headers["Content-Type"] and headers["Cache-Control"] == "no-cache"
+    assert b"respondWith" not in cuerpo       # no intercepta nada: el audio en vivo no puede pasar por un service worker
+
+
 def test_pagina_tapa_el_silencio_del_cambio_con_estatica(relay):
     cuerpo = relay.pedir("GET", "/")[2]
     assert b"empezarEstatica" in cuerpo and b"pararEstatica" in cuerpo and b"esperandoAudio" in cuerpo

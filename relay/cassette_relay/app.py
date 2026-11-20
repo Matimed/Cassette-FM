@@ -57,6 +57,20 @@ def crear_app(ajustes: Ajustes, web_dir: Path | None = None) -> web.Application:
     async def favicon(request: web.Request) -> web.FileResponse:     # los navegadores lo piden solos, sin mirar el <link>
         return web.FileResponse(carpeta / "favicon-32.png", headers={"Cache-Control": "public, max-age=86400"})
     app.router.add_get("/favicon.ico", favicon)
+
+    def archivo(nombre: str, tipo: str | None = None) -> web.FileResponse:
+        cabeceras = {"Cache-Control": "no-cache"}
+        if tipo:
+            cabeceras["Content-Type"] = tipo
+        return web.FileResponse(carpeta / nombre, headers=cabeceras)
+
+    async def manifiesto(request: web.Request) -> web.FileResponse:      # instalar la página como app (Android)
+        return archivo("manifest.webmanifest", "application/manifest+json")
+    app.router.add_get("/manifest.webmanifest", manifiesto)
+
+    async def service_worker(request: web.Request) -> web.FileResponse:   # en la raíz: su alcance es toda la página
+        return archivo("sw.js", "text/javascript")
+    app.router.add_get("/sw.js", service_worker)
     if carpeta.is_dir():
         app.router.add_static("/web", carpeta)
     return app
