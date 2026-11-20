@@ -80,7 +80,10 @@ Parámetros de la sección `[dj]` (todos opcionales; también se pueden pisar po
 | Clave | Por defecto | Qué es |
 |---|---|---|
 | `duracion_maxima_segundos` | 15 | tope de duración de la voz |
-| `retraso_voz_segundos` | 1 | cuánto después del comienzo del tema entra la voz |
+| `retraso_voz_segundos` | 1 | con `posicion_voz = "inicio"`, cuánto después del comienzo del tema entra la voz |
+| `posicion_voz` | `mixto` | dónde cae la voz respecto del corte entre dos temas: `inicio` (toda después del corte), `entre` (el corte cae dentro de la voz), `final` (termina justo antes del corte, sobre el final del tema que termina) o `mixto` (una de las tres al azar en cada intervención). El texto se adapta: en `entre` el DJ cierra el tema anterior y presenta el nuevo, en `final` habla en futuro ("a continuación…") |
+| `fraccion_entre_min` / `fraccion_entre_max` | 0.3 / 0.7 | en `entre`, qué parte del clip suena antes del corte (entre 0 y 1) |
+| `final_antes_min_segundos` / `final_antes_max_segundos` | 0 / 2 | en `final`, cuántos segundos antes del corte termina la voz |
 | `nivel_musica_con_voz` | 0.6 | volumen de la música mientras habla, como fracción del tuyo **en la escala de mpv, que es cúbica**: 0.6 ≈ 13 dB más bajo (de fondo), 0.35 ≈ 28 dB (casi mudo), 0.7 ≈ 9 dB |
 | `rampa_bajada_segundos` / `rampa_subida_segundos` | 0.4 / 1 | tiempo de bajar y de volver a subir la música |
 | `minimo_restante_segundos` | 1.5 | si queda menos de esto de la frase, no se reproduce |
