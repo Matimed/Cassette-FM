@@ -363,3 +363,13 @@ def test_iconos_solo_los_que_existen(tmp_path, crear_mp3, caplog):
     assert cat.iconos() == {"A": str(rutas.emisoras.parent / "iconos" / "a.png")}
     avisos = [r for r in caplog.records if "falta.png" in r.getMessage()]
     assert len(avisos) == 1
+
+
+def test_posicion_de_la_voz_por_emisora(tmp_path):
+    a = escribir(tmp_path, [{"nombre": "Lentos", "fuente": {"carpeta": "/m"}, "dj": {"posicion_voz": "final"}},
+                            {"nombre": "Otra", "fuente": {"carpeta": "/o"}}])
+    lentos, otra = leer_emisoras(a, ConfigDJ(posicion_voz="entre"))
+    assert lentos.dj.posicion_voz == "final" and otra.dj.posicion_voz == "entre"
+    mala = escribir(tmp_path, [{"nombre": "X", "fuente": {"carpeta": "/m"}, "dj": {"posicion_voz": "medio"}}])
+    with pytest.raises(ErrorConfig):
+        leer_emisoras(mala, ConfigDJ())

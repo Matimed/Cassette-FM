@@ -202,6 +202,10 @@ def test_rutas_planificador(tmp_path):
     '[dj.frecuencia]\nmodo = "minutos"\nmin = 0',
     '[dj.estaciones."X"]\nfrecuencia = 5', '[dj.estaciones."X"]\nfrecuencia = {min = 9}',
     "[dj]\nfrecuencia = 5",
+    '[dj]\nposicion_voz = "medio"', "[dj]\nposicion_voz = 3", "[dj]\nfraccion_entre_min = 1.5",
+    "[dj]\nfraccion_entre_max = 1.5", "[dj]\nfraccion_entre_min = 0.8\nfraccion_entre_max = 0.2",
+    "[dj]\nfinal_antes_min_segundos = 5\nfinal_antes_max_segundos = 1",
+    "[dj]\nfinal_antes_min_segundos = -1",
 ])
 def test_dj_invalido_da_error_claro(tmp_path, contenido):
     archivo = tmp_path / "config.toml"
@@ -451,3 +455,28 @@ def test_la_clave_de_la_nube_vive_junto_a_la_de_la_lan(tmp_path):
     r = Rutas(config=tmp_path / "c" / "config.toml", estado=tmp_path / "e.json", cache=tmp_path / "d.json",
               runtime=tmp_path)
     assert r.nube_token == tmp_path / "c" / "nube.token"
+
+
+def test_dj_posicion_por_defecto():
+    dj = ConfigDJ()
+    assert dj.posicion_voz == "mixto"
+    assert (dj.fraccion_entre_min, dj.fraccion_entre_max) == (0.3, 0.7)
+    assert (dj.final_antes_min_segundos, dj.final_antes_max_segundos) == (0.0, 2.0)
+
+
+def test_dj_lee_posicion_general_y_por_estacion(tmp_path):
+    archivo = tmp_path / "config.toml"
+    archivo.write_text('[dj]\nposicion_voz = "entre"\n'
+                       '[dj.estaciones."Lentos"]\nposicion_voz = "final"\nfraccion_entre_min = 0.4\n')
+    cfg = cargar_config(archivo)
+    lentos = configuracion_dj(cfg, "Lentos")
+    assert cfg.dj.posicion_voz == "entre" and configuracion_dj(cfg, "Otra").posicion_voz == "entre"
+    assert lentos.posicion_voz == "final"
+    assert (lentos.fraccion_entre_min, lentos.fraccion_entre_max) == (0.4, 0.7)    # solo pisa ese campo
+
+
+@pytest.mark.parametrize("valor", ["inicio", "entre", "final", "mixto"])
+def test_dj_acepta_todas_las_posiciones(tmp_path, valor):
+    archivo = tmp_path / "config.toml"
+    archivo.write_text(f'[dj]\nposicion_voz = "{valor}"\n')
+    assert cargar_config(archivo).dj.posicion_voz == valor

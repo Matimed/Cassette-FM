@@ -7,6 +7,8 @@ from collections.abc import Mapping
 from dataclasses import asdict, dataclass, field, fields, replace
 from pathlib import Path
 
+from cassette_fm.posiciones import POSICIONES
+
 
 class ErrorConfig(Exception):
     pass
@@ -47,6 +49,11 @@ class ConfigDJ:
     ganancia_voz_db: float = 10.0   # sube y comprime la voz de Kokoro (sale mucho más baja que la música); 0 = sin filtro
     recientes_cantidad: int = 6   # cuántos ingredientes recordar por estación
     peticion_margen_segundos: float = 30.0   # con menos que esto hasta el pedido, se anuncia después (no antes)
+    posicion_voz: str = "mixto"   # dónde cae la voz respecto del corte entre temas: inicio | entre | final | mixto (al azar)
+    fraccion_entre_min: float = 0.3   # en "entre": qué parte del clip suena antes del corte (entre 0 y 1)
+    fraccion_entre_max: float = 0.7
+    final_antes_min_segundos: float = 0.0   # en "final": cuántos segundos antes del corte termina la voz
+    final_antes_max_segundos: float = 2.0
 
 
 @dataclass(frozen=True)
@@ -426,9 +433,24 @@ def campos_dj(archivo: Path, tabla: dict, donde: str, base: ConfigDJ) -> dict:
             if len(valor) > _PERSONALIDAD_MAXIMA:
                 raise ErrorConfig(f"{archivo}: '{nombre}' admite hasta {_PERSONALIDAD_MAXIMA} caracteres")
             campos[clave] = valor
+        elif clave == "posicion_voz":
+            valor = _texto(archivo, nombre, valor)
+            if valor not in ("mixto", *POSICIONES):
+                raise ErrorConfig(f"{archivo}: '{nombre}' tiene que ser uno de: {', '.join(('mixto', *POSICIONES))}")
+            campos[clave] = valor
         elif clave == "frecuencia":
             campos[clave] = _frecuencia(archivo, base.frecuencia, valor, donde)
         # el resto (palabras_maximas, claves de partes siguientes) se ignora
+    for clave in ("fraccion_entre_min", "fraccion_entre_max"):
+        if clave in campos and campos[clave] > 1:
+            raise ErrorConfig(f"{archivo}: '{donde}{clave}' tiene que estar entre 0 y 1")
+    if {"fraccion_entre_min", "fraccion_entre_max", "final_antes_min_segundos",
+            "final_antes_max_segundos"} & campos.keys():
+        f = replace(base, **campos)
+        for desde, hasta in (("fraccion_entre_min", "fraccion_entre_max"),
+                             ("final_antes_min_segundos", "final_antes_max_segundos")):
+            if getattr(f, desde) > getattr(f, hasta):
+                raise ErrorConfig(f"{archivo}: '{donde}{desde}' no puede superar a '{hasta}'")
     if {"espera_reintento_segundos", "espera_reintento_maxima_segundos"} & campos.keys():
         f = replace(base, **campos)
         if f.espera_reintento_segundos > f.espera_reintento_maxima_segundos:
