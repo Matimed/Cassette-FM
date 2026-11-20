@@ -105,6 +105,20 @@ ARRANQUES = {"artista": ("Empezá por el nombre del artista.", "Start with the a
              "dato": ("Empezá por el dato y después presentá el tema.", "Start with the fact, then introduce the song.")}
 
 
+# dónde cae la voz respecto del corte entre temas: lo que se le pide al LLM cuando no es "inicio"
+_POSICION_ENTRE = {
+    "es": "Empezás a hablar mientras termina el tema anterior y terminás con el tema nuevo ya sonando: cerrá el "
+          "anterior y presentá el siguiente.",
+    "en": "You start talking while the previous song is ending and finish with the new song already playing: close "
+          "the previous one and introduce the next one.",
+}
+_POSICION_FINAL = {
+    "es": "Hablás antes de que empiece el tema nuevo: usá futuro (a continuación, enseguida) y no digas que ya suena.",
+    "en": "You speak before the new song starts: use the future (up next, coming up) and do not say it is already "
+          "playing.",
+}
+
+
 def construir_peticion(pedido: Pedido, ingredientes: Sequence[str], hechos: Hechos,
                        campos_de_voz: Mapping[str, str], palabras_maximas: int,
                        arranque: str | None = None) -> Peticion:
@@ -135,7 +149,8 @@ def construir_peticion(pedido: Pedido, ingredientes: Sequence[str], hechos: Hech
                       "presentá este como pedido de otro oyente." if es else
                       "The previous song was a special request from a listener and so is this one: mention the "
                       "previous one and introduce this one as another listener's request.")
-    if (("anterior" in ingredientes or pedido.peticion in ("despues", "seguidas"))
+    cierra_el_anterior = pedido.posicion == "entre" and pedido.anterior is not None
+    if (("anterior" in ingredientes or pedido.peticion in ("despues", "seguidas") or cierra_el_anterior)
             and pedido.anterior is not None):
         previo = " y ".join(artistas_del_tag(pedido.anterior.artista)) if es \
             else " and ".join(artistas_del_tag(pedido.anterior.artista))
@@ -154,6 +169,10 @@ def construir_peticion(pedido: Pedido, ingredientes: Sequence[str], hechos: Hech
         if hechos.tema is not None:
             cifras += [str(x) for x in (hechos.tema.anio, hechos.tema.anio_inicio_artista) if x is not None]
     n_hechos = len(lineas) - 1           # lo que hay para contar además del tema
+    if cierra_el_anterior:               # indicaciones sobre cuándo habla, no hechos: no cuentan para el largo
+        lineas.append(_POSICION_ENTRE[idioma])
+    elif pedido.posicion in ("entre", "final"):     # "entre" sin anterior no tiene qué cerrar: habla antes del tema
+        lineas.append(_POSICION_FINAL[idioma])
     t = hechos.tema
     if not ("dato" in ingredientes and t is not None and t.anio is not None and 1900 <= t.anio <= 2099):
         # sin año el modelo lo completa de memoria (y suele errar): decírselo explícito funciona mejor que la regla
@@ -316,6 +335,9 @@ def verificar(texto: str, pedido: Pedido, peticion: Peticion, palabras_maximas: 
     if (_norm_nombre(_titulo_limpio(pedido.siguiente.titulo)) not in plano
             or not any(_norm_nombre(a) in plano for a in artistas)):
         return "no nombra el tema o el artista"
+    if (pedido.posicion == "entre" and pedido.anterior is not None
+            and _norm_nombre(_titulo_limpio(pedido.anterior.titulo)) not in plano):
+        return "no nombra el tema anterior"
     idioma = _idioma(pedido)
     resto = _sin_nombres(texto, pedido)                    # lo que dijo el LLM fuera de los nombres del pedido
     propias = _FUNCIONALES[idioma]

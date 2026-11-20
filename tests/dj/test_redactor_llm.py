@@ -624,3 +624,67 @@ def test_prompt_llm_marca_la_peticion(idioma, valor, linea):
 def test_prompt_sin_peticion_no_la_menciona():
     pet = peticion(["cancion"])
     assert "petición" not in pet.usuario and "request" not in pet.usuario
+
+
+# --- posición de la voz respecto del corte entre temas ---
+
+def con_posicion(p, posicion):
+    return Pedido(**{**p.__dict__, "posicion": posicion})
+
+
+@pytest.mark.parametrize("idioma", ["es", "en"])
+def test_con_posicion_inicio_el_prompt_es_el_de_siempre(idioma):
+    base = peticion(["cancion", "hora"], p=pedido(idioma))
+    assert peticion(["cancion", "hora"], p=con_posicion(pedido(idioma), "inicio")) == base
+
+
+def test_entre_le_pide_al_llm_cerrar_el_anterior_y_presentar_el_siguiente():
+    pet = peticion(["cancion"], p=con_posicion(pedido("es"), "entre"))
+    assert ("Empezás a hablar mientras termina el tema anterior y terminás con el tema nuevo ya sonando: "
+            "cerrá el anterior y presentá el siguiente.") in pet.usuario
+    assert "Tema anterior: Dale Don Dale de Don Omar" in pet.usuario        # aunque no se haya elegido "anterior"
+    en = peticion(["cancion"], p=con_posicion(pedido("en"), "entre"))
+    assert ("You start talking while the previous song is ending and finish with the new song already playing: "
+            "close the previous one and introduce the next one.") in en.usuario
+    assert "Previous song: Dale Don Dale by Don Omar" in en.usuario
+
+
+def test_final_le_pide_al_llm_hablar_en_futuro():
+    pet = peticion(["cancion"], p=con_posicion(pedido("es"), "final"))
+    assert ("Hablás antes de que empiece el tema nuevo: usá futuro (a continuación, enseguida) y no digas que ya "
+            "suena.") in pet.usuario
+    assert "Tema anterior" not in pet.usuario            # no se agrega solo: es un ingrediente opcional
+    en = peticion(["cancion"], p=con_posicion(pedido("en"), "final"))
+    assert ("You speak before the new song starts: use the future (up next, coming up) and do not say it is "
+            "already playing.") in en.usuario
+
+
+def test_entre_sin_anterior_se_trata_como_final():
+    pet = peticion(["cancion"], p=con_posicion(pedido("es", anterior=False), "entre"))
+    assert "antes de que empiece el tema nuevo" in pet.usuario
+    assert "Tema anterior" not in pet.usuario and "mientras termina" not in pet.usuario
+
+
+@pytest.mark.parametrize("idioma", ["es", "en"])
+def test_la_indicacion_de_la_posicion_no_cuenta_como_hecho_para_el_largo(idioma):
+    base = peticion(["cancion"], p=pedido(idioma))
+    assert peticion(["cancion"], p=con_posicion(pedido(idioma), "final")).sistema == base.sistema
+    # en "entre" el anterior sí hay que decirlo: pesa como cuando se lo elige de ingrediente
+    con_anterior = peticion(["cancion", "anterior"], p=pedido(idioma))
+    assert peticion(["cancion"], p=con_posicion(pedido(idioma), "entre")).sistema == con_anterior.sistema
+
+
+def test_verificar_en_entre_pide_nombrar_el_tema_anterior():
+    p = con_posicion(pedido("es"), "entre")
+    pet = peticion(["cancion"], p=p)
+    sin = "Ahora llega Take On Me de a-ha para seguir con la mejor música."
+    con = "Eso fue Dale Don Dale de Don Omar y seguimos con Take On Me de a-ha."
+    assert verificar(sin, p, pet, 45) == "no nombra el tema anterior"
+    assert verificar(con, p, pet, 45) is None
+
+
+def test_verificar_no_pide_el_anterior_en_inicio_ni_en_final():
+    for posicion in ("inicio", "final"):
+        p = con_posicion(pedido("es"), posicion)
+        pet = peticion(["cancion"], p=p)
+        assert verificar("Ahora llega Take On Me de a-ha para seguir con la mejor música.", p, pet, 45) is None
