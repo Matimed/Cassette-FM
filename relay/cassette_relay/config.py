@@ -2,7 +2,7 @@
 from collections.abc import Mapping
 from dataclasses import dataclass
 
-CALIDADES = (64, 96, 160)      # kbps que sube la PC (protocolo del puente, versión 1)
+CALIDADES = (32, 64, 96, 160)      # kbps que sube la PC (protocolo del puente, versión 1)
 PROTOCOLO = 1
 MAESTRA = "maestra"        # el id de acceso de la clave maestra (MASTER_PASSWORD)
 

@@ -190,7 +190,7 @@
 <script>
 const $ = (id) => document.getElementById(id);
 const audio = $("audio"), fila = $("fila");
-const ETIQUETAS = { 64: "Datos móviles · 64", 96: "Normal · 96", 160: "Alta · 160" };
+const ETIQUETAS = { 32: "Ahorro de datos · 32", 64: "Baja · 64", 96: "Normal · 96", 160: "Alta · 160" };
 const mod = (a, n) => ((a % n) + n) % n;
 const guardado = (k) => { try { return localStorage.getItem(k); } catch { return null; } };
 const guardar = (k, v) => { try { localStorage.setItem(k, v); } catch {} };
@@ -200,7 +200,7 @@ let estado = null, nombres = [], iconos = {}, firmaLista = "";
 let pos = 0, objetivo = 0, arrastrando = null, raf = 0, ultimoT = 0, mostrada = -1;
 let confirmada = null, pendiente = null, timerEnvio = 0, hayTimer = false, enviando = false, reenviar = false;
 let movil = false, G = {};
-let calidad = ["64", "96", "160"].includes(guardado("calidad")) ? guardado("calidad") : "96";
+let calidad = ["32", "64", "96", "160"].includes(guardado("calidad")) ? guardado("calidad") : "96";
 let volumen = Number.isFinite(+guardado("volumen")) && guardado("volumen") !== null ? Math.min(100, Math.max(0, +guardado("volumen"))) : 100;
 const reducido = matchMedia("(prefers-reduced-motion: reduce)").matches;
 
@@ -578,7 +578,7 @@ async function actualizar(primera) {
   estado = e; enLinea = !!e.en_linea; manda = e.permiso === "completa";
   $("pastilla").hidden = manda;
   $("anterior").hidden = $("siguiente").hidden = !manda;
-  const cal = (e.calidades && e.calidades.length ? e.calidades : [64, 96, 160]);
+  const cal = (e.calidades && e.calidades.length ? e.calidades : [32, 64, 96, 160]);
   if (JSON.stringify(cal) !== firmaCal) { firmaCal = JSON.stringify(cal); pintarCalidades(cal); }
   const radio = e.radio;
   if (radio) {

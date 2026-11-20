@@ -27,11 +27,17 @@ class CodificadorNoDisponible(Exception):
     """No se pudo arrancar el codificador (falta GStreamer o no arranca)."""
 
 
+# La calidad de ahorro de datos (32 kbps) va en mono a 22,05 kHz: con estéreo de 44,1 kHz, LAME tiene que bajar el muestreo a
+# 16 kHz para entrar en el bitrate y suena mucho peor; en mono a 22,05 kHz conserva el del formato (MPEG-2 capa III).
+AHORRO_KBPS = 32
+
+
 def comando_gst(fuente: str, dispositivo: str = "radio_virtual.monitor", kbps: int = 160) -> list[str]:
+    formato = ("audio/x-raw,rate=22050,channels=1" if kbps <= AHORRO_KBPS else "audio/x-raw,rate=44100,channels=2")
     origen = (["audiotestsrc", "wave=white-noise", "volume=0.05", "is-live=true"] if fuente == FUENTE_ESTATICA
               else ["pulsesrc", f"device={dispositivo}"])
     return ["gst-launch-1.0", "-q", *origen, "!", "audioconvert", "!", "audioresample", "!",
-            "audio/x-raw,rate=44100,channels=2", "!", "lamemp3enc", "target=bitrate", "cbr=true",
+            formato, "!", "lamemp3enc", "target=bitrate", "cbr=true",
             f"bitrate={kbps}", "!", "fdsink", "fd=1"]
 
 

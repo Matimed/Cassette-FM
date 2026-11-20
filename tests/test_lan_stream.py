@@ -202,6 +202,14 @@ def test_comando_gst_para_cada_fuente():
     assert "audiotestsrc" in estatica and "wave=white-noise" in estatica and "pulsesrc" not in estatica
 
 
+def test_la_calidad_de_ahorro_de_datos_va_en_mono_a_22050():
+    # a 32 kbps el estéreo de 44,1 kHz obliga a LAME a bajar el muestreo a 16 kHz; en mono a 22,05 kHz conserva el del formato
+    ahorro = comando_gst(FUENTE_MONITOR, kbps=32)
+    assert "audio/x-raw,rate=22050,channels=1" in ahorro and "bitrate=32" in ahorro
+    for kbps in (64, 96, 160):
+        assert "audio/x-raw,rate=44100,channels=2" in comando_gst(FUENTE_MONITOR, kbps=kbps)
+
+
 def test_lanzar_gst_sin_gstreamer_levanta_CodificadorNoDisponible(monkeypatch):
     monkeypatch.setenv("PATH", "/nonexistent")
     with pytest.raises(CodificadorNoDisponible):
@@ -268,7 +276,7 @@ def test_difusores_crea_uno_por_calidad_y_lo_reusa(banco):
 
 def test_la_cola_tolera_el_mismo_tiempo_en_cualquier_calidad(banco):
     r = Difusores(lambda: banco.fuente, crear=lambda f, **kw: banco.difusor(**kw))
-    for kbps in (64, 96, 160):
+    for kbps in (32, 64, 96, 160):
         d = r.de(kbps)
         segundos = d._cola_max * 4096 * 8 / (kbps * 1000)
         assert 4.0 <= segundos <= 6.0, (kbps, segundos)

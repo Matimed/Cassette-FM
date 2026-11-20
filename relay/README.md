@@ -135,7 +135,7 @@ Las claves de solo escucha reciben **403** al sintonizar, ir al siguiente o al a
 | `POST /api/salir` | Borra la cookie. |
 | `GET /api/estado` | `{"en_linea", "visto_hace", "calidades", "radio", "permiso"}` (`radio`: lo último que mandó la PC; `permiso`: `escucha` o `completa`). |
 | `POST /api/sintonizar` `{"estacion": "…"}` | Cambia de emisora (también `/api/siguiente` y `/api/anterior`). |
-| `GET /api/escuchar?calidad=64` | El MP3 en vivo (64, 96 o 160 kbps). |
+| `GET /api/escuchar?calidad=64` | El MP3 en vivo (32, 64, 96 o 160 kbps; 32 es "ahorro de datos", mono a 22,05 kHz, ~14 MB por hora). La PC y el relay se actualizan juntos: un relay nuevo con una PC vieja no recibe audio a 32. |
 | `GET /api/icono/<emisora>?v=<versión>` | El logo de una emisora. |
 | `GET /salud` | `ok` (sin clave). |
 

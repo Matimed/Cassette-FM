@@ -62,6 +62,14 @@ Android no cuenta como "reproduciendo" a un audio mudo: tira el control multimed
 (con `muted`, cambiar de emisora desde la notificación cortaba todo y nunca sintonizaba). Con la app minimizada la página sigue
 sondeando el estado mientras suena, para que el título del control multimedia esté al día.
 
+## Calidad de ahorro de datos (32 kbps)
+
+Cuarta calidad, "Ahorro de datos · 32" (~14 MB por hora, la mitad de la de 64), para la calle y los auriculares baratos. Se
+codifica en **mono a 22,05 kHz** (`lan_stream.comando_gst`): probado con el codificador real, en estéreo de 44,1 kHz LAME baja
+el muestreo a 16 kHz para entrar en 32 kbps; en mono a 22,05 kHz conserva el del formato (MPEG-2 capa III). Se descartó 24 kbps:
+LAME baja a 16 kHz aun en mono. El protocolo del puente sigue en la versión 1 (la lista de calidades del `hola` crece), pero PC
+y relay se actualizan juntos.
+
 ## App instalada (Android)
 
 `/manifest.webmanifest` (`display: standalone`, `background_color` y `theme_color` `#0e0e13`, íconos de 192 y 512 y uno

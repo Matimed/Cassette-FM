@@ -97,7 +97,7 @@ def test_salir_borra_la_cookie(relay):
 
 def test_estado_fuera_de_linea(relay):
     status, _, cuerpo = relay.pedir("GET", "/api/estado", headers=BEARER)
-    assert json.loads(cuerpo) == {"en_linea": False, "visto_hace": None, "calidades": [64, 96, 160], "radio": None,
+    assert json.loads(cuerpo) == {"en_linea": False, "visto_hace": None, "calidades": [32, 64, 96, 160], "radio": None,
                                "permiso": "completa"}
 
 
@@ -172,7 +172,13 @@ def test_escuchar_fuera_de_linea_503(relay):
     assert relay.pedir("GET", "/api/escuchar?calidad=64", headers=BEARER)[0] == 503
 
 
-@pytest.mark.parametrize("calidad", ["128", "abc"])
+def test_escuchar_acepta_la_calidad_de_ahorro_de_datos(relay):
+    pc_en_linea(relay)
+    status, headers, _ = relay.pedir("HEAD", "/api/escuchar?calidad=32", headers=BEARER)
+    assert status == 200 and headers["Content-Type"] == "audio/mpeg"
+
+
+@pytest.mark.parametrize("calidad", ["128", "abc", "24"])
 def test_escuchar_calidad_invalida_400(relay, calidad):
     pc_en_linea(relay)
     assert relay.pedir("GET", f"/api/escuchar?calidad={calidad}", headers=BEARER)[0] == 400
@@ -284,6 +290,11 @@ def test_manifest_para_instalar_como_app(relay):
         assert status == 200 and headers["Content-Type"].startswith("image/png") and cuerpo[:4] == b"\x89PNG", icono["src"]
     pagina = relay.pedir("GET", "/")[2]
     assert b'rel="manifest" href="/manifest.webmanifest"' in pagina and b'serviceWorker.register("/sw.js")' in pagina
+
+
+def test_pagina_ofrece_la_calidad_de_ahorro_de_datos(relay):
+    pagina = relay.pedir("GET", "/")[2]
+    assert b'32: "Ahorro de datos' in pagina and b'64: "Baja' in pagina and b'["32", "64", "96", "160"]' in pagina and b"[32, 64, 96, 160]" in pagina
 
 
 def test_menu_ofrece_instalar_la_app_solo_si_chrome_la_ofrece(relay):

@@ -38,7 +38,7 @@ remoto de la LAN. No hay otros oyentes que coordinar.
 - Reportar al relay el estado de la radio: emisoras, la sintonizada, si está prendida, el tema que suena (con su
   fuente y posición) y los logos, para que la web pueda verse como el dial.
 - Recibir órdenes del relay y ejecutarlas: sintonizar una emisora, siguiente, anterior.
-- Subir el audio del bus en MP3, en la calidad que pida cada oyente: **64, 96 o 160 kbps**, un codificador por calidad
+- Subir el audio del bus en MP3, en la calidad que pida cada oyente: **32, 64, 96 o 160 kbps** (la de 32, "ahorro de datos", va en mono a 22,05 kHz: en estéreo de 44,1 kHz LAME tiene que bajar el muestreo a 16 kHz y suena peor), un codificador por calidad
   en uso.
 
 **No objetivos (ahora)**
@@ -87,7 +87,7 @@ Todas llevan `Authorization: Bearer <clave>`. El relay contesta 401 si la clave 
 
 **De la PC al relay**
 
-- `hola` — primero al conectar: `{"tipo": "hola", "protocolo": 1, "calidades": [64, 96, 160]}`.
+- `hola` — primero al conectar: `{"tipo": "hola", "protocolo": 1, "calidades": [32, 64, 96, 160]}`.
 - `estado` — justo después del `hola` y cada vez que la radio cambia (a lo sumo uno cada 0,5 s; si hubo varios cambios
   en ese lapso va el último):
   `{"tipo": "estado", "seq": 12, "encendida": true, "estacion": "Power F.M.", "pista": "Artista - Tema",
@@ -219,7 +219,7 @@ endurecimiento.
 ## Decisiones que tomé yo (para revisar)
 
 - Nombre del módulo y de la sección: `puente_nube.py` y `[nube]`, en español como el resto (`lan_server`, `[lan]`).
-- Calidades fijas 64/96/160 en el código, sin config: alcanza para elegir entre ahorro y calidad.
+- Calidades fijas 32/64/96/160 en el código, sin config: alcanza para elegir entre ahorro y calidad.
 - Desde la nube no se apaga la radio ni se toca el volumen de esta PC: con la radio apagada se oye estática y sintonizar
   la prende, igual que el applet remoto.
 - Los logos se suben por un `PUT` corto en vez de por el control, para no trabar órdenes con unos cientos de KB.

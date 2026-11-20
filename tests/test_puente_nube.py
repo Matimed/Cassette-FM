@@ -169,6 +169,7 @@ def test_al_conectar_manda_hola_y_estado(relay, armar):
     assert c.headers["Authorization"] == f"Bearer {CLAVE}"
     hola = relay.recibir(c)
     assert hola == {"tipo": "hola", "protocolo": PROTOCOLO, "calidades": list(CALIDADES)} and PROTOCOLO == 1
+    assert CALIDADES == (32, 64, 96, 160)             # 32: ahorro de datos (mono a 22,05 kHz)
     estado = relay.recibir(c)
     assert estado["tipo"] == "estado" and estado["seq"] == 1 and estado["estacion"] == "A"
 

@@ -119,7 +119,7 @@ WebSocket.
     log y no corta la conexión.
   - Al cerrarse el control, la radio queda **fuera de línea**: las órdenes pendientes fallan con "la radio se
     desconectó". El último estado y los logos se conservan para mostrarlos como "lo último que sonó".
-- **Audio** `GET /casa/audio?calidad=K` (WebSocket), `K` en 64, 96 o 160 (otra cosa: cierre con código 1008). Una por
+- **Audio** `GET /casa/audio?calidad=K` (WebSocket), `K` en 32, 64, 96 o 160 (otra cosa: cierre con código 1008). Una por
   calidad; una nueva de la misma calidad reemplaza a la anterior. Cada mensaje binario se reparte a los oyentes de esa
   calidad. Los mensajes de texto se ignoran. Las conexiones de audio pueden seguir abiertas un rato con el control caído
   (el puente las corta a los 60 s); su audio se sigue repartiendo.
@@ -138,7 +138,7 @@ la respuesta al `hola` ya lleva la demanda vigente.
 
 Cada oyente es una conexión HTTP de audio con su propia cola de bytes:
 
-- **Tope de la cola: 15 s de audio** de su calidad (`15 × kbps × 1000 / 8` bytes: ~117 KB a 64, ~293 KB a 160).
+- **Tope de la cola: 15 s de audio** de su calidad (`15 × kbps × 1000 / 8` bytes: ~59 KB a 32, ~117 KB a 64, ~293 KB a 160).
   Absorbe bajones de la conexión móvil sin perder nada.
 - **Si se llena, un solo salto al vivo**: se vacía la cola entera y se sigue con lo que llega. Nunca se descartan
   pedazos sueltos (saltos constantes).
@@ -158,7 +158,7 @@ Todas las rutas `/api/…` exigen sesión (cookie) o `Authorization: Bearer <APP
 |---|---|
 | `POST /api/entrar` `{"clave": "…"}` | 204 y la cookie de sesión; 401 si no coincide; 429 si hay demasiados intentos. |
 | `POST /api/salir` | 204 y borra la cookie. |
-| `GET /api/estado` | `{"en_linea": bool, "visto_hace": segundos o null, "calidades": [64, 96, 160], "radio": {…} o null}` |
+| `GET /api/estado` | `{"en_linea": bool, "visto_hace": segundos o null, "calidades": [32, 64, 96, 160], "radio": {…} o null}` |
 | `POST /api/sintonizar` `{"estacion": "…"}` | Orden a la PC (abajo). |
 | `POST /api/siguiente`, `POST /api/anterior` | Orden a la PC. |
 | `GET /api/escuchar?calidad=96` | MP3 en vivo (`audio/mpeg`, `Cache-Control: no-store`), por defecto 96. |
@@ -171,7 +171,7 @@ Todas las rutas `/api/…` exigen sesión (cookie) o `Authorization: Bearer <APP
 - **Órdenes**: se mandan a la PC con un `id` nuevo y se espera su `resultado` hasta **10 s**. Respuestas: 200
   `{"ok": true}`; 409 `{"error": …}` si la PC dijo que no (por ejemplo "esa emisora no existe"); 503 si la radio está
   fuera de línea o se desconectó esperando; 504 si no contestó a tiempo. `estacion` que no es un texto no vacío: 400.
-- **Escuchar**: calidad que no es 64, 96 o 160: 400. Con la radio fuera de línea: 503 sin abrir el stream. Si no, se
+- **Escuchar**: calidad que no es 32, 64, 96 o 160: 400. Con la radio fuera de línea: 503 sin abrir el stream. Si no, se
   abren los encabezados al toque y empieza a fluir cuando la PC arranca su codificador (1–2 s la primera vez).
 - Las órdenes y `entrar` exigen `Content-Type: application/json` (junto con la cookie `SameSite`, corta los pedidos
   cruzados desde otros sitios).

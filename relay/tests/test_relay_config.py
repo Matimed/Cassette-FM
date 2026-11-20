@@ -4,7 +4,7 @@ from cassette_relay.config import CALIDADES, PROTOCOLO, ErrorConfig, desde_entor
 
 
 def test_constantes_del_protocolo():
-    assert CALIDADES == (64, 96, 160) and PROTOCOLO == 1
+    assert CALIDADES == (32, 64, 96, 160) and PROTOCOLO == 1
 
 
 def test_lee_las_variables():

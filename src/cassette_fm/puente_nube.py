@@ -27,7 +27,7 @@ from cassette_fm.radio import SinEstaciones
 _log = logging.getLogger("cassette_fm")
 
 PROTOCOLO = 1
-CALIDADES = (64, 96, 160)
+CALIDADES = (32, 64, 96, 160)
 _CONEXION_ESTABLE = 60.0       # una conexión que duró más que esto vuelve la espera al mínimo
 _VUELTA_LECTURA = 0.05         # cada cuánto el control mira si hay un estado para mandar
 _VUELTA_AUDIO = 0.2            # cada cuánto una conexión de audio mira si sigue pedida

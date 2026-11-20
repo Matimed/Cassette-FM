@@ -538,8 +538,8 @@ url = "wss://relay.ejemplo.com"      # base del relay (ws:// solo contra localho
 - Un WebSocket de control permanente (`/casa/control`): la PC manda el estado (emisoras, la sintonizada, el tema y los
   logos) y recibe órdenes (sintonizar, siguiente, anterior; nunca apagar ni el volumen de esta PC). Se reconecta solo,
   y si pasan 2 minutos sin nada que mandar manda un `latido` (así Render no duerme el relay).
-- El audio sale solo mientras el relay avisa que hay oyentes: un WebSocket por calidad pedida (MP3 de 64, 96 o 160 kbps;
-  ~29, 43 o 72 MB por hora), con el mismo codificador que la LAN (a 160 lo comparten).
+- El audio sale solo mientras el relay avisa que hay oyentes: un WebSocket por calidad pedida (MP3 de 32, 64, 96 o 160 kbps;
+  ~14, 29, 43 o 72 MB por hora; la de 32 es "ahorro de datos": mono a 22,05 kHz), con el mismo codificador que la LAN (a 160 lo comparten).
 - `cassette nube` muestra la conexión, lo que se está subiendo y la **clave** que hay que cargar en el relay;
   `cassette nube regenerar` la cambia sin reiniciar.
 - **Claves para escuchar:** en el relay queda una sola, la maestra (`MASTER_PASSWORD`, siempre con todos los permisos).
