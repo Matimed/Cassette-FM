@@ -30,7 +30,7 @@ const ICONOS_REINTENTO_MS = 30000;          // si bajar los logos falla, no se r
 const RECEPTOR_AL_DIA_MS = 10000;           // cada cuánto se le pregunta cómo está (se entera de que mpv murió)
 const LIMITE_EXAMINAR_SEGUNDOS = 600;       // lo que tarda la persona en elegir la imagen
 const BARRAS_COLUMNAS = 4;                  // las barritas de puntos del panel (suena la radio)
-const BARRAS_FILAS = 5;
+const BARRAS_FILAS = 4;
 const BARRAS_CUADRO_MS = 90;                // cada cuánto se redibujan (≈ 11 cuadros por segundo)
 
 class CassetteApplet extends Applet.TextIconApplet {
@@ -42,8 +42,8 @@ class CassetteApplet extends Applet.TextIconApplet {
         this._limitador = AppletDir.logic.crearLimitador(ESPERA_RUEDA_MS);
         this._sondeando = false;
 
-        // Apagada: el casete de la marca en blanco y sin fondo (branding/). Con la radio prendida el ícono se cambia por las
-        // barritas de puntos blancos, que suben y bajan, y al lado va el nombre de la emisora.
+        // Apagada: el casete de la marca en blanco y sin fondo (branding/). Sonando, el ícono se cambia por las barritas de
+        // puntos blancos, que suben y bajan, y al lado va el nombre de la emisora; si está muteada, solo el nombre.
         this.set_applet_icon_path(metadata.path + "/casete-panel.png");
         this._animacionBarras = 0;
         this._barrasT0 = Date.now();
@@ -177,17 +177,19 @@ class CassetteApplet extends Applet.TextIconApplet {
         this.estado = estado;
         this.set_applet_label(AppletDir.logic.etiqueta(estado, this.mostrar_estacion));
         this.set_applet_tooltip(AppletDir.logic.tooltip(estado));
-        this._ponerBarras(AppletDir.barras.suena(estado));
+        this._ponerBarras(AppletDir.puntos.modo(estado));
         this._reconstruirMenu();
     }
 
-    // Cambia el ícono por las barritas (o al revés) y arranca o frena la animación: solo corre mientras suena.
-    _ponerBarras(suena) {
+    // Apagada: el casete. Sonando: las barritas (y la animación corre solo mientras suena). Muteada: ni uno ni otro, solo el
+    // nombre de la emisora (la etiqueta).
+    _ponerBarras(modo) {
+        const suena = modo === "suena";
         const tam = this.getPanelIconSize(St.IconType.FULLCOLOR);
-        const medidas = AppletDir.barras.medidas(tam, BARRAS_COLUMNAS, BARRAS_FILAS);
+        const medidas = AppletDir.puntos.medidas(tam, BARRAS_COLUMNAS, BARRAS_FILAS);
         this._medidasBarras = medidas;
         this._barras.set_size(Math.ceil(medidas.ancho), tam);
-        this._applet_icon_box.visible = !suena;
+        this._applet_icon_box.visible = modo === "apagada";
         this._barras.visible = suena;
         if (suena && !this._animacionBarras) {
             this._animacionBarras = Mainloop.timeout_add(BARRAS_CUADRO_MS, () => {
@@ -200,19 +202,19 @@ class CassetteApplet extends Applet.TextIconApplet {
         }
     }
 
-    // Una grilla de puntos blancos: los de abajo de cada columna prendidos (según el instante) y el resto apenas visibles.
+    // Una grilla de puntos blancos: en cada columna, desde abajo, los que están prendidos en ese instante.
     _dibujarBarras(area) {
         const cr = area.get_context();
         const [ancho, alto] = area.get_surface_size();
         const m = this._medidasBarras;
         if (m) {
-            const prendidos = AppletDir.barras.alturas(Date.now() - this._barrasT0, BARRAS_COLUMNAS, BARRAS_FILAS);
+            const prendidos = AppletDir.puntos.alturas(Date.now() - this._barrasT0, BARRAS_COLUMNAS, BARRAS_FILAS);
             const paso = m.punto + m.hueco;
             const x0 = (ancho - m.ancho) / 2;
             const base = (alto + m.alto) / 2;
             for (let c = 0; c < BARRAS_COLUMNAS; c++) {
-                for (let f = 0; f < BARRAS_FILAS; f++) {
-                    cr.setSourceRGBA(1, 1, 1, f < prendidos[c] ? 1 : 0.18);
+                cr.setSourceRGBA(1, 1, 1, 1);
+                for (let f = 0; f < prendidos[c]; f++) {
                     cr.arc(x0 + c * paso + m.punto / 2, base - f * paso - m.punto / 2, m.punto / 2, 0, 2 * Math.PI);
                     cr.fill();
                 }

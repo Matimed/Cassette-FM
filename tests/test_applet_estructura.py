@@ -280,6 +280,6 @@ def test_icono_del_applet_es_el_casete_blanco_y_las_barras_son_de_puntos():
     for archivo in ("icon.png", "casete-panel.png"):
         assert (CARPETA / archivo).read_bytes()[:4] == b"\x89PNG"
     # con la radio prendida el ícono se cambia por las barras, que se dibujan con Cairo y se animan con un temporizador
-    assert "AppletDir.barras.suena(" in js and "AppletDir.barras.alturas(" in js and "St.DrawingArea" in js
+    assert "AppletDir.puntos.modo(" in js and "AppletDir.puntos.alturas(" in js and "St.DrawingArea" in js
     assert "_animacionBarras" in js and js.count("Mainloop.source_remove(this._animacionBarras)") >= 2   # al apagar y al sacar el applet
-    assert (CARPETA / "barras.js").exists()
+    assert (CARPETA / "puntos.js").exists()

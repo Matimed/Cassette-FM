@@ -63,9 +63,12 @@ pausó. En iPhone el contexto de audio se crea en el primer cambio (hace falta u
 táctil e `icon.png` del applet sobre fondo oscuro; la cabecera de la página lo usa sin fondo. Se generan con
 `scripts/renderizar-icono.py`. Un primer intento con fondo naranja no gustó.
 
-**Applet (panel):** apagado, el casete blanco sin fondo (`casete-panel.png`); con la radio prendida, en lugar del ícono,
-cuatro columnas de cinco puntos blancos que suben y bajan (≈ 11 cuadros por segundo, solo mientras suena; `barras.js` y
-un `St.DrawingArea` con Cairo) y al lado el nombre de la emisora.
+**Applet (panel), tres estados:** apagada, el casete blanco sin fondo (`casete-panel.png`); sonando, en lugar del ícono,
+cuatro columnas de cuatro puntos blancos que suben y bajan (solo los prendidos se dibujan; la grilla ocupa el 62 % del alto
+del ícono para dejar aire arriba y abajo; ≈ 11 cuadros por segundo, solo mientras suena; `puntos.js` y un `St.DrawingArea`
+con Cairo) y al lado el nombre de la emisora; prendida pero muteada en este monitor (`monitor_local: false`), solo el nombre.
+Ojo: `ReloadXlet` no vuelve a leer los módulos auxiliares (`logic.js`, `puntos.js`); si cambian, hace falta reiniciar
+Cinnamon (o darles un nombre nuevo, como pasó con `barras.js` → `puntos.js`).
 
 ## Escala en la web de escritorio
 
