@@ -17,9 +17,11 @@ FONDO_OSCURO = "linear-gradient(#2c2c3a, #0e0e13)"
 # (no toca ninguna otra línea del dibujo)
 VENTANA = "inset(50.1% 23.6% 28.6% 23.1%)"
 
-# (archivo, lado en px, fondo o None, esquinas redondeadas en %, tamaño del casete respecto del lado, ventana en naranja, color base)
+# (archivo, lado en px, fondo o None, esquinas redondeadas en %, tamaño del casete respecto del lado, ventana en naranja, color base,
+#  [corrimiento vertical del dibujo, en fracción del lado: negativo = hacia arriba])
 DESTINOS = [
-    (RAIZ / "relay/web/casete-color.png", 512, None, 0, 1.0, True, BLANCO),
+    # la cabecera de la página lleva texto al lado: se centra el cuerpo del casete (sin la antena) en vertical, y la antena sobresale por arriba
+    (RAIZ / "relay/web/casete-color.png", 512, None, 0, 1.0, True, BLANCO, -0.1094),
     (RAIZ / "relay/web/favicon-32.png", 32, FONDO_OSCURO, 22, 0.95, True, BLANCO),
     (RAIZ / "relay/web/apple-touch-icon.png", 180, FONDO_OSCURO, 0, 0.88, True, BLANCO),
     (RAIZ / "applet/cassette-fm@cassette-fm/icon.png", 256, FONDO_OSCURO, 22, 0.95, True, BLANCO),
@@ -31,7 +33,7 @@ DESTINOS = [
 ]
 
 
-def pagina(lado: int, fondo: str | None, radio: int, escala: float, acento: bool, base: str) -> str:
+def pagina(lado: int, fondo: str | None, radio: int, escala: float, acento: bool, base: str, dy: float = 0.0) -> str:
     uri = "data:image/png;base64," + base64.b64encode(FUENTE.read_bytes()).decode()
     lado_casete = round(lado * escala)
     capa = lambda color, extra="": (f'<div style="position:absolute;inset:0;background:{color};{extra}'
@@ -40,7 +42,7 @@ def pagina(lado: int, fondo: str | None, radio: int, escala: float, acento: bool
     marco = f"background:{fondo};" if fondo else ""
     return (f'<body style="margin:0;background:transparent"><div style="width:{lado}px;height:{lado}px;{marco}border-radius:{radio}%;'
             f'display:flex;align-items:center;justify-content:center"><div style="position:relative;width:{lado_casete}px;'
-            f'height:{lado_casete}px">{capas}</div></div></body>')
+            f'height:{lado_casete}px;top:{round(lado * dy)}px">{capas}</div></div></body>')
 
 
 def renderizar(archivo: Path, lado: int, *args) -> None:
@@ -56,6 +58,6 @@ def renderizar(archivo: Path, lado: int, *args) -> None:
 
 
 if __name__ == "__main__":
-    for archivo, lado, fondo, radio, escala, acento, base in DESTINOS:
-        renderizar(archivo, lado, fondo, radio, escala, acento, base)
+    for archivo, lado, fondo, radio, escala, acento, base, *dy in DESTINOS:
+        renderizar(archivo, lado, fondo, radio, escala, acento, base, *dy)
         print(f"{archivo.relative_to(RAIZ)} ({lado}x{lado})")
