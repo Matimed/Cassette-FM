@@ -4,6 +4,7 @@
 <https://cdn-icons-png.flaticon.com/512/2876/2876917.png>. La licencia gratuita de Flaticon pide dar crédito al autor; si el
 proyecto se publica, hay que agregarlo acá.
 
-`python3 scripts/renderizar-icono.py` lo pone sobre un cuadrado naranja (`#d9822b`) y genera los PNG que se usan:
-favicon e ícono táctil de la web del relay (`relay/web/`) e ícono del applet (`applet/cassette-fm@cassette-fm/icon.png`).
-La cabecera de la página usa `relay/web/casete.png` como máscara, pintado de blanco.
+`python3 scripts/renderizar-icono.py` genera, con Chromium sin ventana, las versiones que se usan:
+casete blanco con la ventana de la cinta (los carretes) en naranja `#d9822b`, solo (`relay/web/casete-color.png`, cabecera de
+la página) o sobre un fondo oscuro (favicon, ícono táctil y `icon.png` del applet), y el casete blanco liso y sin fondo del
+panel del applet (`applet/cassette-fm@cassette-fm/casete-panel.png`).

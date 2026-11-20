@@ -59,8 +59,19 @@ pausó. En iPhone el contexto de audio se crea en el primer cambio (hace falta u
 
 ## Ícono
 
-`branding/casete.png` (Flaticon, el que eligió el usuario) sobre un cuadrado naranja: favicon, ícono táctil y ícono del
-applet, generados con `scripts/renderizar-icono.py`. La cabecera de la página usa el mismo PNG como máscara, en blanco.
+`branding/casete.png` (Flaticon, el que eligió el usuario) en blanco con la ventana de la cinta en naranja: favicon, ícono
+táctil e `icon.png` del applet sobre fondo oscuro; la cabecera de la página lo usa sin fondo. Se generan con
+`scripts/renderizar-icono.py`. Un primer intento con fondo naranja no gustó.
+
+**Applet (panel):** apagado, el casete blanco sin fondo (`casete-panel.png`); con la radio prendida, en lugar del ícono,
+cuatro columnas de cinco puntos blancos que suben y bajan (≈ 11 cuadros por segundo, solo mientras suena; `barras.js` y
+un `St.DrawingArea` con Cairo) y al lado el nombre de la emisora.
+
+## Escala en la web de escritorio
+
+Todo (CSS y geometría del dial) escala con una unidad `--u` y un factor entre 1 y 1,5 según el tamaño de la ventana
+(`min(ancho / 853, alto / 480, 1.5)`), como el zoom al 150 % que el usuario probó en el navegador. En el celular el factor
+es 1. El botón Salir va arriba a la derecha (en el celular, en el menú ⋮).
 
 ## Queda para después
 

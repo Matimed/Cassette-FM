@@ -262,7 +262,7 @@ def test_pagina_publica(relay):
 
 
 def test_iconos_de_la_pagina_son_publicos(relay):
-    for ruta in ["/web/favicon-32.png", "/web/apple-touch-icon.png", "/web/casete.png", "/favicon.ico"]:
+    for ruta in ["/web/favicon-32.png", "/web/apple-touch-icon.png", "/web/casete-color.png", "/favicon.ico"]:
         status, headers, cuerpo = relay.pedir("GET", ruta)
         assert status == 200 and headers["Content-Type"].startswith("image/png") and cuerpo[:4] == b"\x89PNG", ruta
     pagina = relay.pedir("GET", "/")[2]
