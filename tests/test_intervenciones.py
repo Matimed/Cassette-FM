@@ -172,3 +172,52 @@ def test_quitar_estacion_salvo_peticiones(entorno):
     assert r.quitar_estacion("E", salvo_peticiones=True) == [normal]
     assert r.todas() == [pedida] and nuevo().todas() == [pedida]
     assert not normal.audio.exists() and pedida.audio.exists()
+
+
+def test_corte_origen_y_posicion_van_y_vuelven_por_el_json(entorno):
+    nuevo, iv, _, _, _ = entorno
+    r = nuevo()
+    i = replace(iv("A", 1100, 10), corte=1105.0, pista_origen="/m/origen.mp3", posicion="entre")
+    r.agregar(i)
+    (vuelta,) = nuevo().todas()
+    assert vuelta == i
+    assert (vuelta.corte, vuelta.pista_origen, vuelta.posicion) == (1105.0, "/m/origen.mp3", "entre")
+
+
+def test_una_intervencion_guardada_sin_los_campos_nuevos_carga_como_inicio(entorno):
+    nuevo, iv, _, archivo, _ = entorno
+    r = nuevo()
+    r.agregar(iv("A", 1100, 10))
+    datos = json.loads(archivo.read_text(encoding="utf-8"))
+    for d in datos:
+        for campo in ("corte", "pista_origen", "posicion"):
+            d.pop(campo, None)
+    archivo.write_text(json.dumps(datos), encoding="utf-8")
+    (i,) = nuevo().todas()
+    assert i.corte is None and i.pista_origen is None and i.posicion == "inicio"
+
+
+def test_una_posicion_invalida_guardada_carga_como_inicio(entorno):
+    nuevo, iv, _, archivo, _ = entorno
+    nuevo().agregar(iv("A", 1100, 10))
+    datos = json.loads(archivo.read_text(encoding="utf-8"))
+    datos[0]["posicion"] = "medio"
+    archivo.write_text(json.dumps(datos), encoding="utf-8")
+    assert nuevo().todas()[0].posicion == "inicio"
+
+
+def test_corte_estimado_usa_el_corte_o_resta_el_retraso(entorno):
+    _, iv, _, _, _ = entorno
+    sin_corte = iv("A", 1100, 10)
+    assert sin_corte.corte_estimado(1.0) == 1099.0
+    assert replace(sin_corte, corte=1103.5).corte_estimado(1.0) == 1103.5
+
+
+def test_los_campos_nuevos_no_cambian_inicio_fin_ni_el_solape(entorno):
+    nuevo, iv, _, _, _ = entorno
+    r = nuevo()
+    a = replace(iv("A", 1100, 10), corte=1105.0, pista_origen="/m/o.mp3", posicion="entre")
+    r.agregar(a)
+    assert a.fin == 1110 and r.activa("A", 1109.9) == a and r.activa("A", 1110) is None
+    with pytest.raises(ValueError):
+        r.agregar(replace(iv("A", 1105, 10), corte=1110.0, posicion="inicio"))

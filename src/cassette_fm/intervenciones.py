@@ -7,6 +7,8 @@ from collections.abc import Callable
 from dataclasses import asdict, dataclass
 from pathlib import Path
 
+from cassette_fm.posiciones import POSICIONES
+
 _log = logging.getLogger("cassette_fm")
 
 
@@ -20,10 +22,18 @@ class Intervencion:
     texto: str
     pista_destino: str     # clave (Pista.clave) del tema que arranca justo antes de la voz
     peticion: str | None = None   # "antes"/"despues" si anuncia una petición: no se descarta si cambia la agenda
+    corte: float | None = None    # epoch en que termina el tema de origen y empieza el de destino (None: no se guardó)
+    pista_origen: str | None = None   # clave del tema que termina en el corte (dispara la voz que empieza antes)
+    posicion: str = "inicio"      # dónde cae la voz respecto del corte: "inicio" | "entre" | "final"
 
     @property
     def fin(self) -> float:
         return self.inicio + self.duracion
+
+    def corte_estimado(self, retraso_voz: float) -> float:
+        """El corte guardado o, si no hay (se guardó antes de que existiera), el que valía entonces:
+        la voz empezaba `retraso_voz` segundos después del inicio del tema destino."""
+        return self.corte if self.corte is not None else self.inicio - retraso_voz
 
 
 class RegistroIntervenciones:
@@ -130,7 +140,10 @@ class RegistroIntervenciones:
                 i = Intervencion(id=str(d["id"]), estacion=d["estacion"], inicio=float(d["inicio"]),
                                  duracion=float(d["duracion"]), audio=Path(d["audio"]),
                                  texto=d["texto"], pista_destino=d["pista_destino"],
-                                 peticion=d.get("peticion") if d.get("peticion") in ("antes", "despues") else None)
+                                 peticion=d.get("peticion") if d.get("peticion") in ("antes", "despues") else None,
+                                 corte=float(d["corte"]) if d.get("corte") is not None else None,
+                                 pista_origen=str(d["pista_origen"]) if d.get("pista_origen") else None,
+                                 posicion=d["posicion"] if d.get("posicion") in POSICIONES else "inicio")
             except (KeyError, TypeError, ValueError):
                 _log.warning("entrada inválida en el registro de intervenciones: se descarta")
                 continue
