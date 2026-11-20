@@ -39,7 +39,7 @@ class CassetteApplet extends Applet.TextIconApplet {
         this._limitador = AppletDir.logic.crearLimitador(ESPERA_RUEDA_MS);
         this._sondeando = false;
 
-        this.set_applet_icon_symbolic_name("audio-x-generic-symbolic");
+        this.set_applet_icon_path(metadata.path + "/icon.png");          // el casete de la marca (branding/)
 
         this.settings = new Settings.AppletSettings(this, metadata.uuid, instanceId);
         this.settings.bind("puerto", "puerto", () => this._sondear());

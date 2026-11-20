@@ -272,3 +272,9 @@ def test_en_modo_remoto_la_musica_suena_cuando_termina_el_resync():
     cuerpo = js[js.index("    _musicaSonando("):]
     cuerpo = cuerpo[:cuerpo.index("\n    }\n")]
     assert "this.is_remote" in cuerpo and "_resync" in cuerpo and "musicaSonando(" in cuerpo
+
+
+def test_icono_del_applet_es_el_casete():
+    js = (CARPETA / "applet.js").read_text(encoding="utf-8")
+    assert 'set_applet_icon_path(metadata.path + "/icon.png")' in js and "audio-x-generic-symbolic" not in js
+    assert (CARPETA / "icon.png").read_bytes()[:4] == b"\x89PNG"

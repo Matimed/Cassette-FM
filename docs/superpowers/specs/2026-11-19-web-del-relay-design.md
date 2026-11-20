@@ -49,6 +49,19 @@ transformaciones CSS y un bucle `requestAnimationFrame` que anima una posición 
 - Media Session (pantalla de bloqueo): título, emisora, logo y los botones de play/pausa y siguiente/anterior.
 - Se recuerdan en el navegador la calidad y el volumen.
 
+## Estática al cambiar de emisora
+
+Entre elegir otra emisora y que el audio nuevo suene hay un silencio (el pedido, el buffer del stream). Se tapa con
+estática generada en el navegador (Web Audio: ruido blanco con chisporroteo, filtrado, al volumen del control × 0,22).
+Arranca al elegir (con el audio viejo silenciado), se apaga con el evento `playing` del audio nuevo y tiene un tope de
+8 s. No suena con clave de solo escucha (no puede cambiar), ni si el cambio vuelve a la emisora que ya suena, ni si se
+pausó. En iPhone el contexto de audio se crea en el primer cambio (hace falta un gesto) y se suspende al terminar.
+
+## Ícono
+
+`branding/casete.png` (Flaticon, el que eligió el usuario) sobre un cuadrado naranja: favicon, ícono táctil y ícono del
+applet, generados con `scripts/renderizar-icono.py`. La cabecera de la página usa el mismo PNG como máscara, en blanco.
+
 ## Queda para después
 
 Que el resplandor tome el color del logo; temas claros; instalarla como app.

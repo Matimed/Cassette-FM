@@ -53,6 +53,10 @@ def crear_app(ajustes: Ajustes, web_dir: Path | None = None) -> web.Application:
     async def pagina(request: web.Request) -> web.FileResponse:
         return web.FileResponse(carpeta / "index.html", headers={"Cache-Control": "no-cache"})
     app.router.add_get("/", pagina)
+
+    async def favicon(request: web.Request) -> web.FileResponse:     # los navegadores lo piden solos, sin mirar el <link>
+        return web.FileResponse(carpeta / "favicon-32.png", headers={"Cache-Control": "public, max-age=86400"})
+    app.router.add_get("/favicon.ico", favicon)
     if carpeta.is_dir():
         app.router.add_static("/web", carpeta)
     return app

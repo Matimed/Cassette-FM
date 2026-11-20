@@ -261,6 +261,19 @@ def test_pagina_publica(relay):
     assert b"/api/entrar" in cuerpo and b"/api/escuchar" in cuerpo
 
 
+def test_iconos_de_la_pagina_son_publicos(relay):
+    for ruta in ["/web/favicon-32.png", "/web/apple-touch-icon.png", "/web/casete.png", "/favicon.ico"]:
+        status, headers, cuerpo = relay.pedir("GET", ruta)
+        assert status == 200 and headers["Content-Type"].startswith("image/png") and cuerpo[:4] == b"\x89PNG", ruta
+    pagina = relay.pedir("GET", "/")[2]
+    assert b'href="/web/favicon-32.png"' in pagina and b'href="/web/apple-touch-icon.png"' in pagina
+
+
+def test_pagina_tapa_el_silencio_del_cambio_con_estatica(relay):
+    cuerpo = relay.pedir("GET", "/")[2]
+    assert b"empezarEstatica" in cuerpo and b"pararEstatica" in cuerpo and b"esperandoAudio" in cuerpo
+
+
 def test_head_de_escuchar_no_suma_oyente(relay):
     ws = pc_en_linea(relay)
     status, headers, cuerpo = relay.pedir("HEAD", "/api/escuchar?calidad=64", headers=BEARER)
