@@ -1,6 +1,7 @@
 # Marca de cassette-fm
 
-`casete.png` es el ícono del casete (512×512, contorno negro sobre transparente), de Flaticon:
+`casete.png` es el ícono del casete con antena de radio (512×512, contorno negro sobre transparente): el casete de Flaticon, achicado al 78 %,
+más una antena a 30° con largo 200 y bolita en la punta, dibujada a mano. `casete-original.png` es el casete sin antena, tal como viene de Flaticon:
 <https://cdn-icons-png.flaticon.com/512/2876/2876917.png>. La licencia gratuita de Flaticon pide dar crédito al autor; si el
 proyecto se publica, hay que agregarlo acá.
 

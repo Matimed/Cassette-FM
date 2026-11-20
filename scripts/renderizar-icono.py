@@ -13,19 +13,20 @@ RAIZ = Path(__file__).resolve().parent.parent
 FUENTE = RAIZ / "branding" / "casete.png"
 BLANCO, NARANJA = "#f4f4f7", "#d9822b"
 FONDO_OSCURO = "linear-gradient(#2c2c3a, #0e0e13)"
-# la ventana de la cinta dentro del PNG de 512 px: x 80..430, y 185..325 (no toca ninguna otra línea del dibujo)
-VENTANA = "inset(36.1% 16% 36.5% 15.6%)"
+# la ventana de la cinta dentro del PNG de 512 px (el casete va al 78 %, con la antena arriba): x 118..391, y 256..366
+# (no toca ninguna otra línea del dibujo)
+VENTANA = "inset(50.1% 23.6% 28.6% 23.1%)"
 
 # (archivo, lado en px, fondo o None, esquinas redondeadas en %, tamaño del casete respecto del lado, ventana en naranja, color base)
 DESTINOS = [
     (RAIZ / "relay/web/casete-color.png", 512, None, 0, 1.0, True, BLANCO),
-    (RAIZ / "relay/web/favicon-32.png", 32, FONDO_OSCURO, 22, 0.8, True, BLANCO),
-    (RAIZ / "relay/web/apple-touch-icon.png", 180, FONDO_OSCURO, 0, 0.74, True, BLANCO),
-    (RAIZ / "applet/cassette-fm@cassette-fm/icon.png", 256, FONDO_OSCURO, 22, 0.8, True, BLANCO),
+    (RAIZ / "relay/web/favicon-32.png", 32, FONDO_OSCURO, 22, 0.95, True, BLANCO),
+    (RAIZ / "relay/web/apple-touch-icon.png", 180, FONDO_OSCURO, 0, 0.88, True, BLANCO),
+    (RAIZ / "applet/cassette-fm@cassette-fm/icon.png", 256, FONDO_OSCURO, 22, 0.95, True, BLANCO),
     # la app instalada en Android: "any" (esquinas redondeadas) y "maskable" (a sangre completa, con el casete dentro de la zona segura)
-    (RAIZ / "relay/web/icono-192.png", 192, FONDO_OSCURO, 22, 0.8, True, BLANCO),
-    (RAIZ / "relay/web/icono-512.png", 512, FONDO_OSCURO, 22, 0.8, True, BLANCO),
-    (RAIZ / "relay/web/icono-maskable-512.png", 512, FONDO_OSCURO, 0, 0.56, True, BLANCO),
+    (RAIZ / "relay/web/icono-192.png", 192, FONDO_OSCURO, 22, 0.95, True, BLANCO),
+    (RAIZ / "relay/web/icono-512.png", 512, FONDO_OSCURO, 22, 0.95, True, BLANCO),
+    (RAIZ / "relay/web/icono-maskable-512.png", 512, FONDO_OSCURO, 0, 0.66, True, BLANCO),
     (RAIZ / "applet/cassette-fm@cassette-fm/casete-panel.png", 128, None, 0, 1.0, False, "#ffffff"),
 ]
 
