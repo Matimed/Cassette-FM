@@ -2,6 +2,8 @@ import re
 from dataclasses import dataclass
 from datetime import datetime
 
+from cassette_fm.posiciones import POSICIONES
+
 IDIOMAS = {"es": "es", "en": "en-us", "en-us": "en-us", "en-gb": "en-gb"}   # idioma del pedido -> `lang` de Kokoro
 
 _ID = re.compile(r"[A-Za-z0-9_-]{1,64}")
@@ -32,6 +34,8 @@ class Pedido:
     velocidad: float | None = None      # pisa a la velocidad del servicio (0,5 a 2)
     peticion: str | None = None         # "antes" (presenta un tema pedido), "despues" (el anterior fue pedido) o
                                         # "seguidas" (el anterior fue pedido y este también)
+    posicion: str = "inicio"            # dónde cae la voz respecto del corte entre temas: "inicio" (después del corte),
+                                        # "entre" (el corte cae dentro de la voz) o "final" (termina antes del corte)
 
     @property
     def lang(self) -> str:
@@ -126,7 +130,13 @@ def leer_pedido(datos: object) -> Pedido:
     if peticion in ("despues", "seguidas") and anterior is None:
         raise ValueError(f"campo 'anterior': falta (peticion {peticion})")
 
+    posicion = datos.get("posicion")
+    if posicion is None:
+        posicion = "inicio"
+    if not isinstance(posicion, str) or posicion not in POSICIONES:
+        raise ValueError("campo 'posicion': tiene que ser inicio, entre o final")
+
     return Pedido(id=id_, estacion=estacion, idioma=idioma, voz=voz, momento=momento, anterior=anterior,
                   siguiente=siguiente, recientes=tuple(recientes),
                   personalidad=(personalidad or "").strip()[:_MAX_TEXTO], duracion_maxima_segundos=maxima,
-                  velocidad=velocidad, peticion=peticion)
+                  velocidad=velocidad, peticion=peticion, posicion=posicion)

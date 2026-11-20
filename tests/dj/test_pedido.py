@@ -212,3 +212,28 @@ def test_seguidas_sin_anterior_da_error():
     del d["anterior"]
     with pytest.raises(ValueError, match=r"campo 'anterior': falta \(peticion seguidas\)"):
         leer_pedido(d)
+
+
+def test_la_posicion_vale_inicio_si_falta():
+    assert leer_pedido(pedido_valido()).posicion == "inicio"
+
+
+@pytest.mark.parametrize("posicion", ["inicio", "entre", "final"])
+def test_la_posicion_se_lee_tal_cual(posicion):
+    d = pedido_valido()
+    d["posicion"] = posicion
+    assert leer_pedido(d).posicion == posicion
+
+
+def test_una_posicion_nula_equivale_a_inicio():
+    d = pedido_valido()
+    d["posicion"] = None
+    assert leer_pedido(d).posicion == "inicio"
+
+
+@pytest.mark.parametrize("posicion", ["medio", 5, "ENTRE", ""])
+def test_una_posicion_invalida_se_rechaza(posicion):
+    d = pedido_valido()
+    d["posicion"] = posicion
+    with pytest.raises(ValueError, match="campo 'posicion'"):
+        leer_pedido(d)
