@@ -511,10 +511,10 @@ def _texto(p, semilla, palabras=45):
 
 @pytest.mark.parametrize("idioma", ["es", "en"])
 def test_plantilla_antes_presenta_el_tema_como_peticion(idioma):
-    from cassette_fm.dj.plantillas import _MARCOS_PETICION
+    from cassette_fm.dj.plantillas import marcos_para
     p = _replace(pedido(idioma=idioma), peticion="antes")
     campos = {"titulo": "Waiting for a Girl Like You", "artista": "Foreigner"}
-    frases = [m.format(**campos) for m, _ in _MARCOS_PETICION[idioma]["antes"]]
+    frases = [m.format(**campos) for m, _ in marcos_para(idioma, "inicio", "antes")]
     for semilla in range(20):
         texto, r = _texto(p, semilla)
         assert any(f in texto for f in frases), texto
@@ -525,8 +525,9 @@ def test_plantilla_antes_presenta_el_tema_como_peticion(idioma):
 def test_ninguna_plantilla_dice_que_el_tema_es_para_quien_escucha():
     from cassette_fm.dj.plantillas import _COMIENZOS, _EXTRAS, _MARCOS, _MARCOS_PETICION, _PETICION_ANTERIOR
     for idioma in ("es", "en"):
-        textos = (_PETICION_ANTERIOR[idioma] + [m for m, _ in _MARCOS[idioma]]
-                  + [m for ms in _MARCOS_PETICION[idioma].values() for m, _ in ms]
+        textos = (_PETICION_ANTERIOR[idioma] + [m for ms in _MARCOS[idioma].values() for m, _ in ms]
+                  + [m for por_clase in _MARCOS_PETICION[idioma].values() for ms in por_clase.values()
+                     for m, _ in ms]
                   + [f for fs in _EXTRAS[idioma].values() for f in fs]
                   + [f for fs in _COMIENZOS[idioma].values() for f in fs])
         for t in textos:
@@ -548,11 +549,11 @@ def test_plantilla_despues_nombra_el_tema_pedido(idioma):
 
 @pytest.mark.parametrize("idioma", ["es", "en"])
 def test_plantilla_seguidas_cierra_el_pedido_anterior_y_abre_el_siguiente(idioma):
-    from cassette_fm.dj.plantillas import _MARCOS_PETICION, _PETICION_ANTERIOR
+    from cassette_fm.dj.plantillas import _PETICION_ANTERIOR, marcos_para
     p = _replace(pedido(idioma=idioma), peticion="seguidas")
     inicios = tuple(f.format(titulo_ant="Is This Love", artista_ant="Whitesnake") for f in _PETICION_ANTERIOR[idioma])
     frases = [m.format(titulo="Waiting for a Girl Like You", artista="Foreigner")
-              for m, _ in _MARCOS_PETICION[idioma]["seguidas"]]
+              for m, _ in marcos_para(idioma, "inicio", "seguidas")]
     for semilla in range(20):
         texto, _ = _texto(p, semilla)
         assert texto.startswith(inicios), texto
@@ -561,10 +562,10 @@ def test_plantilla_seguidas_cierra_el_pedido_anterior_y_abre_el_siguiente(idioma
 
 
 def test_plantilla_peticion_entra_aunque_falten_palabras():
-    from cassette_fm.dj.plantillas import _MARCOS_PETICION
+    from cassette_fm.dj.plantillas import marcos_para
     p = _replace(pedido(), peticion="antes")
     frases = [m.format(titulo="Waiting for a Girl Like You", artista="Foreigner")
-              for m, _ in _MARCOS_PETICION["es"]["antes"]]
+              for m, _ in marcos_para("es", "inicio", "antes")]
     for semilla in range(10):
         texto, _ = _texto(p, semilla, 12)
         assert any(f in texto for f in frases), texto
@@ -579,3 +580,92 @@ def test_cada_frase_suelta_es_una_oracion_completa():
                 assert f[0].isupper() or f.startswith(("{son}", "{")), (idioma, clave, f)
                 assert not f.startswith("{son_min}"), (idioma, clave, f)
                 assert f.rstrip().endswith((".", "?", "!")), (idioma, clave, f)
+
+
+
+# --- clases de marcos según la posición de la voz ---
+
+from cassette_fm.posiciones import POSICIONES  # noqa: E402
+
+CLASES = ("ahora", "neutra", "adelante")
+PETICIONES = (None, "antes", "seguidas")
+
+
+def _pool(idioma, peticion, clase):
+    from cassette_fm.dj import plantillas
+    if peticion is None:
+        return plantillas._MARCOS[idioma][clase]
+    return plantillas._MARCOS_PETICION[idioma][peticion][clase]
+
+
+@pytest.mark.parametrize("idioma", ["es", "en"])
+@pytest.mark.parametrize("peticion", PETICIONES)
+@pytest.mark.parametrize("clase", CLASES)
+def test_cada_clase_tiene_al_menos_tres_marcos(idioma, peticion, clase):
+    assert len(_pool(idioma, peticion, clase)) >= 3
+
+
+@pytest.mark.parametrize("idioma", ["es", "en"])
+@pytest.mark.parametrize("peticion", PETICIONES)
+@pytest.mark.parametrize("posicion", POSICIONES)
+def test_toda_union_de_clases_tiene_cola_de_artista_y_de_titulo(idioma, peticion, posicion):
+    from cassette_fm.dj.plantillas import marcos_para
+    assert {nombre for _, nombre in marcos_para(idioma, posicion, peticion)} >= {"artista", "titulo"}
+
+
+def test_marcos_para_une_las_clases_de_cada_posicion():
+    from cassette_fm.dj.plantillas import marcos_para
+    for idioma in ("es", "en"):
+        for peticion in PETICIONES:
+            ahora, neutra, adelante = (_pool(idioma, peticion, c) for c in CLASES)
+            assert marcos_para(idioma, "inicio", peticion) == ahora + neutra
+            assert marcos_para(idioma, "entre", peticion) == neutra
+            assert marcos_para(idioma, "final", peticion) == adelante + neutra
+    assert marcos_para("es", "inicio", "despues") == marcos_para("es", "inicio", None)    # sin marcos propios
+
+
+def _centinelas():
+    def clase(nombre):
+        return [(f"{nombre} suena {{titulo}} de {{artista}}", "artista"),
+                (f"{nombre} suena {{artista}} con {{titulo}}", "titulo")]
+    return {c: clase(c.upper()) for c in CLASES}
+
+
+def _marcadores(p, semillas=200, **kw):
+    vistos = set()
+    for s in range(semillas):
+        texto, _ = _texto(p, s)
+        vistos |= {m for m in ("AHORA", "NEUTRA", "ADELANTE") if m in texto}
+    return vistos
+
+
+@pytest.mark.parametrize("idioma", ["es", "en"])
+@pytest.mark.parametrize("posicion,esperado", [("inicio", {"AHORA", "NEUTRA"}), ("entre", {"NEUTRA"}),
+                                               ("final", {"ADELANTE", "NEUTRA"})])
+def test_los_marcos_se_eligen_por_clase_segun_la_posicion(monkeypatch, idioma, posicion, esperado):
+    from cassette_fm.dj import plantillas
+    monkeypatch.setattr(plantillas, "_MARCOS", {"es": _centinelas(), "en": _centinelas()})
+    assert _marcadores(_replace(pedido(idioma=idioma), posicion=posicion)) == esperado
+
+
+@pytest.mark.parametrize("idioma", ["es", "en"])
+@pytest.mark.parametrize("peticion", ["antes", "seguidas"])
+@pytest.mark.parametrize("posicion,esperado", [("inicio", {"AHORA", "NEUTRA"}), ("entre", {"NEUTRA"}),
+                                               ("final", {"ADELANTE", "NEUTRA"})])
+def test_los_marcos_de_peticion_se_eligen_por_clase_segun_la_posicion(monkeypatch, idioma, peticion, posicion,
+                                                                      esperado):
+    from cassette_fm.dj import plantillas
+    marcos = {"es": {"antes": _centinelas(), "seguidas": _centinelas()},
+              "en": {"antes": _centinelas(), "seguidas": _centinelas()}}
+    monkeypatch.setattr(plantillas, "_MARCOS_PETICION", marcos)
+    assert _marcadores(_replace(pedido(idioma=idioma), peticion=peticion, posicion=posicion)) == esperado
+
+
+@pytest.mark.parametrize("idioma", ["es", "en"])
+@pytest.mark.parametrize("peticion", [None, "antes", "despues", "seguidas"])
+@pytest.mark.parametrize("posicion", POSICIONES)
+def test_con_cola_de_dato_ninguna_combinacion_se_queda_sin_marcos(idioma, peticion, posicion):
+    p = _replace(pedido(idioma=idioma), peticion=peticion, posicion=posicion)
+    for s in range(150):
+        r = redactar(p, Lexico(), random.Random(s), 60, hechos=TODO, pesos=ALTOS)
+        assert r.marcado.rstrip().endswith(".")

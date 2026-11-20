@@ -32,23 +32,37 @@ _DIAS_EN = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", 
 # artista) con, si toca, un comienzo enganchado delante (clima o álbum) y un dato colgado al final del nombre al que
 # se refiere (el año del tema, el país del artista). Cada oración tiene al menos cuatro palabras aunque el nombre
 # propio sea una sola (si no, el texto para voz la une con la vecina).
+# Los marcos se clasifican según dónde cae la voz respecto del corte entre dos temas:
+#   "ahora"    el tema nuevo ya está sonando ("Ahora suena X"): solo valen si la voz empieza después del corte;
+#   "neutra"   sirven a ambos lados del corte ("Llega X", "Sigue X");
+#   "adelante" el tema nuevo todavía no empezó ("A continuación X"): solo valen si la voz termina antes del corte.
 # (marco, nombre con el que termina: "artista", "titulo" o None si termina en un relleno)
 _MARCOS = {
-    "es": [("Seguimos con {artista} y su tema {titulo} para acompañar este momento de la mejor manera", None),
-           ("Llega {titulo} de {artista} para seguir con la mejor música", None),
-           ("Ahora suena {titulo} de {artista}", "artista"),
-           ("Sigue {titulo} con {artista}", "artista"),
-           ("Llega {titulo} de la mano de {artista}", "artista"),
-           ("Con ustedes {artista} y su tema {titulo}", "titulo"),
-           ("De {artista} escuchamos ahora {titulo}", "titulo"),
-           ("Sigue {artista} con {titulo}", "titulo")],
-    "en": [("Coming up next we have {artista} with {titulo} to keep you company", None),
-           ("Coming up next we have {artista} with {titulo} to keep the music going", None),
-           ("Now playing {titulo} by {artista}", "artista"),
-           ("Up next is {titulo} by {artista}", "artista"),
-           ("Here comes {titulo} from {artista}", "artista"),
-           ("Here comes {artista} with {titulo}", "titulo"),
-           ("Stay with us for {artista} and {titulo}", "titulo")],
+    "es": {"ahora": [("Ahora suena {titulo} de {artista}", "artista"),
+                     ("De {artista} escuchamos ahora {titulo}", "titulo"),
+                     ("Y ya suena {titulo} de {artista}", "artista"),
+                     ("Suena ahora {artista} con {titulo}", "titulo")],
+           "neutra": [("Seguimos con {artista} y su tema {titulo} para acompañar este momento de la mejor manera", None),
+                      ("Llega {titulo} de {artista} para seguir con la mejor música", None),
+                      ("Sigue {titulo} con {artista}", "artista"),
+                      ("Llega {titulo} de la mano de {artista}", "artista"),
+                      ("Con ustedes {artista} y su tema {titulo}", "titulo"),
+                      ("Sigue {artista} con {titulo}", "titulo")],
+           "adelante": [("A continuación escuchamos {titulo} de {artista}", "artista"),
+                        ("Enseguida llega {titulo} de {artista}", "artista"),
+                        ("A continuación tenemos a {artista} con {titulo}", "titulo"),
+                        ("Enseguida sigue {artista} con {titulo}", "titulo")]},
+    "en": {"ahora": [("Now playing {titulo} by {artista}", "artista"),
+                     ("Right now you are hearing {titulo} by {artista}", "artista"),
+                     ("Playing right now is {artista} with {titulo}", "titulo"),
+                     ("Now we are hearing {artista} with {titulo}", "titulo")],
+           "neutra": [("Here comes {titulo} from {artista}", "artista"),
+                      ("Here comes {artista} with {titulo}", "titulo"),
+                      ("Stay with us for {artista} and {titulo}", "titulo")],
+           "adelante": [("Coming up next we have {artista} with {titulo} to keep you company", None),
+                        ("Coming up next we have {artista} with {titulo} to keep the music going", None),
+                        ("Up next is {titulo} by {artista}", "artista"),
+                        ("Coming up next is {artista} with {titulo}", "titulo")]},
 }
 _EXTRAS = {
     "es": {
@@ -104,20 +118,51 @@ _PETICION_ANTERIOR = {
            "We just heard {titulo_ant} by {artista_ant}, a special request from the audience."],
 }
 # el tema que sigue es una petición ("antes" y "seguidas"): el marco mismo la anuncia, sin comienzo enganchado
+# (mismas clases que los marcos normales: [idioma][modo][clase])
 _MARCOS_PETICION = {
-    "es": {"antes": [("A petición de uno de nuestros oyentes llega {titulo} de {artista}", "artista"),
-                     ("Y ahora, a petición de uno de nuestros escuchas, tenemos {titulo} de {artista}", "artista"),
-                     ("Llega una petición especial del público: {titulo} de {artista}", "artista"),
-                     ("Por pedido de uno de nuestros oyentes suena {artista} con {titulo}", "titulo")],
-           "seguidas": [("Y llega otra petición especial: {titulo} de {artista}", "artista"),
-                        ("A petición de otro oyente llega {titulo} de {artista}", "artista"),
-                        ("Seguimos con los pedidos del público y ahora suena {artista} con {titulo}", "titulo")]},
-    "en": {"antes": [("At the request of one of our listeners here is {titulo} by {artista}", "artista"),
-                     ("And now, a special request from our audience: {titulo} by {artista}", "artista"),
-                     ("One of our listeners asked for {artista} and here is {titulo}", "titulo")],
-           "seguidas": [("And here comes another request: {titulo} by {artista}", "artista"),
-                        ("Another listener asked for {artista} and here is {titulo}", "titulo")]},
+    "es": {"antes": {"ahora": [("Por pedido de uno de nuestros oyentes suena {artista} con {titulo}", "titulo"),
+                               ("A petición de un oyente ahora suena {titulo} de {artista}", "artista"),
+                               ("Ahora suena por pedido del público {artista} con {titulo}", "titulo")],
+                     "neutra": [("A petición de uno de nuestros oyentes llega {titulo} de {artista}", "artista"),
+                                ("Y ahora, a petición de uno de nuestros escuchas, tenemos {titulo} de {artista}",
+                                 "artista"),
+                                ("Llega una petición especial del público: {titulo} de {artista}", "artista"),
+                                ("Llega un pedido especial de un oyente, {artista} con {titulo}", "titulo")],
+                     "adelante": [("A continuación, a petición de un oyente, {titulo} de {artista}", "artista"),
+                                  ("Enseguida llega un pedido del público: {artista} con {titulo}", "titulo"),
+                                  ("A continuación una petición especial: {titulo} de {artista}", "artista")]},
+           "seguidas": {"ahora": [("Seguimos con los pedidos del público y ahora suena {artista} con {titulo}", "titulo"),
+                                  ("Y ahora suena otro pedido del público: {titulo} de {artista}", "artista"),
+                                  ("Otro oyente pidió y ahora suena {artista} con {titulo}", "titulo")],
+                        "neutra": [("Y llega otra petición especial: {titulo} de {artista}", "artista"),
+                                   ("A petición de otro oyente llega {titulo} de {artista}", "artista"),
+                                   ("Seguimos con los pedidos y llega {artista} con {titulo}", "titulo")],
+                        "adelante": [("Y enseguida llega otra petición: {titulo} de {artista}", "artista"),
+                                     ("A continuación otro pedido del público: {artista} con {titulo}", "titulo"),
+                                     ("Enseguida otra petición especial de un oyente: {titulo} de {artista}",
+                                      "artista")]}},
+    "en": {"antes": {"ahora": [("At a listener's request we are now hearing {titulo} by {artista}", "artista"),
+                               ("Playing now by request of our audience is {artista} with {titulo}", "titulo"),
+                               ("A listener asked for this one and now playing is {artista} with {titulo}", "titulo")],
+                     "neutra": [("At the request of one of our listeners here is {titulo} by {artista}", "artista"),
+                                ("And now, a special request from our audience: {titulo} by {artista}", "artista"),
+                                ("One of our listeners asked for {artista} and here is {titulo}", "titulo")],
+                     "adelante": [("Coming up next by request of a listener is {titulo} by {artista}", "artista"),
+                                  ("Up next is a special request from our audience: {artista} with {titulo}", "titulo"),
+                                  ("Coming up next a request from one of our listeners: {titulo} by {artista}",
+                                   "artista")]},
+           "seguidas": {"ahora": [("And now playing is another request: {titulo} by {artista}", "artista"),
+                                  ("Another request from our audience is now playing: {artista} with {titulo}", "titulo"),
+                                  ("Now we are hearing another listener's pick, {artista} with {titulo}", "titulo")],
+                        "neutra": [("And here comes another request: {titulo} by {artista}", "artista"),
+                                   ("Another listener asked for {artista} and here is {titulo}", "titulo"),
+                                   ("Here comes one more request from our audience: {titulo} by {artista}", "artista")],
+                        "adelante": [("Coming up next is another request: {titulo} by {artista}", "artista"),
+                                     ("Up next we have one more listener request: {artista} with {titulo}", "titulo"),
+                                     ("Coming up next another request from our audience: {titulo} by {artista}",
+                                      "artista")]}},
 }
+_CLASES_POR_POSICION = {"inicio": ("ahora", "neutra"), "entre": ("neutra",), "final": ("adelante", "neutra")}
 _DESCARTE = ("dato", "clima", "anterior", "album")        # lo primero que se saca si la frase no entra
 _SUELTOS = ("hora", "estacion", "momento", "anterior")
 
@@ -126,6 +171,13 @@ _SUELTOS = ("hora", "estacion", "momento", "anterior")
 class Redaccion:
     marcado: str                       # frase con marcas {lang:Nombre} en los nombres propios
     ingredientes: tuple[str, ...]
+
+
+def marcos_para(idioma: str, posicion: str, peticion: str | None) -> list[tuple[str, str | None]]:
+    """Los marcos que se pueden decir si la voz cae en `posicion` (inicio | entre | final) respecto del corte entre
+    temas. Con `peticion` "antes" o "seguidas" son los marcos de petición; con cualquier otro valor, los normales."""
+    por_clase = _MARCOS_PETICION[idioma][peticion] if peticion in ("antes", "seguidas") else _MARCOS[idioma]
+    return [marco for clase in _CLASES_POR_POSICION[posicion] for marco in por_clase[clase]]
 
 
 def frase_hora(momento: datetime, idioma: str) -> str:
@@ -255,7 +307,7 @@ def redactar(pedido: Pedido, lexico: Lexico, azar: random.Random, palabras_maxim
         disponibles.discard("anterior")          # ya lo nombra la oración de la petición
     if peticion in ("antes", "seguidas"):
         disponibles -= {"clima", "album"}        # el marco de la petición no lleva comienzo enganchado
-    marcos = _MARCOS_PETICION[idioma][peticion] if peticion in ("antes", "seguidas") else _MARCOS[idioma]
+    marcos = marcos_para(idioma, pedido.posicion, peticion)
     if "clima" in disponibles:
         c = hechos.clima
         campos["grados"] = _grados(c.temperatura, idioma)
