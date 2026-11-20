@@ -125,12 +125,46 @@ def test_suena_cuando_llega_el_tema_esperado_y_cancela_la_espera():
     assert r.eventos["sonar"] == 1
 
 
-def test_si_no_suena_en_10_s_falla_con_motivo():
-    r, _, _, _, tempo = armar()
+def test_si_no_suena_en_10_s_reintenta_el_play_una_vez_y_despues_falla_con_motivo():
+    r, control, _, _, tempo = armar()
     r.sintonizar(estacion())
-    assert tempo.pendientes[0].segundos == 10.0
-    tempo.disparar()
-    assert r.eventos["fallas"] == [("Sing", "Spotify no empezó a sonar en 10 s")]
+    assert tempo.pendientes[0].segundos == 10.0 and len(control.llamadas) == 1
+    tempo.pendientes[0].funcion()                  # vence la primera espera: se vuelve a pedir lo mismo, sin fallar
+    assert r.eventos["fallas"] == [] and len(control.llamadas) == 2 and control.llamadas[1][0] == control.llamadas[0][0]
+    assert tempo.pendientes[1].segundos == 10.0 and not tempo.pendientes[1].cancelado     # y se espera otros 10 s
+    tempo.pendientes[1].funcion()                  # vence la segunda: ahora sí
+    assert r.eventos["fallas"] == [("Sing", "Spotify no empezó a sonar en 10 s")] and len(control.llamadas) == 2
+
+
+def test_si_suena_durante_la_espera_extra_no_falla():
+    r, control, _, _, tempo = armar()
+    r.sintonizar(estacion())
+    tempo.pendientes[0].funcion()
+    r.manejar_evento(cambio(control.llamadas[0][0][0]))
+    r.manejar_evento(SONANDO)
+    tempo.pendientes[1].funcion()                  # la segunda espera ya no cuenta: sonó
+    assert r.eventos["sonar"] == 1 and r.eventos["fallas"] == []
+
+
+def test_si_el_primer_play_todavia_viaja_el_reintento_no_lo_pisa_cuando_ya_sono():
+    # la Web API tardó más de 10 s pero el play salió bien: el reintento, que esperaba su turno, no vuelve a recargar el tema
+    r, control, _, _, tempo = armar()
+    cola = []
+    r._en_segundo_plano = cola.append
+    r.sintonizar(estacion())
+    tempo.pendientes[0].funcion()                  # vence la espera con el primer play todavía en camino
+    assert len(cola) == 2
+    cola[0]()                                       # el primer play llega, Spotify empieza a sonar...
+    r.manejar_evento(cambio(control.llamadas[0][0][0]))
+    r.manejar_evento(SONANDO)
+    cola[1]()                                       # ...y el reintento, que esperaba, ya no manda nada
+    assert len(control.llamadas) == 1 and r.eventos["sonar"] == 1 and r.eventos["fallas"] == []
+
+
+def test_un_error_de_spotify_no_se_reintenta():
+    r, control, *_ = armar(control=ControlFalso(ErrorSpotify("no hay sesión")))
+    r.sintonizar(estacion())
+    assert len(control.llamadas) == 1 and len(r.eventos["fallas"]) == 1
 
 
 def test_un_error_de_spotify_al_dar_play_falla_con_el_mensaje():

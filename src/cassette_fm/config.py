@@ -135,6 +135,11 @@ class Rutas:
         return self.config.with_name("estaciones.json")
 
     @property
+    def reinicio(self) -> Path:
+        """El marcador del último reinicio por una emisora que no sonaba (ver recuperacion.py)."""
+        return self.estado.with_name("reinicio.json")
+
+    @property
     def spotify_token(self) -> Path:
         return self.estado.with_name("spotify-token.json")
 

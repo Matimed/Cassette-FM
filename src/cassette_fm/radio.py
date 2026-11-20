@@ -105,6 +105,10 @@ class Radio:
         self._avisar = avisar
         self._lock = threading.RLock()
         self.encendida = False
+        self._probando_otra = False       # una emisora falló y se pasó a otra: si esta también falla, ya no se prueba otra
+        # el último recurso antes de apagar cuando no hay otra emisora que probar: (emisora, motivo) -> True si pidió reiniciar
+        # el servicio (la radio no se apaga: se retoma al volver); False o None: se apaga
+        self.ultimo_recurso: Callable[[Estacion, str | None], bool] | None = None
         # avisa cada cambio de emisora, de tema o de prendida/apagada; puede llegar con el lock tomado: no bloquear
         self.al_cambiar: Callable[[], None] | None = None
         self._interesados: list[Callable[[], None]] = []     # además de al_cambiar (MPRIS): el puente a la nube
@@ -288,7 +292,7 @@ class Radio:
                 destino = (actual + paso) % len(self._estaciones)
             self._sintonizar(self._estaciones[destino], oir_aca)
 
-    def _sintonizar(self, estacion: Estacion, oir_aca: bool = True) -> None:
+    def _sintonizar(self, estacion: Estacion, oir_aca: bool = True, por_falla: bool = False) -> None:
         if oir_aca and self._estado.volumen == 0:
             self._estado.volumen = self._poner_volumen(VOLUMEN_MINIMO)
         plegada = plegar_vencidos(estacion, self._reloj())   # la lista que se manda empieza donde corresponde
@@ -307,6 +311,7 @@ class Radio:
             self._estado.monitor_local = self._prender_monitor()
         self._guardar(self._estado)
         self.encendida = True
+        self._probando_otra = por_falla
         if self._dj is not None:
             self._dj.al_sintonizar(estacion.nombre)
         if self._planificador is not None:
@@ -359,6 +364,7 @@ class Radio:
     def _apagar(self) -> None:
         self._reproductor.detener()
         self.encendida = False
+        self._probando_otra = False
         if self._dj is not None:
             self._dj.detener()
         if self._planificador is not None:
@@ -366,6 +372,8 @@ class Radio:
         self._avisar_cambio()
 
     def _al_cambiar_pista(self, pista, estacion) -> None:
+        if estacion is not None and estacion.nombre == self._estado.estacion:
+            self._probando_otra = False       # la emisora suena: el rescate terminó bien
         if self._avisar is not None and estacion is not None:
             self._avisar(estacion.nombre, pista.titulo)
         if self._dj is not None and estacion is not None:
@@ -490,10 +498,49 @@ class Radio:
                 raise
 
     def _al_fallar(self, estacion, motivo: str | None = None) -> None:
+        """Una emisora no puede sonar. En vez de apagar la radio: 1) se prueba con otra emisora (una sola vez seguida);
+        2) si no hay otra, o también falla, el último recurso (reiniciar el servicio); 3) recién si eso no se puede, se apaga."""
         with self._lock:
-            # el aviso llega con la estación que falló: si el usuario ya cambió, no se la apaga
+            # el aviso llega con la estación que falló: si el usuario ya cambió, no se la toca
             if not (self.encendida and self._estado.estacion == estacion.nombre):
                 return
-            self._apagar()
-        if motivo and self._avisar is not None:
+            alterna = None if self._probando_otra else self._alterna_de(estacion)
+            if alterna is not None:
+                try:
+                    self._sintonizar(alterna, oir_aca=False, por_falla=True)    # sin tocar el monitor ni el volumen
+                except Exception:
+                    _log.exception("no se pudo pasar a la emisora %r tras fallar %r", alterna.nombre, estacion.nombre)
+                    alterna = None
+            reinicia = False
+            if alterna is None:
+                reinicia = self._pedir_ultimo_recurso(estacion, motivo)
+                if not reinicia:
+                    self._apagar()
+        if self._avisar is None:
+            return
+        if alterna is not None:
+            self._avisar(estacion.nombre, f"{motivo or 'no pudo sonar'} · se pasó a {alterna.nombre}")
+        elif reinicia:
+            self._avisar(estacion.nombre, f"{motivo or 'no pudo sonar'} · reiniciando el servicio")
+        elif motivo:
             self._avisar(estacion.nombre, motivo)
+
+    def _pedir_ultimo_recurso(self, estacion, motivo: str | None) -> bool:
+        if self.ultimo_recurso is None:
+            return False
+        try:
+            return bool(self.ultimo_recurso(estacion, motivo))
+        except Exception:
+            _log.exception("el último recurso para %r falló", estacion.nombre)
+            return False
+
+    def _alterna_de(self, fallida) -> Estacion | None:
+        """La emisora a probar cuando falla `fallida`: la siguiente de otra fuente (si Spotify anda mal, otra de Spotify casi
+        seguro falla igual) o, si no hay, la siguiente."""
+        nombres = [e.nombre for e in self._estaciones]
+        if fallida.nombre not in nombres:
+            return None
+        i = nombres.index(fallida.nombre)
+        otras = [self._estaciones[(i + k) % len(nombres)] for k in range(1, len(nombres))]
+        distintas = [e for e in otras if e.fuente != fallida.fuente]
+        return (distintas or otras or [None])[0]

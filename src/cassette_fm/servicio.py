@@ -11,7 +11,7 @@ from cassette_fm.cliente_dj import ClienteDJ
 from cassette_fm.config import Config, Rutas, cargar_estado, guardar_estado
 from cassette_fm.emisoras import Catalogo
 from cassette_fm.intervenciones import RegistroIntervenciones
-from cassette_fm import claves, lan_acceso
+from cassette_fm import claves, lan_acceso, recuperacion
 from cassette_fm.lan_server import crear_servidor_lan
 from cassette_fm.lan_stream import FUENTE_ESTATICA, FUENTE_MONITOR, Difusor, Difusores
 from cassette_fm.locutor import Locutor
@@ -193,6 +193,19 @@ def iniciar_nube(config: Config, rutas: Rutas, radio, router, difusores, crear_p
     return cerrar, info
 
 
+def preparar_recuperacion(radio, rutas: Rutas, soloist) -> threading.Thread | None:
+    """El último recurso de la radio cuando una emisora no logra sonar (reiniciar el servicio en vez de apagarse) y, si este
+    arranque es el de ese reinicio, el hilo que retoma la emisora en cuanto Soloist se conecta."""
+    radio.ultimo_recurso = lambda estacion, motivo: (recuperacion.merece_reinicio(estacion, motivo)
+                                                      and recuperacion.pedir_reinicio(rutas.reinicio, estacion.nombre, motivo))
+    if recuperacion.a_retomar(rutas.reinicio) is None:
+        return None
+    hilo = threading.Thread(target=recuperacion.retomar, daemon=True, name="retomar-tras-reinicio",
+                            args=(rutas.reinicio, radio, lambda: soloist is None or soloist.conectado))
+    hilo.start()
+    return hilo
+
+
 def servir(config: Config, rutas: Rutas, avisar: Callable[[str, str], None] | None = None,
            parar: threading.Event | None = None, extra_args_mpv: Sequence[str] = (),
            bus_mpris: str | None = None) -> None:
@@ -259,6 +272,7 @@ def servir(config: Config, rutas: Rutas, avisar: Callable[[str, str], None] | No
     mpris = ServicioMpris(radio, direccion=bus_mpris)
     radio.al_cambiar = mpris.cambio
     mpris.iniciar()
+    preparar_recuperacion(radio, rutas, soloist)
     if planificador is not None:
         planificador.iniciar()
         _log.info("planificador del DJ activo (servicio en %s)", config.dj.url)

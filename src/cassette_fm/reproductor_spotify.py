@@ -62,6 +62,7 @@ class ReproductorSpotify:
     AVISO_REPETIDO_SEGUNDOS = 5.0     # Soloist a veces avisa dos veces el mismo comienzo, con milisegundos de diferencia
     SALTEO_SEGUNDOS = 2.0             # otro tema antes de esto: Soloist no pudo cargar el anterior (o lo saltearon)
     CORREGIR_SEGUNDOS = 1.0           # la Web API tardó más que esto: su play atrasó el tema local lo que se oye
+    REINTENTOS_DE_PLAY = 1            # si no suena en `espera_sonido_segundos`, el play se vuelve a pedir tantas veces antes de fallar
 
     pista_actual: Pista | None = None
     al_cambiar_pista: Callable[[Pista, Estacion], None] | None = None
@@ -93,6 +94,8 @@ class ReproductorSpotify:
         self._visto_esperado = False
         self._esperando_sonido = False
         self._espera_timer = None
+        self._pedido: tuple[int, Estacion, list[str], Callable[[], int]] | None = None    # lo último que se mandó a Spotify
+        self._reintentos = 0                      # reintentos de play que le quedan a la sintonía en curso
         self._posicion: tuple[float, float, float] | None = None   # (position_ms, timestamp_ms, speed)
         self._volumen: int | None = None
         self._factor = 1.0
@@ -133,6 +136,7 @@ class ReproductorSpotify:
             self._perdido = False
             self._cancelar_espera()
             self._espera_timer = self._temporizador(self._espera, lambda: self._no_sono(n))
+            self._pedido, self._reintentos = (n, estacion, uris, posicion_ms), self.REINTENTOS_DE_PLAY
         self._en_segundo_plano(lambda: self._reproducir(n, estacion, uris, posicion_ms, local=True))
 
     def _posicion_al_play(self, pista: Pista, segundo: float) -> Callable[[], int]:
@@ -146,12 +150,17 @@ class ReproductorSpotify:
         return posicion
 
     def _reproducir(self, n: int, estacion: Estacion, uris: list[str], posicion_ms: Callable[[], int],
-                    local: bool = False) -> None:
+                    local: bool = False, reintento: bool = False) -> None:
         """La orden a Spotify. Con `local` (una sintonía: alguien espera que suene), el primer tema sale antes por
-        Soloist (~0,3 s) y la lista completa por la Web API, que hay noches que tarda segundos."""
+        Soloist (~0,3 s) y la lista completa por la Web API, que hay noches que tarda segundos. Un `reintento` espera su
+        turno detrás de la orden anterior: si esa ya hizo sonar la emisora (tardó, pero salió bien), no se manda."""
         with self._orden_lock:
             if n != self._sintonia:
                 return                            # ya se pidió otra cosa: esta orden no sale
+            if reintento:
+                with self._lock:
+                    if not self._esperando_sonido:
+                        return
             if not self._soloist.conectado:
                 self._fallar(n, estacion, "Soloist no responde: ¿está corriendo o venció su build? "
                                           "(systemctl --user status cassette-soloist · cassette spotify estado)")
@@ -231,7 +240,16 @@ class ReproductorSpotify:
             if n != self._sintonia or not self._esperando_sonido:
                 return
             estacion = self._estacion
-        self._fallar(n, estacion, f"Spotify no empezó a sonar en {self._espera:g} s")
+            pedido = self._pedido if self._reintentos > 0 and self._pedido and self._pedido[0] == n else None
+            if pedido is not None:
+                # a veces Spotify (o la red) tarda más que la espera: se vuelve a pedir lo mismo, una vez, y se espera de nuevo
+                self._reintentos -= 1
+                self._espera_timer = self._temporizador(self._espera, lambda: self._no_sono(n))
+        if pedido is None:
+            self._fallar(n, estacion, f"Spotify no empezó a sonar en {self._espera:g} s")
+            return
+        _log.warning("la emisora %r no empezó a sonar en %g s: se vuelve a pedir a Spotify", estacion.nombre, self._espera)
+        self._en_segundo_plano(lambda: self._reproducir(n, estacion, pedido[2], pedido[3], local=True, reintento=True))
 
     def _fallar(self, n: int, estacion: Estacion | None, motivo: str) -> None:
         with self._lock:

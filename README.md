@@ -439,6 +439,12 @@ usar una de esas, copiala a una playlist propia.
 - Lo que agregás a la cola desde la app de Spotify es una **petición**: ver [Peticiones](#peticiones).
 - Si ponés Spotify en otro dispositivo (el celular), la radio se apaga y avisa. Si sintonizás una emisora de Spotify,
   la radio toma el control de tu cuenta.
+- **Si una emisora de Spotify no empieza a sonar** (Spotify o la red tardan, hay noches de 10 s o más), la radio no se apaga
+  de entrada: 1) a los 10 s vuelve a pedir el `play` (otros 10 s de estática); 2) si sigue sin sonar, pasa a otra emisora
+  (de otra fuente, si hay: otra de Spotify casi seguro falla igual) y avisa; 3) si esa también falla, o no hay otra,
+  **reinicia el servicio** (con Soloist, que es lo que suele trabarse) y al volver retoma la emisora; 4) el reinicio tiene
+  un freno: no se repite en 10 min, y ahí sí se apaga. No se reinicia si el motivo es Spotify abierto en otro dispositivo.
+  El marcador es `~/.local/state/cassette-fm/reinicio.json`; el código está en `recuperacion.py`.
 - `[spotify]` del `config.toml`: `activo` (false = ignorar las emisoras de Spotify), `ajuste_volumen_db` (para que
   suenen tan fuerte como las locales; lo propone `scripts/calibrar-spotify.py`), `nombre_dispositivo`, `soloist_ws`,
   `soloist_bin`, `uris_por_pedido`, `tolerancia_resync_segundos`, `client_id`, `puerto_login` y `timeout_segundos`.

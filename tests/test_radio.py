@@ -39,15 +39,15 @@ class ReproductorFalso:
         self.actualizadas.append(estacion)
 
 
-def est(nombre):
-    return Estacion(nombre, (Pista(Path(f"/m/{nombre}.mp3"), 100.0, f"tema de {nombre}"),))
+def est(nombre, fuente="carpeta"):
+    return Estacion(nombre, (Pista(Path(f"/m/{nombre}.mp3"), 100.0, f"tema de {nombre}"),), fuente=fuente)
 
 
-def crear(nombres=("A", "B", "Regueton 2000"), estado=None, escanear=None, avisar=None, **extra):
+def crear(nombres=("A", "B", "Regueton 2000"), estado=None, escanear=None, avisar=None, fuentes=None, **extra):
     rep = ReproductorFalso()
     guardados = []
     estado = estado or Estado()
-    estaciones = [est(n) for n in nombres]
+    estaciones = [est(n, (fuentes or {}).get(n, "carpeta")) for n in nombres]
     radio = Radio(rep, estaciones, estado,
                   guardar=lambda e: guardados.append((e.estacion, e.volumen)),
                   escanear=escanear or (lambda: estaciones), avisar=avisar, **extra)
@@ -202,11 +202,102 @@ def test_el_aviso_usa_la_estacion_del_evento_y_no_depende_de_encendida():
     assert avisos == [("B", "tema de B")]
 
 
-def test_si_el_reproductor_falla_la_radio_se_apaga():
-    radio, rep, _, _ = crear()
+def test_si_el_reproductor_falla_y_no_hay_otra_emisora_la_radio_se_apaga():
+    radio, rep, _, _ = crear(nombres=("A",))
     radio.encender()
     rep.al_fallar(est("A"))
     assert not radio.encendida and rep.llamadas[-1] == ("detener",)
+
+
+def test_si_una_emisora_falla_prueba_con_otra_antes_de_apagarse():
+    avisos = []
+    radio, rep, _, estado = crear(avisar=lambda e, t: avisos.append((e, t)))
+    radio.encender()
+    rep.al_fallar(est("A"), "Spotify no empezó a sonar en 10 s")
+    assert radio.encendida and estado.estacion == "B" and rep.sintonizadas() == ["A", "B"]
+    assert ("A", "Spotify no empezó a sonar en 10 s · se pasó a B") in avisos
+
+
+def test_si_la_otra_tambien_falla_se_apaga_y_avisa():
+    avisos = []
+    radio, rep, _, _ = crear(avisar=lambda e, t: avisos.append((e, t)))
+    radio.encender()
+    rep.al_fallar(est("A"), "no suena")
+    rep.al_fallar(est("B"), "tampoco")
+    assert not radio.encendida and rep.sintonizadas() == ["A", "B"] and ("B", "tampoco") in avisos
+
+
+def test_si_la_otra_emisora_suena_un_fallo_posterior_vuelve_a_probar_otra():
+    radio, rep, _, estado = crear()
+    radio.encender()
+    rep.al_fallar(est("A"))
+    rep.al_cambiar_pista(est("B").pistas[0], est("B"))      # B suena: el intento de rescate terminó bien
+    rep.al_fallar(est("B"))
+    assert radio.encendida and estado.estacion == "Regueton 2000"
+
+
+def test_cambiar_de_emisora_a_mano_borra_el_intento_de_rescate():
+    radio, rep, _, estado = crear(nombres=("A", "B", "C", "D"))
+    radio.encender()
+    rep.al_fallar(est("A"))                                 # pasa a B
+    radio.sintonizar("C")                                   # el usuario elige otra
+    rep.al_fallar(est("C"))
+    assert radio.encendida and estado.estacion == "D"
+
+
+def test_sin_otra_emisora_el_ultimo_recurso_reinicia_en_vez_de_apagar():
+    avisos, pedidos = [], []
+    radio, rep, _, _ = crear(nombres=("A",), avisar=lambda e, t: avisos.append((e, t)))
+    radio.ultimo_recurso = lambda e, m: pedidos.append((e.nombre, m)) or True
+    radio.encender()
+    rep.al_fallar(est("A"), "Spotify no empezó a sonar en 10 s")
+    assert pedidos == [("A", "Spotify no empezó a sonar en 10 s")]
+    assert radio.encendida and ("detener",) not in rep.llamadas        # no se apaga: el servicio se reinicia y retoma
+    assert ("A", "Spotify no empezó a sonar en 10 s · reiniciando el servicio") in avisos
+
+
+def test_el_ultimo_recurso_llega_despues_de_probar_otra_emisora():
+    pedidos = []
+    radio, rep, _, estado = crear()
+    radio.ultimo_recurso = lambda e, m: pedidos.append(e.nombre) or True
+    radio.encender()
+    rep.al_fallar(est("A"))                  # pasa a B: todavía no se reinicia nada
+    assert pedidos == [] and estado.estacion == "B"
+    rep.al_fallar(est("B"))                  # B tampoco: ahora sí
+    assert pedidos == ["B"] and radio.encendida
+
+
+def test_si_el_ultimo_recurso_no_reinicia_se_apaga():
+    radio, rep, _, _ = crear(nombres=("A",))
+    radio.ultimo_recurso = lambda e, m: False            # ya se reinició hace poco, o no corre bajo systemd
+    radio.encender()
+    rep.al_fallar(est("A"), "no suena")
+    assert not radio.encendida and rep.llamadas[-1] == ("detener",)
+
+
+def test_si_el_ultimo_recurso_se_rompe_se_apaga():
+    def roto(e, m):
+        raise RuntimeError("boom")
+    radio, rep, _, _ = crear(nombres=("A",))
+    radio.ultimo_recurso = roto
+    radio.encender()
+    rep.al_fallar(est("A"))
+    assert not radio.encendida
+
+
+def test_al_fallar_prefiere_una_emisora_de_otra_fuente():
+    # si Spotify anda mal, pasar a otra emisora de Spotify casi seguro falla igual: se prefiere una local
+    radio, rep, _, estado = crear(nombres=("A", "B", "C"), fuentes={"A": "spotify", "B": "spotify"})
+    radio.encender()
+    rep.al_fallar(est("A", "spotify"))
+    assert radio.encendida and estado.estacion == "C"
+
+
+def test_si_todas_son_de_la_misma_fuente_pasa_a_la_siguiente():
+    radio, rep, _, estado = crear(nombres=("A", "B"), fuentes={"A": "spotify", "B": "spotify"})
+    radio.encender()
+    rep.al_fallar(est("A", "spotify"))
+    assert radio.encendida and estado.estacion == "B"
 
 
 def test_un_aviso_de_falla_de_otra_estacion_no_apaga_la_actual():
@@ -640,9 +731,9 @@ def test_dj_modo_delega(tmp_path):
     assert plan.modos == [None, "llm"]
 
 
-def test_una_falla_con_motivo_apaga_y_avisa():
+def test_una_falla_con_motivo_sin_otra_emisora_apaga_y_avisa():
     avisos = []
-    radio, rep, _, _ = crear(avisar=lambda e, t: avisos.append((e, t)))
+    radio, rep, _, _ = crear(nombres=("A",), avisar=lambda e, t: avisos.append((e, t)))
     radio.encender()
     rep.al_fallar(est("A"), "Spotify se está escuchando en otro dispositivo")
     assert not radio.encendida and ("A", "Spotify se está escuchando en otro dispositivo") in avisos

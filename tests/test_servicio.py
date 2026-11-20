@@ -947,3 +947,69 @@ def test_nube_archivo_binario_no_rompe_el_arranque_y_manda_lista_vacia(tmp_path,
         assert esperar(lambda: p.listas[-1:] == [claves.para_relay([registro])])
     finally:
         cerrar()
+
+
+# --- último recurso: reiniciar el servicio y retomar la emisora ---
+
+class RadioFalsaRecuperacion:
+    def __init__(self):
+        self.ultimo_recurso = None
+        self.sintonizadas = []
+
+    def sintonizar(self, nombre, oir_aca=True):
+        self.sintonizadas.append((nombre, oir_aca))
+
+
+def _rutas(tmp_path):
+    return Rutas(config=tmp_path / "config.toml", estado=tmp_path / "st" / "estado.json",
+                 cache=tmp_path / "cache" / "d.json", runtime=tmp_path / "rt")
+
+
+def test_preparar_recuperacion_conecta_el_ultimo_recurso_de_la_radio(tmp_path, monkeypatch):
+    from cassette_fm import recuperacion
+    from cassette_fm.biblioteca import Estacion
+    pedidos = []
+    monkeypatch.setattr(recuperacion, "pedir_reinicio", lambda ruta, estacion, motivo, **kw: pedidos.append((ruta, estacion, motivo)) or True)
+    rutas, radio = _rutas(tmp_path), RadioFalsaRecuperacion()
+    assert servicio.preparar_recuperacion(radio, rutas, soloist=None) is None        # sin marcador no hay nada que retomar
+    assert radio.ultimo_recurso(Estacion("Power", (), fuente="spotify"), "no suena") is True
+    assert pedidos == [(rutas.reinicio, "Power", "no suena")]
+    assert not radio.ultimo_recurso(Estacion("Carpeta", (), fuente="carpeta"), "sin temas")     # reiniciar no lo arregla
+    assert len(pedidos) == 1
+
+
+def test_preparar_recuperacion_retoma_la_emisora_cuando_soloist_esta_listo(tmp_path):
+    from cassette_fm import recuperacion
+    rutas, radio = _rutas(tmp_path), RadioFalsaRecuperacion()
+    assert recuperacion.pedir_reinicio(rutas.reinicio, "Power F.M.", "no suena", bajo_systemd=lambda: True, reiniciar=lambda: None)
+    soloist = type("S", (), {"conectado": True})()
+    hilo = servicio.preparar_recuperacion(radio, rutas, soloist)
+    hilo.join(5)
+    assert radio.sintonizadas == [("Power F.M.", False)]
+    assert servicio.preparar_recuperacion(RadioFalsaRecuperacion(), rutas, soloist) is None       # una sola vez
+
+
+def test_servir_retoma_la_emisora_tras_un_reinicio_por_falla(tmp_path, dir_corto, crear_mp3):
+    from cassette_fm import recuperacion
+    musica = tmp_path / "musica"
+    crear_mp3(musica / "A" / "a.mp3", 30, titulo="Tema A")
+    crear_mp3(musica / "B" / "b.mp3", 30, titulo="Tema B")
+    rutas = Rutas(config=tmp_path / "config.toml", estado=tmp_path / "st" / "estado.json",
+                  cache=tmp_path / "cache" / "d.json", runtime=dir_corto)
+    recuperacion.pedir_reinicio(rutas.reinicio, "B", "no suena", bajo_systemd=lambda: True, reiniciar=lambda: None)
+    puerto, parar = puerto_libre(), threading.Event()
+    hilo = threading.Thread(target=servir, kwargs=dict(
+        config=Config(raiz_musica=musica, puerto=puerto, avisos=False), rutas=rutas,
+        parar=parar, extra_args_mpv=["--ao=null"]), daemon=True)
+    hilo.start()
+    try:
+        esperar_servicio(puerto)
+        fin = time.monotonic() + 5
+        estado = llamar(puerto, "GET", "/estado")
+        while not estado["encendida"] and time.monotonic() < fin:
+            time.sleep(0.05)
+            estado = llamar(puerto, "GET", "/estado")
+        assert estado["encendida"] is True and estado["estacion"] == "B"      # arrancó en silencio pero retomó la emisora
+    finally:
+        parar.set()
+        hilo.join(10)
