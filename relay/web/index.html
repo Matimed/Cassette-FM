@@ -151,6 +151,7 @@
     <h2>Calidad</h2>
     <div id="cal-menu"></div>
     <hr>
+    <div id="bloque-instalar" hidden><button id="instalar">Instalar app</button><hr></div>
     <button id="salir-menu">Salir</button>
   </div>
 
@@ -202,6 +203,11 @@ let movil = false, G = {};
 let calidad = ["64", "96", "160"].includes(guardado("calidad")) ? guardado("calidad") : "96";
 let volumen = Number.isFinite(+guardado("volumen")) && guardado("volumen") !== null ? Math.min(100, Math.max(0, +guardado("volumen"))) : 100;
 const reducido = matchMedia("(prefers-reduced-motion: reduce)").matches;
+
+/* ---------- instalar como app: el atajo del menú ⋮ aparece solo si Chrome dice que se puede (y no está instalada) ---------- */
+let ofertaInstalar = null;
+addEventListener("beforeinstallprompt", (e) => { e.preventDefault(); ofertaInstalar = e; $("bloque-instalar").hidden = false; });
+addEventListener("appinstalled", () => { ofertaInstalar = null; $("bloque-instalar").hidden = true; aviso("App instalada"); });
 
 /* ---------- avisos ---------- */
 let timerAviso = 0;
@@ -554,6 +560,12 @@ function pintarCalidades(lista) {
     const m = document.createElement("button"); m.textContent = (ETIQUETAS[k] || k + " kbps") + " kbps"; m.className = k === calidad ? "sel" : ""; m.onclick = elegir; menu.append(m);
   }
 }
+$("instalar").onclick = async () => {
+  $("menu").hidden = true; $("menu-btn").setAttribute("aria-expanded", "false");
+  const oferta = ofertaInstalar; if (!oferta) return;
+  ofertaInstalar = null; $("bloque-instalar").hidden = true;     // Chrome deja usar la oferta una sola vez
+  oferta.prompt();
+};
 $("menu-btn").onclick = (e) => { e.stopPropagation(); const abre = $("menu").hidden; $("menu").hidden = !abre; $("menu-btn").setAttribute("aria-expanded", String(abre)); };
 document.addEventListener("click", (e) => { if (!$("menu").hidden && !e.target.closest("#menu")) { $("menu").hidden = true; $("menu-btn").setAttribute("aria-expanded", "false"); } });
 

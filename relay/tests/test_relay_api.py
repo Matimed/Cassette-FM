@@ -286,6 +286,12 @@ def test_manifest_para_instalar_como_app(relay):
     assert b'rel="manifest" href="/manifest.webmanifest"' in pagina and b'serviceWorker.register("/sw.js")' in pagina
 
 
+def test_menu_ofrece_instalar_la_app_solo_si_chrome_la_ofrece(relay):
+    pagina = relay.pedir("GET", "/")[2]
+    assert b'id="bloque-instalar" hidden' in pagina            # escondido hasta que Chrome avise que se puede instalar
+    assert b"beforeinstallprompt" in pagina and b"appinstalled" in pagina and b".prompt()" in pagina
+
+
 def test_service_worker_minimo_en_la_raiz(relay):
     status, headers, cuerpo = relay.pedir("GET", "/sw.js")
     assert status == 200 and "javascript" in headers["Content-Type"] and headers["Cache-Control"] == "no-cache"

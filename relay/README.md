@@ -97,7 +97,8 @@ url = "wss://<servicio>.onrender.com"
 
 ## Instalarla como app (Android)
 
-Abrí `https://<servicio>.onrender.com/` en Chrome → menú ⋮ → *Instalar app*. Queda con su ícono, sin la barra de Chrome y con
+Abrí `https://<servicio>.onrender.com/` en Chrome y, desde el menú ⋮ de la propia página, tocá *Instalar app* (también está en el
+menú de Chrome). Queda con su ícono, sin la barra de Chrome y con
 el splash oscuro; la reproducción sigue con la pantalla apagada y se maneja desde las notificaciones. Si antes habías creado un
 acceso directo ("Agregar a la pantalla principal" sin manifest), borralo y volvé a instalar.
 

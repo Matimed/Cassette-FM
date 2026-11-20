@@ -68,7 +68,9 @@ sondeando el estado mientras suena, para que el título del control multimedia e
 *maskable* a sangre completa) y un service worker mínimo (`/sw.js`, sin `fetch` que intercepte nada: el audio en vivo no puede
 pasar por ahí). Chrome ya no muestra su barra, y el splash es oscuro. Chrome da el visto bueno de instalabilidad (se comprobó
 con `Page.getInstallabilityErrors`). Quien tenía un acceso directo creado antes del manifest tiene que borrarlo y volver a
-instalar. No se pidió `fullscreen`: `standalone` es lo normal (queda la barra de estado del sistema).
+instalar. El menú ⋮ trae un ítem **Instalar app** (entre la calidad y Salir) que solo aparece si Chrome ofreció instalarla
+(`beforeinstallprompt`) y se esconde al usarlo o cuando la app queda instalada (`appinstalled`); Safari no tiene ese evento, así
+que en iPhone no aparece. No se pidió `fullscreen`: `standalone` es lo normal (queda la barra de estado del sistema).
 
 ## Ícono
 
