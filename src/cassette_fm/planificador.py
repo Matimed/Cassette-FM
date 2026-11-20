@@ -274,6 +274,8 @@ class Planificador:
                 hueco = elegir_hueco(estacion, ahora, cfg, None, self._azar, ocupados)
                 if hueco is None:
                     raise ValueError("no hay un tema con artista y título para dedicarle una intervención")
+                # con poco tiempo hasta el corte el clip no llega a generarse antes de una voz que empieza antes
+                hueco = replace(hueco, posicion=sortear_posicion(cfg, self._azar, hueco.inicio_tema - ahora))
                 id_ = uuid.uuid4().hex
                 pedido = armar_pedido(id_, estacion.nombre, hueco, cfg, self._recientes.get(estacion.nombre, []))
             try:

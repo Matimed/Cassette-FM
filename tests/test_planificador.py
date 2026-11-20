@@ -1231,3 +1231,22 @@ def test_un_antes_reservado_en_final_se_reconoce_por_su_corte_con_tolerancia_est
     nueva = con_pedido(est, PEDIDO, fin)
     m.p.al_cambiar_agenda(nueva, nueva.pedidos[0])
     assert [x.id for x in m.registro.todas()] == [antes["id"]]   # y al empezar el pedido sigue valiendo
+
+
+# --- revisión final: `cassette dj pedir` con posiciones tempranas ---
+
+def test_pedir_ahora_sin_tiempo_de_generar_un_clip_largo_va_en_inicio(mundo):
+    mundo.cfgs["E"] = replace(CFG, posicion_voz="final")
+    est = estacion()
+    mundo.p.al_sintonizar(est)
+    _, corte = _origen_y_corte(est)
+    mundo.reloj.t = corte - 25            # el próximo corte queda a 25 s: menos que margen + duración máxima (45)
+    mundo.p.pedir_ahora(20)
+    assert mundo.cliente.enviados[-1]["posicion"] == "inicio"
+
+
+def test_pedir_ahora_con_tiempo_respeta_la_posicion_configurada(mundo):
+    mundo.cfgs["E"] = replace(CFG, posicion_voz="final")
+    mundo.p.al_sintonizar(estacion())
+    mundo.p.pedir_ahora(60)               # el corte queda a 60 s o más: sobra tiempo
+    assert mundo.cliente.enviados[-1]["posicion"] == "final"

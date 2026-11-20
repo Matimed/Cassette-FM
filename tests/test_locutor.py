@@ -565,3 +565,36 @@ def test_otro_tema_de_otra_estacion_no_arma_nada(mundo):
     mundo.locutor.pista_iniciada(_origen(), "OTRA", 0.0)
     time.sleep(0.6)
     assert mundo.voz.cargas() == []
+
+
+# --- revisión final: un anclaje de origen no puede sobrevivir a su intervención ---
+
+def test_una_intervencion_quitada_con_descartar_desde_no_habla_aunque_su_temporizador_siga(mundo):
+    mundo.locutor.al_sintonizar("E")
+    mundo.locutor.registrar(_final(mundo, 0.3, 0.8))
+    mundo.locutor.pista_iniciada(_origen(), "E", 0.0)
+    mundo.locutor.descartar_estacion("E", desde=T0)           # encolaron un pedido: lo que viene ya no vale
+    assert mundo.registro.todas() == []
+    time.sleep(0.6)
+    assert mundo.voz.cargas() == [] and mundo.musica.llamadas == []     # ni voz ni música bajada sin nadie que hable
+
+
+def test_una_intervencion_quitada_del_registro_a_secas_tampoco_habla(mundo):
+    mundo.locutor.al_sintonizar("E")
+    i = _final(mundo, 0.3, 0.8)
+    mundo.locutor.registrar(i)
+    mundo.locutor.pista_iniciada(_origen(), "E", 0.0)
+    mundo.registro.quitar(i)                                  # el planificador la quitó sin avisarle al locutor
+    time.sleep(0.6)
+    assert mundo.voz.cargas() == [] and mundo.musica.llamadas == []
+
+
+def test_un_temporizador_ya_disparado_pero_cancelado_no_habla(mundo):
+    mundo.locutor.al_sintonizar("E")
+    i = _final(mundo, 5.0, 6.0)
+    mundo.locutor.registrar(i)
+    mundo.locutor.pista_iniciada(_origen(duracion=100.0), "E", 0.0)
+    sesion = mundo.locutor._sesion
+    mundo.locutor.pista_iniciada(_origen(ruta="/m/otro.mp3"), "E", 0.0)   # saltearon: se cancela el temporizador
+    mundo.locutor._hablar_anclada(i, sesion)    # el hilo del temporizador ya había salido de la espera y llega tarde
+    assert mundo.voz.cargas() == [] and not mundo.locutor.hablando

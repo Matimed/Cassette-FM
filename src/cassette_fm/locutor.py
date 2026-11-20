@@ -170,8 +170,11 @@ class Locutor:
 
     def _hablar_anclada(self, i: Intervencion, sesion: int) -> None:
         with self._lock:
+            vigente = any(x is i for _, x in self._anclajes)      # cancelado: el hilo ya había salido de la espera
             self._anclajes = [(t, x) for t, x in self._anclajes if x is not i]
-            if sesion == self._sesion:
+            # un anclaje puede vivir minutos (voz que empieza antes del corte): si mientras tanto la intervención se
+            # quitó del registro (cambió la agenda, encolaron un pedido, apagaron el DJ) ya no hay nada que decir
+            if sesion == self._sesion and vigente and i in self._registro.todas():
                 self._hablar(i, 0.0)
 
     def _hablar(self, i: Intervencion, desde: float) -> None:
