@@ -305,7 +305,8 @@ def test_dj_de_punta_a_punta_con_el_servicio_real(tmp_path, dir_corto, crear_mp3
         crear_mp3(musica / "A" / f"t{n}.mp3", 3, titulo=f"Tema {n}", artista=f"Artista {n}")
     puerto = puerto_libre()
     dj = ConfigDJ(activo=True, url=svc.url, margen_minutos=0.02, retraso_voz_segundos=0.1,
-                  rampa_bajada_segundos=0.05, rampa_subida_segundos=0.05, frecuencia=Frecuencia("temas", 1, 1))
+                  rampa_bajada_segundos=0.05, rampa_subida_segundos=0.05, frecuencia=Frecuencia("temas", 1, 1),
+                  posicion_voz="inicio")      # con temas de 3 s un clip no cabe antes del corte: esta prueba es del recorrido
     rutas, parar, hilo = _arrancar(tmp_path, dir_corto,
                                    Config(raiz_musica=musica, puerto=puerto, avisos=False, dj=dj))
     try:
