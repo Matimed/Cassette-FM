@@ -449,8 +449,8 @@ class LocutorFalso:
     def volumen(self, valor):
         self.llamadas.append(("volumen", valor))
 
-    def pista_iniciada(self, pista, nombre):
-        self.llamadas.append(("pista_iniciada", pista, nombre))
+    def pista_iniciada(self, pista, nombre, desfase=0.0):
+        self.llamadas.append(("pista_iniciada", pista, nombre, desfase))
 
     def registrar(self, i):
         if self.fallas:
@@ -505,7 +505,7 @@ def test_pista_iniciada_llega_al_locutor_con_el_nombre_de_la_estacion(tmp_path):
     radio, rep, loc = con_dj(tmp_path)
     radio.sintonizar("A")
     rep.al_cambiar_pista(est("A").pistas[0], est("A"))
-    assert ("pista_iniciada", est("A").pistas[0], "A") in rep.llamadas
+    assert ("pista_iniciada", est("A").pistas[0], "A", 0.0) in rep.llamadas
 
 
 def test_sin_locutor_todo_sigue_andando():
@@ -529,6 +529,32 @@ def test_el_desfase_se_mide_menos_en_el_primer_tema_de_la_sintonia(tmp_path, cap
     rep.al_cambiar_pista(tema.pistas[0], tema)                 # reloj = EPOCA + 10: la agenda ya contó 10 s
     assert radio.dj_estado()["desfase_segundos"] == pytest.approx(10.0)
     assert "desfase" in caplog.text
+
+
+def _arranques(loc):
+    return [llamada for llamada in loc.llamadas if llamada[0] == "pista_iniciada"]
+
+
+def test_el_locutor_recibe_el_desfase_medido_en_cada_arranque(tmp_path):
+    radio, rep, loc = con_dj(tmp_path)
+    radio.sintonizar("A")
+    tema = est("A")
+    rep.al_cambiar_pista(tema.pistas[0], tema)                 # el tema en el que se entró: sale alineado, no se mide
+    rep.al_cambiar_pista(tema.pistas[0], tema)                 # reloj = EPOCA + 10: la agenda ya contó 10 s
+    primero, segundo = _arranques(loc)
+    assert primero == ("pista_iniciada", tema.pistas[0], "A", 0.0)
+    assert segundo[:3] == ("pista_iniciada", tema.pistas[0], "A") and segundo[3] == pytest.approx(10.0)
+    assert segundo[3] == pytest.approx(radio.dj_estado()["desfase_segundos"])
+
+
+def test_un_tema_que_no_esta_en_la_agenda_le_pasa_desfase_cero_al_locutor(tmp_path):
+    radio, rep, loc = con_dj(tmp_path)
+    radio.sintonizar("A")
+    tema = est("A")
+    rep.al_cambiar_pista(tema.pistas[0], tema)
+    ajena = Pista(Path("/m/ajena.mp3"), 50.0, "ajena")
+    rep.al_cambiar_pista(ajena, tema)                          # ni el actual ni el siguiente de la agenda
+    assert _arranques(loc)[-1][3] == 0.0 and radio.dj_estado()["desfase_segundos"] is None
 
 
 def test_dj_probar_sin_dj_da_DJInactivo():

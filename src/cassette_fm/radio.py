@@ -377,8 +377,8 @@ class Radio:
         if self._avisar is not None and estacion is not None:
             self._avisar(estacion.nombre, pista.titulo)
         if self._dj is not None and estacion is not None:
-            self._dj.pista_iniciada(pista, estacion.nombre)
-            self._medir_desfase(pista, estacion)
+            desfase = self._medir_desfase(pista, estacion)
+            self._dj.pista_iniciada(pista, estacion.nombre, desfase)
         self._avisar_cambio()
 
     def _reemplazar(self, estacion: Estacion) -> None:
@@ -411,16 +411,19 @@ class Radio:
         if self._planificador is not None:
             self._planificador.al_desencolado(clave)
 
-    def _medir_desfase(self, pista, estacion) -> None:
+    def _medir_desfase(self, pista, estacion) -> float:
+        """Mide cuánto va la música real respecto del reloj al empezar `pista` y se lo devuelve al locutor (0 si no se
+        puede medir: el primer tema tras sintonizar sale alineado con el reloj, o el tema no está en la agenda)."""
         with self._lock_dj:
             if self._primera_pista:
                 self._primera_pista = False
-                return
+                return 0.0
             valor = desfase(estacion, pista, self._reloj())
             self._desfase = valor
         umbral = self._configuracion_dj(estacion.nombre).desfase_aviso_segundos
         if valor is not None and abs(valor) > umbral:
             _log.warning("desfase de %.1f s entre la música real y el reloj en %r", valor, estacion.nombre)
+        return valor if valor is not None else 0.0
 
     def dj_estado(self) -> dict:
         if self._dj is None:
