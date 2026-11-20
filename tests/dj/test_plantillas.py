@@ -669,3 +669,111 @@ def test_con_cola_de_dato_ninguna_combinacion_se_queda_sin_marcos(idioma, petici
     for s in range(150):
         r = redactar(p, Lexico(), random.Random(s), 60, hechos=TODO, pesos=ALTOS)
         assert r.marcado.rstrip().endswith(".")
+
+
+# --- el tema anterior según la posición de la voz ---
+
+CIERRE = "CIERRE de {artista_ant} con {titulo_ant} ya listo."
+ENCURSO = "ENCURSO suena {titulo_ant} de {artista_ant} todavía."
+PEDIDO_PASADO = "PEDIDO-PASADO fue {titulo_ant} de {artista_ant} ya."
+PEDIDO_ENCURSO = "PEDIDO-ENCURSO termina {titulo_ant} de {artista_ant} ahora."
+SOLO_ANTERIOR = {k: (1.0 if k == "anterior" else 0.0) for k in PESOS_POR_DEFECTO}
+
+
+def _centinelas_anterior(monkeypatch):
+    from cassette_fm.dj import plantillas
+    for idioma in ("es", "en"):
+        monkeypatch.setitem(plantillas._EXTRAS[idioma], "anterior", [CIERRE])
+        monkeypatch.setitem(plantillas._EXTRAS[idioma], "anterior_en_curso", [ENCURSO])
+    monkeypatch.setattr(plantillas, "_PETICION_ANTERIOR", {"es": [PEDIDO_PASADO], "en": [PEDIDO_PASADO]})
+    monkeypatch.setattr(plantillas, "_PETICION_ANTERIOR_EN_CURSO", {"es": [PEDIDO_ENCURSO], "en": [PEDIDO_ENCURSO]})
+
+
+@pytest.mark.parametrize("idioma", ["es", "en"])
+def test_hay_al_menos_tres_frases_del_anterior_en_presente(idioma):
+    from cassette_fm.dj.plantillas import _EXTRAS, _PETICION_ANTERIOR_EN_CURSO
+    assert len(_EXTRAS[idioma]["anterior_en_curso"]) >= 3 and len(_PETICION_ANTERIOR_EN_CURSO[idioma]) >= 3
+    for f in _EXTRAS[idioma]["anterior_en_curso"] + _PETICION_ANTERIOR_EN_CURSO[idioma]:
+        assert "{titulo_ant}" in f and "{artista_ant}" in f and f.rstrip().endswith(".")
+
+
+@pytest.mark.parametrize("idioma", ["es", "en"])
+def test_entre_abre_cerrando_el_tema_anterior(monkeypatch, idioma):
+    _centinelas_anterior(monkeypatch)
+    p = _replace(pedido(idioma=idioma), posicion="entre")
+    for s in range(100):
+        texto, r = _texto(p, s)
+        assert texto.startswith("CIERRE de Whitesnake con Is This Love ya listo."), texto
+        assert texto.count("Whitesnake") == 1 and "ENCURSO" not in texto and "anterior" not in r.ingredientes
+
+
+@pytest.mark.parametrize("idioma", ["es", "en"])
+def test_entre_sin_anterior_no_cierra_nada(monkeypatch, idioma):
+    _centinelas_anterior(monkeypatch)
+    p = _replace(pedido(idioma=idioma, anterior=False), posicion="entre")
+    for s in range(100):
+        texto, _ = _texto(p, s)
+        assert "CIERRE" not in texto and "ENCURSO" not in texto and "Whitesnake" not in texto
+
+
+@pytest.mark.parametrize("idioma", ["es", "en"])
+def test_final_habla_del_anterior_en_presente_y_nunca_lo_cierra(monkeypatch, idioma):
+    _centinelas_anterior(monkeypatch)
+    p = _replace(pedido(idioma=idioma), posicion="final")
+    for s in range(100):
+        texto, _ = _texto(p, s)
+        assert "CIERRE" not in texto
+    forzado = [_texto_con(p, s, pesos=SOLO_ANTERIOR) for s in range(100)]
+    assert any("ENCURSO" in t for t in forzado) and not any("CIERRE" in t for t in forzado)
+
+
+def _texto_con(p, semilla, **kw):
+    r = redactar(p, Lexico(), random.Random(semilla), 45, zona=ZONA, **kw)
+    return MARCA.sub(lambda m: m.group(2), r.marcado)
+
+
+@pytest.mark.parametrize("idioma", ["es", "en"])
+def test_inicio_sigue_usando_el_anterior_en_pasado(monkeypatch, idioma):
+    _centinelas_anterior(monkeypatch)
+    p = _replace(pedido(idioma=idioma), posicion="inicio")
+    textos = [_texto_con(p, s, pesos=SOLO_ANTERIOR) for s in range(100)]
+    assert any("CIERRE" in t for t in textos) and not any("ENCURSO" in t for t in textos)
+
+
+@pytest.mark.parametrize("idioma", ["es", "en"])
+@pytest.mark.parametrize("peticion", ["despues", "seguidas"])
+@pytest.mark.parametrize("posicion,esperado", [("inicio", "PEDIDO-PASADO"), ("entre", "PEDIDO-PASADO"),
+                                               ("final", "PEDIDO-ENCURSO")])
+def test_el_prefijo_de_la_peticion_anterior_depende_de_la_posicion(monkeypatch, idioma, peticion, posicion,
+                                                                    esperado):
+    _centinelas_anterior(monkeypatch)
+    p = _replace(pedido(idioma=idioma), peticion=peticion, posicion=posicion)
+    for s in range(50):
+        texto, _ = _texto(p, s)
+        assert texto.startswith(esperado), texto
+        assert "CIERRE" not in texto and texto.count("Whitesnake") == 1
+
+
+@pytest.mark.parametrize("idioma", ["es", "en"])
+def test_entre_con_anterior_respeta_palabras_maximas_y_mantiene_el_cierre(idioma):
+    p = _replace(pedido(idioma=idioma), posicion="entre")
+    for s in range(200):
+        r = redactar(p, Lexico(), random.Random(s), 45, hechos=TODO, pesos=ALTOS)
+        assert palabras(r) <= 45
+        assert "Whitesnake" in r.marcado and r.marcado.index("Whitesnake") < r.marcado.index("Foreigner")
+
+
+@pytest.mark.parametrize("idioma", ["es", "en"])
+@pytest.mark.parametrize("posicion", POSICIONES)
+@pytest.mark.parametrize("peticion", [None, "antes", "despues", "seguidas"])
+@pytest.mark.parametrize("anterior", [True, False])
+def test_invariantes_de_todas_las_posiciones(idioma, posicion, peticion, anterior):
+    p = _replace(pedido(idioma=idioma, anterior=anterior), peticion=peticion, posicion=posicion)
+    for s in range(120):
+        r = redactar(p, Lexico(), random.Random(s), 45, hechos=TODO, pesos=ALTOS)
+        limpio = limpiar(r.marcado, p.lang)
+        original = re.split(r"(?<=[.?])\s+", r.marcado.strip())
+        assert len(re.split(r"(?<=[.?])\s+", limpio.strip())) == len(original)      # ninguna oración corta se unió
+        assert palabras(r) <= 45 and r.marcado.rstrip().endswith(".") and "cancion" in r.ingredientes
+        assert not re.search(r"\d", MARCA.sub("", r.marcado))
+        assert "{" not in MARCA.sub("", r.marcado) and "}" not in MARCA.sub("", r.marcado)

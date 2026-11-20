@@ -74,6 +74,10 @@ _EXTRAS = {
                     "Qué lindo pasar {este_momento} con ustedes.", "Compartimos {este_dia} con todos ustedes.",
                     "Para disfrutar {este_dia} con buena música."],
         "anterior": ["Veníamos de {artista_ant} con {titulo_ant}.", "Recién sonó {artista_ant} con {titulo_ant}."],
+        # la voz termina antes del corte: el anterior todavía suena, así que se lo nombra en presente
+        "anterior_en_curso": ["Estás escuchando {titulo_ant} de {artista_ant}.",
+                              "Está terminando {titulo_ant} de {artista_ant}.",
+                              "Todavía suena {titulo_ant} de {artista_ant}."],
     },
     "en": {
         "hora": ["It is {hora} and we keep going.", "It is {hora} right here with you.",
@@ -85,6 +89,9 @@ _EXTRAS = {
                     "Nothing beats {este_momento} with good music.", "Enjoy {este_dia} with great music.",
                     "Let us make {este_dia} sound good."],
         "anterior": ["We just heard {artista_ant} with {titulo_ant}.", "That was {artista_ant} with {titulo_ant}."],
+        "anterior_en_curso": ["You are listening to {titulo_ant} by {artista_ant}.",
+                              "That is {titulo_ant} by {artista_ant} coming to an end.",
+                              "We are wrapping up {titulo_ant} by {artista_ant}."],
     },
 }
 # comienzos enganchados delante del marco (van con una coma y el marco empieza en minúscula)
@@ -116,6 +123,15 @@ _PETICION_ANTERIOR = {
     "en": ["We were listening to {titulo_ant} by {artista_ant}, a special request from our audience.",
            "That was {titulo_ant} by {artista_ant}, requested by one of our listeners.",
            "We just heard {titulo_ant} by {artista_ant}, a special request from the audience."],
+}
+# lo mismo con la voz que termina antes del corte: el tema pedido todavía suena
+_PETICION_ANTERIOR_EN_CURSO = {
+    "es": ["Termina {titulo_ant} de {artista_ant}, un pedido especial de nuestro público.",
+           "Está terminando {titulo_ant} de {artista_ant}, a petición de uno de nuestros oyentes.",
+           "Suena el final de {titulo_ant} de {artista_ant}, un pedido especial del público."],
+    "en": ["We are finishing {titulo_ant} by {artista_ant}, a special request from our audience.",
+           "That is {titulo_ant} by {artista_ant} ending, requested by one of our listeners.",
+           "We are closing {titulo_ant} by {artista_ant}, a special request from the audience."],
 }
 # el tema que sigue es una petición ("antes" y "seguidas"): el marco mismo la anuncia, sin comienzo enganchado
 # (mismas clases que los marcos normales: [idioma][modo][clase])
@@ -305,6 +321,10 @@ def redactar(pedido: Pedido, lexico: Lexico, azar: random.Random, palabras_maxim
         peticion = "antes" if peticion == "seguidas" else None      # sin el anterior no se lo puede nombrar
     if peticion in ("despues", "seguidas"):
         disponibles.discard("anterior")          # ya lo nombra la oración de la petición
+    cierra_el_anterior = pedido.posicion == "entre" and pedido.anterior is not None and peticion not in (
+        "despues", "seguidas")
+    if cierra_el_anterior:
+        disponibles.discard("anterior")          # la voz abre cerrando el anterior: va primero y no es opcional
     if peticion in ("antes", "seguidas"):
         disponibles -= {"clima", "album"}        # el marco de la petición no lleva comienzo enganchado
     marcos = marcos_para(idioma, pedido.posicion, peticion)
@@ -357,10 +377,16 @@ def redactar(pedido: Pedido, lexico: Lexico, azar: random.Random, palabras_maxim
     prefijo = None
     for _ in range(10):
         # lo que se elige al azar una vez por intento: las oraciones sueltas, su fusión y los comienzos
-        prefijo = (azar.choice(_PETICION_ANTERIOR[idioma]).format(**campos) if peticion in ("despues", "seguidas")
-                   else None)
-        azar_sueltos = {i: azar.choice(_EXTRAS[idioma][i]).format(**campos) for i in _SUELTOS
-                        if i != "anterior" or pedido.anterior is not None}
+        if peticion in ("despues", "seguidas"):
+            origen = _PETICION_ANTERIOR_EN_CURSO if pedido.posicion == "final" else _PETICION_ANTERIOR
+            prefijo = azar.choice(origen[idioma]).format(**campos)
+        elif cierra_el_anterior:
+            prefijo = azar.choice(_EXTRAS[idioma]["anterior"]).format(**campos)
+        else:
+            prefijo = None
+        clave_anterior = "anterior_en_curso" if pedido.posicion == "final" else "anterior"
+        azar_sueltos = {i: azar.choice(_EXTRAS[idioma][clave_anterior if i == "anterior" else i]).format(**campos)
+                        for i in _SUELTOS if i != "anterior" or pedido.anterior is not None}
         fusion = (azar.choice(_EXTRAS[idioma]["hora+estacion"]).format(**campos) if azar.random() < 0.5 else None)
         azar_comienzos = {i: azar.choice(f) for i, f in _COMIENZOS[idioma].items()}
         cola = None
