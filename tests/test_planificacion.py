@@ -8,7 +8,9 @@ import pytest
 from cassette_fm.agenda import secuencia, transiciones
 from cassette_fm.biblioteca import Estacion, Pista
 from cassette_fm.config import ConfigDJ, Frecuencia
-from cassette_fm.planificacion import Hueco, Ultima, armar_pedido, elegir_hueco
+from cassette_fm.planificacion import (Hueco, Ultima, armar_pedido, elegir_hueco, inicio_de_la_voz,
+                                       sortear_posicion)
+from cassette_fm.posiciones import POSICIONES
 
 AHORA = 1_800_000_000.0
 
@@ -222,3 +224,104 @@ def test_armar_pedido_con_peticion():
     h = hueco_de(est)
     assert "peticion" not in armar_pedido("a", "E", h, cfg(), [])
     assert armar_pedido("a", "E", h, cfg(), [], peticion="antes")["peticion"] == "antes"
+
+
+# --- posición de la voz respecto del corte ---
+
+def test_sortear_posicion_fija_devuelve_esa():
+    azar = random.Random(1)
+    for posicion in POSICIONES:
+        assert sortear_posicion(cfg(posicion_voz=posicion), azar) == posicion
+
+
+def test_sortear_posicion_mixto_reparte_las_tres_por_igual():
+    azar = random.Random(7)
+    cuenta = {p: 0 for p in POSICIONES}
+    for _ in range(300):
+        cuenta[sortear_posicion(cfg(posicion_voz="mixto"), azar)] += 1
+    assert all(75 <= n <= 126 for n in cuenta.values()), cuenta        # entre 25 % y 42 % cada una
+
+
+def test_sortear_posicion_sin_tiempo_de_generar_el_clip_cae_en_inicio():
+    c = cfg(posicion_voz="final", peticion_margen_segundos=30.0, duracion_maxima_segundos=15.0)
+    assert sortear_posicion(c, random.Random(1), margen_disponible=10) == "inicio"
+    assert sortear_posicion(c, random.Random(1), margen_disponible=44.9) == "inicio"
+    assert sortear_posicion(c, random.Random(1), margen_disponible=45.0) == "final"
+    azar = random.Random(3)
+    assert {sortear_posicion(cfg(posicion_voz="mixto"), azar, margen_disponible=10) for _ in range(50)} == {"inicio"}
+
+
+def test_inicio_de_la_voz_en_inicio_suma_el_retraso():
+    assert inicio_de_la_voz("inicio", 5000.0, 10.0, cfg(retraso_voz_segundos=1.0), random.Random(1)) == 5001.0
+
+
+def test_inicio_de_la_voz_en_entre_deja_entre_30_y_70_por_ciento_antes_del_corte():
+    azar = random.Random(2)
+    for _ in range(100):
+        inicio = inicio_de_la_voz("entre", 5000.0, 10.0, cfg(), azar)
+        assert 5000.0 - 7.0 <= inicio <= 5000.0 - 3.0
+
+
+def test_inicio_de_la_voz_en_final_termina_entre_0_y_2_segundos_antes_del_corte():
+    azar = random.Random(2)
+    for _ in range(100):
+        inicio = inicio_de_la_voz("final", 5000.0, 10.0, cfg(), azar)
+        assert 5000.0 - 12.0 <= inicio <= 5000.0 - 10.0
+
+
+def test_inicio_de_la_voz_con_fraccion_fija_es_exacto():
+    c = cfg(fraccion_entre_min=0.5, fraccion_entre_max=0.5)
+    assert inicio_de_la_voz("entre", 5000.0, 10.0, c, random.Random(1)) == 4995.0
+
+
+def test_el_adelanto_no_pasa_de_la_mitad_del_tema_de_origen():
+    # un clip de 25 s en "final" pediría 25 s de adelanto; el origen dura 20 s: como mucho 10
+    azar = random.Random(4)
+    for _ in range(20):
+        assert inicio_de_la_voz("final", 5000.0, 25.0, cfg(), azar, duracion_origen=20.0) == 4990.0
+    assert inicio_de_la_voz("entre", 5000.0, 10.0, cfg(fraccion_entre_min=0.7, fraccion_entre_max=0.7),
+                            random.Random(1), duracion_origen=8.0) == 4996.0
+    # sin tope si el origen es largo, y el tope no toca a "inicio"
+    assert inicio_de_la_voz("final", 5000.0, 10.0, cfg(final_antes_max_segundos=0.0), random.Random(1),
+                            duracion_origen=200.0) == 4990.0
+    assert inicio_de_la_voz("inicio", 5000.0, 10.0, cfg(), random.Random(1), duracion_origen=1.0) == 5001.0
+
+
+def test_elegir_hueco_trae_la_posicion_y_el_origen():
+    est = estacion()
+    for posicion in POSICIONES:
+        h = elegir_hueco(est, AHORA, cfg(posicion_voz=posicion), None, random.Random(3))
+        assert h.posicion == posicion and h.origen == h.anterior
+    vistas = {elegir_hueco(est, AHORA, cfg(posicion_voz="mixto"), None, random.Random(s)).posicion for s in range(60)}
+    assert vistas == set(POSICIONES)
+
+
+def test_elegir_hueco_no_cambia_el_tema_elegido_por_el_sorteo_de_la_posicion():
+    est = estacion()
+    elegidos = {elegir_hueco(est, AHORA, cfg(posicion_voz=p), None, random.Random(5)).inicio_tema for p in POSICIONES}
+    assert len(elegidos) == 1
+
+
+def test_la_ventana_de_ocupados_cubre_la_voz_que_empieza_antes_del_corte():
+    est = estacion()
+    c = cfg(frecuencia=Frecuencia("temas", 2, 2))
+    natural = elegir_hueco(est, AHORA, c, None, random.Random(0))
+    antes_del_corte = [(natural.inicio_tema - c.duracion_maxima_segundos - 1, natural.inicio_tema - 5)]
+    assert elegir_hueco(est, AHORA, c, None, random.Random(0), antes_del_corte).inicio_tema > natural.inicio_tema
+    muy_antes = [(natural.inicio_tema - c.duracion_maxima_segundos - 20, natural.inicio_tema - c.duracion_maxima_segundos)]
+    assert elegir_hueco(est, AHORA, c, None, random.Random(0), muy_antes).inicio_tema == natural.inicio_tema
+
+
+def test_armar_pedido_lleva_la_posicion_del_hueco():
+    est = estacion()
+    h = elegir_hueco(est, AHORA, cfg(posicion_voz="final"), None, random.Random(1))
+    assert armar_pedido("x1", "E", h, cfg(), [])["posicion"] == "final"
+    sin = Hueco(pista(3), AHORA + 100, AHORA + 101, pista(2))
+    assert armar_pedido("x2", "E", sin, cfg(), [])["posicion"] == "inicio"
+
+
+@pytest.mark.parametrize("posicion", POSICIONES)
+def test_el_pedido_con_posicion_pasa_la_validacion_del_servicio(posicion):
+    from cassette_fm.dj.pedido import leer_pedido
+    h = elegir_hueco(estacion(), AHORA, cfg(posicion_voz=posicion), None, random.Random(1))
+    assert leer_pedido(armar_pedido("x1", "E", h, cfg(), [])).posicion == posicion
