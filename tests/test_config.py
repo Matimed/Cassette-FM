@@ -480,3 +480,23 @@ def test_dj_acepta_todas_las_posiciones(tmp_path, valor):
     archivo = tmp_path / "config.toml"
     archivo.write_text(f'[dj]\nposicion_voz = "{valor}"\n')
     assert cargar_config(archivo).dj.posicion_voz == valor
+
+
+def test_segundos_hasta_dormir_por_defecto_es_60(tmp_path):
+    assert cargar_config(tmp_path / "no-existe.toml").segundos_hasta_dormir == 60.0
+
+
+def test_segundos_hasta_dormir_se_lee_del_toml(tmp_path):
+    archivo = tmp_path / "config.toml"
+    archivo.write_text("segundos_hasta_dormir = 15\n")
+    assert cargar_config(archivo).segundos_hasta_dormir == 15.0
+    archivo.write_text("segundos_hasta_dormir = 2.5\n")
+    assert cargar_config(archivo).segundos_hasta_dormir == 2.5
+
+
+@pytest.mark.parametrize("malo", ["0", "-5", '"mucho"', "true"])
+def test_segundos_hasta_dormir_invalido(tmp_path, malo):
+    archivo = tmp_path / "config.toml"
+    archivo.write_text(f"segundos_hasta_dormir = {malo}\n")
+    with pytest.raises(ErrorConfig, match="segundos_hasta_dormir"):
+        cargar_config(archivo)

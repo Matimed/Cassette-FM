@@ -97,6 +97,7 @@ class Config:
     bus_audio: bool = True                 # todo el audio sale a un sink virtual (radio_virtual); ver audio_router.py
     normalizar: bool = True   # filtro dynaudnorm de mpv: parejiza el volumen entre temas
     ajuste_volumen_db: float = 0.0   # nivel de las emisoras locales (y la estática) frente a la voz y Spotify, en el bus
+    segundos_hasta_dormir: float = 60.0   # sin oyentes tanto tiempo, la radio se duerme sola (ver vigilante.py)
     dj: ConfigDJ = ConfigDJ()
     estaciones_dj: Mapping[str, ConfigDJ] = field(default_factory=dict)   # overrides ya fusionados
     spotify: ConfigSpotify = ConfigSpotify()
@@ -211,15 +212,20 @@ def cargar_config(archivo: Path) -> Config:
     spotify = _leer_spotify(archivo, datos.pop("spotify", None))
     lan = _leer_lan(archivo, datos.pop("lan", None))
     nube = _leer_nube(archivo, datos.pop("nube", None))
-    conocidas = {"raiz_musica", "puerto", "avisos", "normalizar", "bus_audio", "ajuste_volumen_db"}
+    conocidas = {"raiz_musica", "puerto", "avisos", "normalizar", "bus_audio", "ajuste_volumen_db",
+                 "segundos_hasta_dormir"}
     datos = {k: v for k, v in datos.items() if k in conocidas}
     if "ajuste_volumen_db" in datos:
         datos["ajuste_volumen_db"] = _numero(archivo, "ajuste_volumen_db", datos["ajuste_volumen_db"])
         if not -30 <= datos["ajuste_volumen_db"] <= 30:
             raise ErrorConfig(f"{archivo}: 'ajuste_volumen_db' tiene que estar entre -30 y 30")
+    if "segundos_hasta_dormir" in datos:
+        datos["segundos_hasta_dormir"] = _numero(archivo, "segundos_hasta_dormir", datos["segundos_hasta_dormir"])
+        if datos["segundos_hasta_dormir"] <= 0:
+            raise ErrorConfig(f"{archivo}: 'segundos_hasta_dormir' tiene que ser mayor que 0")
     for clave, valor in datos.items():
         tipo = {"raiz_musica": str, "puerto": int, "avisos": bool, "normalizar": bool,
-                "bus_audio": bool, "ajuste_volumen_db": float}[clave]
+                "bus_audio": bool, "ajuste_volumen_db": float, "segundos_hasta_dormir": float}[clave]
         if not isinstance(valor, tipo) or (tipo is int and isinstance(valor, bool)):
             raise ErrorConfig(f"{archivo}: '{clave}' tiene que ser {_NOMBRE_TIPO[tipo]}")
     if "puerto" in datos and not 1 <= datos["puerto"] <= 65535:
