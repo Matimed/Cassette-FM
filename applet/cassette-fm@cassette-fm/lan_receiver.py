@@ -28,6 +28,7 @@ from collections.abc import Mapping
 from pathlib import Path
 
 VOLUMEN_INICIAL = 70
+VOLUMEN_AL_ESCUCHAR = 50      # al prender con el volumen en 0 (como VOLUMEN_MINIMO de la radio)
 ESPERA_SOCKET_SEGUNDOS = 5.0
 ARRANQUE_ESTATICA_SEGUNDOS = 0.15    # lo que tarda en arrancar el mpv de la estática
 
@@ -151,6 +152,9 @@ def _on(env: Mapping[str, str]) -> int:
     url, token = credenciales
     runtime = _runtime(env)
     socket_ipc = runtime / "mpv.sock"
+    if _volumen_guardado(runtime) == 0:                  # escuchar con el volumen en 0 no tiene sentido: se parte de 50
+        runtime.mkdir(parents=True, exist_ok=True)
+        (runtime / "volumen").write_text(str(VOLUMEN_AL_ESCUCHAR))
     with _Candado(runtime):
         if _vivo(socket_ipc):
             try:
@@ -271,12 +275,19 @@ def _volume(env: Mapping[str, str], pedido: str) -> int:
     nuevo = max(0, min(100, actual + int(pedido) if pedido[0] in "+-" else int(pedido)))
     runtime.mkdir(parents=True, exist_ok=True)
     (runtime / "volumen").write_text(str(nuevo))
-    try:
-        ipc(runtime / "mpv.sock", ["set_property", "volume", nuevo])
-    except (OSError, ValueError):
-        pass                                  # sin mpv solo se recuerda para el próximo `on`
+    # el volumen de la radio en 0 es "me desconecté" (se cierra el stream); subirlo con el stream cerrado vuelve a escuchar
+    if nuevo == 0:
+        resultado = _off(env)
+    elif nuevo > actual and not _vivo(runtime / "mpv.sock"):
+        resultado = _on(env)
+    else:
+        resultado = 0
+        try:
+            ipc(runtime / "mpv.sock", ["set_property", "volume", nuevo])
+        except (OSError, ValueError):
+            pass                              # sin mpv solo se recuerda para el próximo `on`
     print(nuevo)
-    return 0
+    return resultado
 
 
 def _status(env: Mapping[str, str], como_json: bool) -> int:

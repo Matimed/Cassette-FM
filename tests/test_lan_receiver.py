@@ -425,8 +425,63 @@ def test_resync_sin_escuchar_no_toca_estatica(entorno, servidor):
 
 
 def test_resync_con_volumen_0_no_toca_estatica(entorno, servidor):
-    lan_receiver.main(["volume", "0"], entorno)
     lan_receiver.main(["on"], entorno)
+    lan_receiver.main(["volume", "0"], entorno)          # el volumen en 0 cierra el stream: no hay nada que resincronizar
     lan_receiver.main(["resync"], entorno)
     time.sleep(0.6)
     assert procesos_con("estatica.wav") == []
+
+
+# --- radio por oyentes: el volumen en 0 es "me desconecté" y subirlo vuelve a escuchar ---
+
+def _ruta_ipc(env):
+    return Path(env["CASSETTE_LAN_RUNTIME"]) / "mpv.sock"
+
+
+def test_volume_0_cierra_el_mpv_como_off(entorno, capsys):
+    lan_receiver.main(["on"], entorno)
+    assert esperar(lambda: procesos_mpv(entorno))
+    assert lan_receiver.main(["volume", "0"], entorno) == 0
+    assert esperar(lambda: not procesos_mpv(entorno))
+    datos = estado(entorno, capsys)
+    assert datos["escuchando"] is False and datos["volumen"] == 0
+
+
+def test_volume_sube_desde_0_con_el_mpv_cerrado_lo_abre(entorno, capsys):
+    lan_receiver.main(["on"], entorno)
+    lan_receiver.main(["volume", "0"], entorno)
+    assert esperar(lambda: not procesos_mpv(entorno))
+    assert lan_receiver.main(["volume", "+10"], entorno) == 0
+    assert esperar(lambda: estado(entorno, capsys)["escuchando"])
+    assert estado(entorno, capsys)["volumen"] == 10
+    assert lan_receiver.ipc(_ruta_ipc(entorno), ["get_property", "volume"])["data"] == 10
+
+
+def test_volume_hacia_abajo_con_el_mpv_cerrado_no_lo_abre(entorno, capsys):
+    assert lan_receiver.main(["volume", "-10"], entorno) == 0     # parte de 70, sin mpv
+    assert procesos_mpv(entorno) == []
+    assert estado(entorno, capsys)["volumen"] == 60
+
+
+def test_volume_hacia_arriba_con_el_mpv_cerrado_por_off_lo_abre(entorno, capsys):
+    lan_receiver.main(["on"], entorno)
+    lan_receiver.main(["off"], entorno)
+    assert esperar(lambda: not procesos_mpv(entorno))
+    assert lan_receiver.main(["volume", "+10"], entorno) == 0
+    assert esperar(lambda: estado(entorno, capsys)["escuchando"])
+    assert estado(entorno, capsys)["volumen"] == 80
+
+
+def test_on_con_el_volumen_en_0_arranca_en_50(entorno, capsys):
+    lan_receiver.main(["volume", "0"], entorno)                    # sin mpv: solo se recuerda
+    assert lan_receiver.main(["on"], entorno) == 0
+    assert estado(entorno, capsys)["volumen"] == 50
+    assert lan_receiver.ipc(_ruta_ipc(entorno), ["get_property", "volume"])["data"] == 50
+
+
+def test_volume_con_mpv_vivo_se_aplica_en_caliente_sin_reabrirlo(entorno):
+    lan_receiver.main(["on"], entorno)
+    (pid, _), = procesos_mpv(entorno)
+    lan_receiver.main(["volume", "40"], entorno)
+    assert lan_receiver.ipc(_ruta_ipc(entorno), ["get_property", "volume"])["data"] == 40
+    assert [p for p, _ in procesos_mpv(entorno)] == [pid]
