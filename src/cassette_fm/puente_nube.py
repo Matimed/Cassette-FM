@@ -41,7 +41,9 @@ def mensaje_estado(estado: dict, seq: int) -> dict:
         version = version_logo(Path(ruta))
         if version:
             iconos[nombre] = version
-    return {"tipo": "estado", "seq": seq, **estado_publico(estado), "iconos": iconos}
+    publico = estado_publico(estado)
+    publico.pop("oyentes", None)         # el protocolo con el relay no lo lleva (es de la LAN): sin cambios de protocolo
+    return {"tipo": "estado", "seq": seq, **publico, "iconos": iconos}
 
 
 def url_icono(base: str, emisora: str, version: str) -> str:

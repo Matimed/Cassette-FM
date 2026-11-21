@@ -23,7 +23,7 @@ class RadioFalsa:
     def estado(self):
         return {"encendida": True, "estacion": "Pop Hits F.M.", "pista": "Artista - Tema", "volumen": 70,
                 "monitor_local": True, "estaciones": list(NOMBRES), "fuente": "spotify", "segundo": 12.3,
-                "iconos": self.iconos()}
+                "oyentes": 2, "oyentes_red": 1, "iconos": self.iconos()}
 
     def iconos(self):
         return {"Pop Hits F.M.": str(self.logo), "Más Gasolina F.M.": str(self.sin_logo)}
@@ -115,15 +115,17 @@ def test_status_trae_solo_los_campos_publicos(servidor):
     codigo, r, datos = pedir(servidor, "GET", "/status")
     cuerpo = json.loads(datos)
     assert codigo == 200 and r.getheader("Content-Type").startswith("application/json")
-    assert set(cuerpo) == {"encendida", "estacion", "pista", "estaciones", "fuente", "segundo", "iconos"}
+    assert set(cuerpo) == {"encendida", "estacion", "pista", "estaciones", "fuente", "segundo", "oyentes", "iconos"}
+    assert cuerpo["oyentes"] == 2
     assert list(cuerpo["iconos"]) == ["Pop Hits F.M."] and cuerpo["estaciones"] == NOMBRES
     assert b"volumen" not in datos and b"monitor_local" not in datos and b"/home/usuario" not in datos
+    assert b"oyentes_red" not in datos
 
 
 def test_estado_publico_no_inventa_campos():
     assert estado_publico({"volumen": 1, "monitor_local": True}) == {
         "encendida": None, "estacion": None, "pista": None, "estaciones": [], "fuente": None, "segundo": None,
-        "iconos": {}}
+        "oyentes": None, "iconos": {}}
 
 
 def test_station_sintoniza_sin_oir_aca_y_devuelve_el_estado_publico(servidor):

@@ -558,7 +558,9 @@ def test_servir_con_bus_de_audio_crea_el_bus_expone_el_monitor_y_lo_cierra(tmp_p
         parar=parar, extra_args_mpv=["--ao=null"]), daemon=True)
     hilo.start()
     try:
-        assert esperar_servicio(puerto)["monitor_local"] is True
+        assert esperar_servicio(puerto)["monitor_local"] is False        # arranca sin oyente local
+        assert llamar(puerto, "POST", "/monitor", {"activo": True})["monitor_local"] is True
+        assert json.loads(rutas.estado.read_text())["monitor_local"] is True
         assert llamar(puerto, "POST", "/monitor", {"activo": False})["monitor_local"] is False
         assert json.loads(rutas.estado.read_text())["monitor_local"] is False
     finally:
@@ -1014,3 +1016,132 @@ def test_servir_retoma_la_emisora_tras_un_reinicio_por_falla(tmp_path, dir_corto
     finally:
         parar.set()
         hilo.join(10)
+
+
+# --- radio por oyentes: el vigilante, el despertar por conexión y el arranque sin oyente local ---
+
+def _servir_con_bus(tmp_path, dir_corto, crear_mp3, monkeypatch, estado_guardado=None, **cfg):
+    RouterDeServicioFalso.instancias.clear()
+    monkeypatch.setattr(servicio, "AudioRouter", RouterDeServicioFalso)
+    musica = tmp_path / "musica"
+    crear_mp3(musica / "A" / "a.mp3", 30, titulo="Tema A")
+    rutas = Rutas(config=tmp_path / "config.toml", estado=tmp_path / "st" / "estado.json",
+                  cache=tmp_path / "cache" / "d.json", runtime=dir_corto)
+    if estado_guardado is not None:
+        rutas.estado.parent.mkdir(parents=True, exist_ok=True)
+        rutas.estado.write_text(json.dumps(estado_guardado))
+    puerto = puerto_libre()
+    parar = threading.Event()
+    hilo = threading.Thread(target=servir, kwargs=dict(
+        config=Config(raiz_musica=musica, puerto=puerto, avisos=False, bus_audio=True, **cfg), rutas=rutas,
+        parar=parar, extra_args_mpv=["--ao=null"]), daemon=True)
+    hilo.start()
+    return rutas, puerto, parar, hilo
+
+
+def _esperar_estado(puerto, condicion, segundos=5.0):
+    fin = time.monotonic() + segundos
+    while time.monotonic() < fin:
+        estado = llamar(puerto, "GET", "/estado")
+        if condicion(estado):
+            return estado
+        time.sleep(0.05)
+    raise AssertionError(f"el estado no llegó a lo esperado: {estado}")
+
+
+def test_con_bus_la_radio_se_duerme_sola_sin_oyentes(tmp_path, dir_corto, crear_mp3, monkeypatch):
+    _, puerto, parar, hilo = _servir_con_bus(tmp_path, dir_corto, crear_mp3, monkeypatch, segundos_hasta_dormir=0.3)
+    try:
+        esperar_servicio(puerto)
+        assert "vigilante-oyentes" in _nombres_de_hilos()
+        assert llamar(puerto, "POST", "/encender")["encendida"] is True
+        llamar(puerto, "POST", "/silenciar")
+        _esperar_estado(puerto, lambda e: e["encendida"] is False)
+    finally:
+        parar.set()
+        hilo.join(3)
+
+
+def test_con_bus_con_el_monitor_prendido_no_se_duerme(tmp_path, dir_corto, crear_mp3, monkeypatch):
+    _, puerto, parar, hilo = _servir_con_bus(tmp_path, dir_corto, crear_mp3, monkeypatch, segundos_hasta_dormir=0.3)
+    try:
+        esperar_servicio(puerto)
+        llamar(puerto, "POST", "/encender")
+        time.sleep(1.5)                       # cinco veces la gracia
+        assert llamar(puerto, "GET", "/estado")["encendida"] is True
+    finally:
+        parar.set()
+        hilo.join(3)
+
+
+def test_arranca_con_el_monitor_apagado_aunque_el_estado_guardado_lo_tenga_prendido(tmp_path, dir_corto, crear_mp3,
+                                                                                    monkeypatch):
+    _, puerto, parar, hilo = _servir_con_bus(tmp_path, dir_corto, crear_mp3, monkeypatch,
+                                             estado_guardado={"monitor_local": True})
+    try:
+        assert esperar_servicio(puerto)["monitor_local"] is False
+    finally:
+        parar.set()
+        hilo.join(3)
+
+
+def test_tras_un_reinicio_de_recuperacion_conserva_el_monitor_guardado(tmp_path, dir_corto, crear_mp3, monkeypatch):
+    rutas_previas = Rutas(config=tmp_path / "config.toml", estado=tmp_path / "st" / "estado.json",
+                          cache=tmp_path / "cache" / "d.json", runtime=dir_corto)
+    rutas_previas.estado.parent.mkdir(parents=True, exist_ok=True)
+    rutas_previas.reinicio.write_text(json.dumps({"cuando": time.time(), "estacion": "A", "retomado": False}))
+    _, puerto, parar, hilo = _servir_con_bus(tmp_path, dir_corto, crear_mp3, monkeypatch,
+                                             estado_guardado={"monitor_local": True})
+    try:
+        assert esperar_servicio(puerto)["monitor_local"] is True
+    finally:
+        parar.set()
+        hilo.join(3)
+
+
+def test_sin_bus_no_hay_vigilante(tmp_path, dir_corto, crear_mp3):
+    musica = tmp_path / "musica"
+    crear_mp3(musica / "A" / "a.mp3", 30, titulo="Tema A")
+    rutas, parar, hilo = _arrancar(tmp_path, dir_corto, Config(raiz_musica=musica, puerto=puerto_libre(), avisos=False,
+                                                               bus_audio=False))
+    try:
+        time.sleep(0.5)
+        assert "vigilante-oyentes" not in _nombres_de_hilos()
+    finally:
+        parar.set()
+        hilo.join(3)
+
+
+def test_los_difusores_despiertan_a_la_radio_y_su_conteo_llega_a_oyentes_red(tmp_path, dir_corto, crear_mp3,
+                                                                             monkeypatch):
+    from cassette_fm.config import ConfigLan
+
+    class DifusorMudo:
+        def cortar_oyentes(self): pass
+
+    class RegistroFalso:
+        ultimo = None
+        total = 0
+
+        def __init__(self, fuente, crear=None, **opciones):
+            self.opciones = opciones
+            RegistroFalso.ultimo = self
+
+        def de(self, kbps): return DifusorMudo()
+        def total_oyentes(self): return RegistroFalso.total
+        def revisar_fuente(self): pass
+        def cerrar(self): pass
+
+    monkeypatch.setattr(servicio, "Difusores", RegistroFalso)
+    musica = tmp_path / "musica"
+    _, puerto, parar, hilo = _servir_con_bus(tmp_path, dir_corto, crear_mp3, monkeypatch,
+                                             lan=ConfigLan(activo=True, puerto=puerto_libre(), escuchar="127.0.0.1"))
+    try:
+        assert esperar_servicio(puerto)["encendida"] is False
+        RegistroFalso.total = 2
+        assert llamar(puerto, "GET", "/estado")["oyentes_red"] == 2
+        RegistroFalso.ultimo.opciones["al_conectarse"]()          # se conecta alguien a /stream: la radio despierta
+        assert llamar(puerto, "GET", "/estado")["encendida"] is True
+    finally:
+        parar.set()
+        hilo.join(3)

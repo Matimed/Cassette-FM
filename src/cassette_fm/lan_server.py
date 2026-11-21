@@ -18,7 +18,7 @@ from cassette_fm.radio import SinEstaciones
 
 _log = logging.getLogger("cassette_fm")
 
-_CAMPOS = ("encendida", "estacion", "pista", "estaciones", "fuente", "segundo")
+_CAMPOS = ("encendida", "estacion", "pista", "estaciones", "fuente", "segundo", "oyentes")
 TIPOS_IMAGEN = {".png": "image/png", ".jpg": "image/jpeg", ".jpeg": "image/jpeg", ".webp": "image/webp",
                  ".gif": "image/gif"}
 _MAX_LOGO_BYTES = 4 * 1024 * 1024

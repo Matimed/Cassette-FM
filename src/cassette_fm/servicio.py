@@ -22,6 +22,7 @@ from cassette_fm.radio import Radio
 from cassette_fm.clips import generar_estatica
 from cassette_fm.reproductor import Reproductor
 from cassette_fm.reproductores import Reproductores
+from cassette_fm.vigilante import Vigilante
 
 
 _log = logging.getLogger("cassette_fm")
@@ -238,6 +239,8 @@ def servir(config: Config, rutas: Rutas, avisar: Callable[[str, str], None] | No
             router = env_audio = None
 
     estado = cargar_estado(rutas.estado)
+    if recuperacion.a_retomar(rutas.reinicio) is None:
+        estado.monitor_local = False       # el servicio arranca sin oyente local; solo el reinicio de recuperación lo conserva
     args_mpv = (["--af=dynaudnorm"] if config.normalizar else []) + list(extra_args_mpv)
     mpv = ClienteMpv(rutas.runtime / "mpv.sock", extra_args=args_mpv, env=env_audio)
     estaciones = escanear()
@@ -280,7 +283,8 @@ def servir(config: Config, rutas: Rutas, avisar: Callable[[str, str], None] | No
     if router is not None and (config.lan.activo or config.nube.activo):
         # un codificador por calidad, compartido por la LAN y la nube
         difusores = Difusores(lambda: FUENTE_MONITOR if radio.encendida else FUENTE_ESTATICA,
-                              max_oyentes=config.lan.max_oyentes)
+                              max_oyentes=config.lan.max_oyentes, al_conectarse=radio.despertar_para_red)
+    radio.oyentes_red = difusores.total_oyentes if difusores is not None else (lambda: 0)
     try:
         cerrar_lan = iniciar_lan(config, rutas, radio, router, difusores=difusores)
     except Exception:
@@ -301,6 +305,11 @@ def servir(config: Config, rutas: Rutas, avisar: Callable[[str, str], None] | No
                     _log.exception("error al revisar el stream de la red")
 
         threading.Thread(target=revisar_difusores, daemon=True, name="difusores-revision").start()
+    vigilante = None
+    if router is not None:            # sin bus no hay cómo contar oyentes: no hay sueño automático
+        vigilante = Vigilante(radio, config.segundos_hasta_dormir)
+        vigilante.iniciar()
+        _log.info("la radio se duerme sola tras %g s sin oyentes", config.segundos_hasta_dormir)
     servidor = crear_servidor(radio, "127.0.0.1", config.puerto, emisoras=rutas.emisoras,
                               extra_estado=(lambda: {"nube": nube[1]()}) if nube is not None else None)
     hilo = threading.Thread(target=lambda: servidor.serve_forever(poll_interval=0.05), daemon=True)
@@ -313,6 +322,8 @@ def servir(config: Config, rutas: Rutas, avisar: Callable[[str, str], None] | No
         if difusores is not None:               # después de la nube y la LAN, que son sus oyentes
             pasos.append(lambda: (parar_difusores.set(), difusores.cerrar()))
         pasos += [servidor.shutdown, servidor.server_close, mpris.cerrar]
+        if vigilante is not None:
+            pasos.append(vigilante.cerrar)        # antes de apagar la radio: que no la duerma él mientras se cierra
         if planificador is not None:
             pasos.append(planificador.cerrar)     # antes de apagar la radio y de cerrar el locutor y mpv
         pasos.append(radio.apagar)
