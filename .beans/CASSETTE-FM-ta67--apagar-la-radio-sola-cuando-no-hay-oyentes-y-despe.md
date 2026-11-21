@@ -1,7 +1,7 @@
 ---
 # CASSETTE-FM-ta67
-title: Apagar la radio sola cuando no hay oyentes y despertarla al volver uno
-status: todo
+title: Radio por oyentes, se duerme sola sin oyentes y la despierta el primero que llega
+status: in-progress
 type: feature
 created_at: 2026-11-20T05:11:07Z
 updated_at: 2026-11-20T05:11:07Z
@@ -10,4 +10,10 @@ blocked_by:
     - CASSETTE-FM-u8ea
 ---
 
-Si no queda ningún oyente (ni local, ni por /stream web, ni applet remoto) la reproducción se detiene igual que al apagar, para no dejar Spotify sonando en silencio gastando recursos. Lo inverso: si cualquiera de esas fuentes se conecta con la radio apagada, el servicio se despierta y sintoniza. Hay que definir qué cuenta como oyente (cliente local del applet/CLI, conexiones abiertas a /stream, receptores remotos) y un margen de gracia antes de apagar para evitar cortes por reconexiones.
+La radio pasa a ser un servicio que cualquier consumidor puede despertar y que se duerme sola cuando no tiene oyentes; esta PC es un oyente más, sin un "apagar" propio. El único apagado definitivo es `cassette stop` (`systemctl`).
+
+- Oyente = monitor local prendido + conexiones de audio abiertas (LAN y nube). Volumen en 0 = dejé de escuchar, en todas las interfaces (receptor remoto incluido).
+- Sin oyentes durante `segundos_hasta_dormir` (60 s) la radio se duerme; abrir un stream o elegir emisora con cero oyentes la despierta y te vuelve el primer oyente (volumen mínimo 50). Con otro oyente, next/prev/rueda solo cambian la emisora.
+- Se quitan `/apagar`, `cassette off` y "Apagar" del applet; `cassette stop`/`start` apagan y levantan radio, Soloist, DJ y Ollama; `cassette on` y el clic del applet levantan el servicio caído.
+
+Diseño: docs/superpowers/specs/2026-11-20-radio-por-oyentes-design.md. Plan: docs/superpowers/plans/2026-11-20-radio-por-oyentes.md.
