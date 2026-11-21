@@ -156,9 +156,9 @@ def test_la_fila_del_dial_se_difumina_hacia_los_costados():
     assert "Clutter.ShaderEffect" in js and "smoothstep" in js and "this._fila.add_effect(" in js
 
 
-def test_el_dial_se_cierra_solo_a_los_3_s_y_con_enter():
+def test_el_dial_se_cierra_solo_a_los_8_s_y_con_enter():
     js = _js()
-    assert "const DIAL_CIERRE_MS = 3000;" in js
+    assert "const DIAL_CIERRE_MS = 8000;" in js
     assert "Clutter.KEY_Return" in js and "Clutter.KEY_KP_Enter" in js
 
 
