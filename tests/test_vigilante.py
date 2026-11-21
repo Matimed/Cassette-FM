@@ -18,8 +18,9 @@ class RadioFalsa:
             raise RuntimeError("explota")
         return self.cuantos
 
-    def dormir(self):
+    def dormir(self, gracia_segundos=None):
         self.durmio += 1
+        self.gracias = getattr(self, "gracias", []) + [gracia_segundos]
         self.encendida = False
 
 
@@ -54,6 +55,7 @@ def test_sin_oyentes_duerme_pasada_la_gracia_y_no_antes():
     t[0] = 60.0
     v.revisar()
     assert radio.durmio == 1
+    assert radio.gracias == [60.0]            # la radio vuelve a mirar bajo su lock con esa misma gracia
 
 
 def test_si_vuelve_un_oyente_antes_de_la_gracia_la_cuenta_se_reinicia():

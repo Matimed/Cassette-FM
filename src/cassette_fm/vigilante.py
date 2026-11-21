@@ -30,7 +30,7 @@ class Vigilante:
         desde = max(self._sin_oyentes_desde, self._radio.ultima_sintonia)
         if ahora - desde >= self._gracia:
             self._sin_oyentes_desde = None
-            self._radio.dormir()
+            self._radio.dormir(self._gracia)        # la radio vuelve a mirar bajo su lock: entre medio pudo conectarse alguien
 
     def iniciar(self, intervalo: float = 1.0) -> None:
         def bucle():

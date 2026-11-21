@@ -305,3 +305,10 @@ def test_el_modo_remoto_corre_el_despues_del_plan():
     cuerpo = js[js.index("    _pedirRemoto("):]
     cuerpo = cuerpo[:cuerpo.index("\n    }\n")]
     assert "plan.despues" in cuerpo and "_correrReceptor(plan.despues" in cuerpo
+
+
+def test_el_modo_remoto_actualiza_escuchando_tras_un_volumen():
+    js = _js()
+    cuerpo = js[js.index("    _pedirRemoto("):]
+    cuerpo = cuerpo[:cuerpo.index("\n    }\n")]
+    assert "AppletDir.logic.receptorTrasVolumen(" in cuerpo

@@ -1279,3 +1279,49 @@ def test_sintonizar_marca_ultima_sintonia():
     assert radio.ultima_sintonia == 0.0
     radio.sintonizar("A")
     assert radio.ultima_sintonia == 123.0
+
+
+# --- pase final de la revisión: dormir bajo el lock, despertar sin monitor, encender siempre escucha ---
+
+def test_dormir_con_gracia_vuelve_a_mirar_bajo_el_lock():
+    """El vigilante decide con datos que pueden haber cambiado: `dormir(gracia)` revisa de nuevo adentro de la radio."""
+    t = [100.0]
+    router = RouterFalso()
+    radio, rep, _, _ = crear(router=router, estado=Estado(monitor_local=False), reloj=lambda: t[0])
+    radio.sintonizar("A", oir_aca=False)                  # ultima_sintonia = 100
+    radio.dormir(60.0)
+    assert radio.encendida is True                        # eligieron emisora hace 0 s
+    t[0] = 170.0
+    radio.oyentes_red = lambda: 1                         # se conectó alguien justo antes de dormir
+    radio.dormir(60.0)
+    assert radio.encendida is True and ("detener",) not in rep.llamadas
+    radio.oyentes_red = lambda: 0
+    radio.dormir(60.0)
+    assert radio.encendida is False and rep.llamadas.count(("detener",)) == 1
+
+
+def test_despertar_para_red_deja_el_monitor_apagado_tras_un_apagado_por_falla():
+    router = RouterFalso()
+    radio, _, _, estado = crear(router=router)
+    radio.encender()
+    radio.apagar()                                        # como cuando una emisora falla: el monitor queda prendido
+    assert router.local_monitor_enabled is True
+    radio.despertar_para_red()
+    assert radio.encendida is True and router.local_monitor_enabled is False and estado.monitor_local is False
+    assert radio.oyentes() == 0
+
+
+def test_encender_con_la_radio_apagada_escucha_aca_aunque_haya_oyentes_de_red():
+    router = RouterFalso()
+    radio, _, _, estado = crear(router=router, estado=Estado(volumen=0, monitor_local=False))
+    radio.oyentes_red = lambda: 1
+    radio.encender()
+    assert router.local_monitor_enabled is True and estado.monitor_local is True and estado.volumen == 50
+
+
+def test_monitor_true_con_la_radio_apagada_y_oyentes_de_red_escucha_aca():
+    router = RouterFalso()
+    radio, _, _, _ = crear(router=router, estado=Estado(monitor_local=False))
+    radio.oyentes_red = lambda: 2
+    radio.monitor(True)
+    assert radio.encendida is True and router.local_monitor_enabled is True

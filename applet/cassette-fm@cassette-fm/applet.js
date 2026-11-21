@@ -425,7 +425,7 @@ class CassetteApplet extends Applet.TextIconApplet {
                 }
                 if (plan.argumentos[0] === "on") this._receptor = Object.assign({}, this._receptor, { escuchando: true, error: null });
                 else if (plan.argumentos[0] === "off") this._receptor = Object.assign({}, this._receptor, { escuchando: false });
-                else if (plan.argumentos[0] === "volume") this._receptor = Object.assign({}, this._receptor, { volumen: parseInt(r.stdout, 10) });
+                else if (plan.argumentos[0] === "volume") this._receptor = AppletDir.logic.receptorTrasVolumen(this._receptor, parseInt(r.stdout, 10));
                 this._receptorTs = Date.now();
                 responder(ultimo());
             });

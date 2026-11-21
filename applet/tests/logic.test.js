@@ -410,3 +410,12 @@ test("musicaSonando: la emisora pedida ya tiene un tema distinto del que había"
   assert.equal(L.musicaSonando(ya, "B", null), true);                                              // al abrir con la radio apagada
   assert.equal(L.musicaSonando(null, "B", null), false);
 });
+
+test("receptorTrasVolumen: en 0 deja de escuchar y subir desde cerrado vuelve a escuchar", () => {
+  const escuchando = { escuchando: true, volumen: 40, error: null };
+  const cerrado = { escuchando: false, volumen: 0, error: null };
+  assert.deepEqual(L.receptorTrasVolumen(escuchando, 0), { escuchando: false, volumen: 0, error: null });
+  assert.deepEqual(L.receptorTrasVolumen(cerrado, 10), { escuchando: true, volumen: 10, error: null });
+  assert.deepEqual(L.receptorTrasVolumen(escuchando, 60), { escuchando: true, volumen: 60, error: null });
+  assert.equal(L.receptorTrasVolumen({ escuchando: false, volumen: 70, error: null }, 60).escuchando, false);
+});

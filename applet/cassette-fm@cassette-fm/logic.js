@@ -313,6 +313,12 @@ function estadoRemoto(status, receptor, host, iconosLocales) {
     return estado;
 }
 
+// El receptor tras un `volume N`: en 0 se cierra el stream (deja de escuchar) y subir con el stream cerrado lo reabre.
+function receptorTrasVolumen(receptor, nuevo) {
+    const escuchando = nuevo === 0 ? false : (receptor.escuchando || nuevo > receptor.volumen);
+    return Object.assign({}, receptor, { escuchando: escuchando, volumen: nuevo });
+}
+
 // La salida de `lan_receiver.py icons` => {emisora: ruta local}, o null si no se entiende.
 function parsearIconos(texto) {
     if (typeof texto !== "string") return null;
@@ -360,7 +366,7 @@ if (typeof module !== "undefined") {
         etiqueta, tooltip, accionDeRueda, crearLimitador, pedidoHttp, parsearRespuesta,
         parsearVoces, idiomaBase, vocesDelIdioma, etiquetaDeVoz, elegirVoz, elegirIdioma, faltante, argumentosNueva,
         mensajeDeError, argumentosMuestra, botonMuestra, rutaDeMuestra, argumentosExaminar, rutaElegida,
-        filaDial, teclaDial, crearCola, barraVolumen, iconoDe, volumenTrasRespuesta,
+        filaDial, teclaDial, crearCola, barraVolumen, iconoDe, volumenTrasRespuesta, receptorTrasVolumen,
         parsearUrlServidor, idEstacion, planRemoto, estadoRemoto, parsearReceptor, parsearIconos, musicaSonando,
     };
 }
