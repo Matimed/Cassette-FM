@@ -1161,3 +1161,121 @@ def test_rotar_desde_la_red_no_prende_el_monitor_ni_sube_el_volumen(metodo, espe
     getattr(radio, metodo)(oir_aca=False)
     assert rep.sintonizadas()[-1] == esperada and radio.encendida is True
     assert router.local_monitor_enabled is False and estado.monitor_local is False and estado.volumen == 0
+
+
+# --- radio por oyentes: quién escucha, dormir, despertar y elegir emisora ---
+
+def test_oyentes_cuenta_el_monitor_local_solo_con_la_radio_sonando():
+    router = RouterFalso()
+    radio, _, _, _ = crear(router=router, estado=Estado(monitor_local=True))
+    assert router.local_monitor_enabled is True and radio.oyentes() == 0     # dormida: el monitor no cuenta
+    radio.encender()
+    assert radio.oyentes() == 1
+
+
+def test_oyentes_suma_los_de_la_red():
+    router = RouterFalso()
+    radio, _, _, _ = crear(router=router, estado=Estado(monitor_local=False))
+    radio.oyentes_red = lambda: 2
+    radio.sintonizar("A", oir_aca=False)
+    assert radio.oyentes() == 2
+    radio.silenciar()
+    radio.encender()                      # el monitor se prende: ahora también cuenta el local
+    assert radio.oyentes() == 3
+
+
+def test_sin_bus_oyentes_es_1_si_suena_y_0_si_no():
+    radio, _, _, _ = crear()
+    assert radio.oyentes() == 0
+    radio.encender()
+    assert radio.oyentes() == 1
+
+
+def test_elegir_emisora_con_cero_oyentes_te_vuelve_oyente():
+    router = RouterFalso()
+    radio, rep, _, estado = crear(router=router, estado=Estado(volumen=0, monitor_local=False))
+    radio.siguiente()
+    assert router.local_monitor_enabled is True and estado.monitor_local is True and estado.volumen == 50
+    assert radio.encendida is True
+
+
+def test_elegir_emisora_en_la_gracia_te_vuelve_oyente():
+    router = RouterFalso()
+    radio, rep, _, estado = crear(router=router, estado=Estado(monitor_local=False))
+    radio.sintonizar("A", oir_aca=False)      # encendida, pero sin nadie escuchando
+    radio.sintonizar("B")
+    assert router.local_monitor_enabled is True and estado.monitor_local is True
+
+
+@pytest.mark.parametrize("pedido", ["siguiente", "anterior", "sintonizar"])
+def test_elegir_emisora_con_otro_oyente_no_toca_el_monitor_ni_el_volumen(pedido):
+    router = RouterFalso()
+    radio, rep, _, estado = crear(router=router, estado=Estado(volumen=0, monitor_local=False))
+    radio.oyentes_red = lambda: 1
+    radio.sintonizar("A", oir_aca=False)
+    if pedido == "sintonizar":
+        radio.sintonizar("B")
+    else:
+        getattr(radio, pedido)()
+    assert len(rep.sintonizadas()) == 2 and rep.sintonizadas()[-1] != "A"
+    assert router.local_monitor_enabled is False and estado.monitor_local is False and estado.volumen == 0
+
+
+def test_encender_con_la_radio_dormida_te_vuelve_oyente():
+    router = RouterFalso()
+    radio, _, _, estado = crear(router=router, estado=Estado(volumen=0, monitor_local=False))
+    radio.encender()
+    assert router.local_monitor_enabled is True and estado.volumen == 50
+
+
+def test_dormir_detiene_y_apaga_solo_si_estaba_sonando():
+    router = RouterFalso()
+    radio, rep, _, _ = crear(router=router)
+    radio.dormir()
+    assert ("detener",) not in rep.llamadas
+    radio.encender()
+    radio.dormir()
+    assert radio.encendida is False and rep.llamadas.count(("detener",)) == 1
+    radio.dormir()
+    assert rep.llamadas.count(("detener",)) == 1
+
+
+def test_despertar_para_red_sintoniza_la_actual_sin_tocar_el_monitor():
+    router = RouterFalso()
+    radio, rep, _, estado = crear(router=router, estado=Estado(estacion="B", monitor_local=False))
+    radio.despertar_para_red()
+    assert rep.sintonizadas() == ["B"] and radio.encendida is True
+    assert router.local_monitor_enabled is False and estado.monitor_local is False
+    radio.despertar_para_red()            # ya suena: no re-sintoniza
+    assert rep.sintonizadas() == ["B"]
+
+
+def test_despertar_para_red_sin_emisoras_no_levanta():
+    radio, rep, _, _ = crear(nombres=(), router=RouterFalso())
+    radio.despertar_para_red()
+    assert radio.encendida is False and rep.sintonizadas() == []
+
+
+def test_monitor_true_con_la_radio_dormida_la_despierta():
+    router = RouterFalso()
+    radio, rep, _, _ = crear(router=router, estado=Estado(monitor_local=False))
+    radio.monitor(True)
+    assert radio.encendida is True and router.local_monitor_enabled is True and rep.sintonizadas() == ["A"]
+
+
+def test_estado_trae_oyentes_solo_con_bus():
+    router = RouterFalso()
+    radio, _, _, _ = crear(router=router, estado=Estado(monitor_local=False))
+    radio.oyentes_red = lambda: 2
+    radio.sintonizar("A", oir_aca=False)
+    estado = radio.estado()
+    assert estado["oyentes"] == 2 and estado["oyentes_red"] == 2
+    sin_bus, _, _, _ = crear()
+    assert "oyentes" not in sin_bus.estado() and "oyentes_red" not in sin_bus.estado()
+
+
+def test_sintonizar_marca_ultima_sintonia():
+    radio, _, _, _ = crear(reloj=lambda: 123.0)
+    assert radio.ultima_sintonia == 0.0
+    radio.sintonizar("A")
+    assert radio.ultima_sintonia == 123.0

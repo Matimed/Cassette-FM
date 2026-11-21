@@ -105,6 +105,9 @@ class Radio:
         self._avisar = avisar
         self._lock = threading.RLock()
         self.encendida = False
+        # cuántas conexiones de audio hay por la red (LAN y nube): lo conecta el servicio a los `Difusores`
+        self.oyentes_red: Callable[[], int] = lambda: 0
+        self.ultima_sintonia = 0.0        # cuándo se eligió emisora por última vez: el vigilante no duerme en esa gracia
         self._probando_otra = False       # una emisora falló y se pasó a otra: si esta también falla, ya no se prueba otra
         # el último recurso antes de apagar cuando no hay otra emisora que probar: (emisora, motivo) -> True si pidió reiniciar
         # el servicio (la radio no se apaga: se retoma al volver); False o None: se apaga
@@ -156,6 +159,34 @@ class Radio:
         with self._lock:
             self._apagar()
 
+    def oyentes(self) -> int:
+        """Cuántos oyentes tiene la radio: el monitor de esta PC (solo si la radio suena) más las conexiones de audio de la
+        red. Sin bus no se puede contar: suena = 1, dormida = 0."""
+        with self._lock:
+            if self._router is None:
+                return 1 if self.encendida else 0
+            local = 1 if self.encendida and self._router.local_monitor_enabled else 0
+            return local + self.oyentes_red()
+
+    def dormir(self) -> None:
+        """Sin oyentes la radio se detiene sola (lo llama el vigilante). No es un apagado que pueda pedir una interfaz."""
+        with self._lock:
+            if self.encendida:
+                _log.info("sin oyentes: la radio se duerme")
+                self._apagar()
+
+    def despertar_para_red(self) -> None:
+        """Se conectó un oyente de la red con la radio dormida: suena la emisora de la última vez (o la primera) sin tocar el
+        monitor ni el volumen de esta PC. Sin emisoras no hace nada."""
+        with self._lock:
+            if self.encendida:
+                return
+            if not self._estaciones:
+                _log.info("se conectó un oyente pero no hay emisoras que sintonizar")
+                return
+            actual = self._indice_actual()
+            self._sintonizar(self._estaciones[0 if actual is None else actual], oir_aca=False)
+
     def alternar(self) -> None:
         """Play/pausa. Con el bus, "pausa" es silenciar el monitor: la transmisión sigue (ver `apagar`)."""
         with self._lock:
@@ -205,7 +236,9 @@ class Radio:
         with self._lock:
             if self._router is None:
                 raise BusInactivo("el bus de audio está apagado: poné `bus_audio = true` en config.toml")
-            if activo:
+            if activo and not self.encendida:
+                self.encender()                # dormida: escuchar es despertarla
+            elif activo:
                 self._escuchar()
             else:
                 self._poner_monitor(False)
@@ -240,7 +273,8 @@ class Radio:
                 "fuente": self._fuente_actual() if self.encendida else None,
                 "segundo": round(segundo, 1) if segundo is not None else None,
                 "iconos": self._iconos() if self._iconos is not None else {},
-            } | ({"monitor_local": self._router.local_monitor_enabled} if self._router is not None else {})
+            } | ({"monitor_local": self._router.local_monitor_enabled, "oyentes": self.oyentes(),
+                  "oyentes_red": self.oyentes_red()} if self._router is not None else {})
 
     def sonando(self) -> tuple[str, Pista] | None:
         """(emisora, pista) de lo que está sonando, o None si está apagada o todavía sin tema."""
@@ -293,7 +327,9 @@ class Radio:
             self._sintonizar(self._estaciones[destino], oir_aca)
 
     def _sintonizar(self, estacion: Estacion, oir_aca: bool = True, por_falla: bool = False) -> None:
-        if oir_aca and self._estado.volumen == 0:
+        # quien elige emisora cuando nadie escucha pasa a ser el primer oyente; con otro oyente solo cambia la emisora
+        ser_oyente = oir_aca and (self._router is None or self.oyentes() == 0)
+        if ser_oyente and self._estado.volumen == 0:
             self._estado.volumen = self._poner_volumen(VOLUMEN_MINIMO)
         plegada = plegar_vencidos(estacion, self._reloj())   # la lista que se manda empieza donde corresponde
         if plegada is not estacion:
@@ -307,10 +343,11 @@ class Radio:
         except Exception:
             self._estado.estacion = anterior
             raise
-        if self._router is not None and oir_aca:
+        if self._router is not None and ser_oyente:
             self._estado.monitor_local = self._prender_monitor()
         self._guardar(self._estado)
         self.encendida = True
+        self.ultima_sintonia = self._reloj()
         self._probando_otra = por_falla
         if self._dj is not None:
             self._dj.al_sintonizar(estacion.nombre)
