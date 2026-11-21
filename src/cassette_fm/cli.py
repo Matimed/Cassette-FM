@@ -7,14 +7,18 @@ import os
 import shutil
 import subprocess
 import sys
+import time
 import urllib.error
 import urllib.request
 from pathlib import Path
 
 from cassette_fm import __version__, applet, atajos, config
 
-ACCIONES = {"next": "siguiente", "prev": "anterior", "on": "encender", "off": "apagar",
+# `on` es "escuchar acá" y `mute` "dejar de escuchar acá": la radio se duerme sola sin oyentes; el apagado de verdad es `stop`
+ACCIONES = {"next": "siguiente", "prev": "anterior", "on": "encender",
             "toggle": "alternar", "mute": "silenciar", "rescan": "rescan"}
+UNIDADES_ARRANQUE = ("cassette-dj", "cassette-fm", "cassette-soloist")    # el orden de `start`; `stop` va al revés
+CONTENEDOR_LLM = "cassette-ollama"
 
 
 class _ErrorCli(Exception):
@@ -28,10 +32,13 @@ class _ServicioCaido(_ErrorCli):
 def _linea_estado(estado: dict) -> str:
     vol = f"(vol {estado['volumen']})"
     if not estado["encendida"]:
-        return f"⏹ apagada {vol}"
+        return f"⏹ {'dormida' if 'oyentes' in estado else 'apagada'} {vol}"       # sin bus no se cuentan oyentes
     pista = f" — {estado['pista']}" if estado.get("pista") else ""
     fuente = " · Spotify" if estado.get("fuente") == "spotify" else ""
-    return f"▶ {estado['estacion']}{fuente}{pista} {vol}"
+    oyentes = ""
+    if "oyentes" in estado:
+        oyentes = f" · {estado['oyentes']} oyente{'' if estado['oyentes'] == 1 else 's'}"
+    return f"▶ {estado['estacion']}{fuente}{pista} {vol}{oyentes}"
 
 
 def _llamar(puerto: int, metodo: str, ruta: str, cuerpo: dict | None = None, timeout: float = 10):
@@ -50,12 +57,72 @@ def _llamar(puerto: int, metodo: str, ruta: str, cuerpo: dict | None = None, tim
         raise _ErrorCli(mensaje)
     except urllib.error.URLError as e:
         if isinstance(e.reason, (ConnectionRefusedError, FileNotFoundError)):
-            raise _ServicioCaido("cassette-fm no está corriendo. Arrancalo con: "
-                                 "systemctl --user start cassette-fm (o cassette serve)")
+            raise _ServicioCaido("cassette-fm no está corriendo. Arrancalo con: cassette start "
+                                 "(o `cassette on`, que además se pone a escuchar)")
         raise _ErrorCli(f"no se pudo hablar con cassette-fm: {e.reason}")
     except (ConnectionError, TimeoutError, http.client.HTTPException):
         raise _ErrorCli("el servicio cortó la conexión sin responder "
                         "(mirá: journalctl --user -u cassette-fm -e)")
+
+
+def _ejecutar_comando(argv: list[str]) -> tuple[int, str]:
+    """Corre un comando sin shell y devuelve (código, salida). La salida nunca se imprime: la unidad de Soloist lleva su
+    clave en el `ExecStart` y no tiene que aparecer en pantalla."""
+    try:
+        r = subprocess.run(argv, capture_output=True, text=True, timeout=60)
+    except (OSError, subprocess.TimeoutExpired):
+        return 127, ""
+    return r.returncode, r.stdout
+
+
+def _unidad_instalada(unidad: str, ejecutar) -> bool:
+    codigo, salida = ejecutar(["systemctl", "--user", "show", "-p", "LoadState", "--value", unidad])
+    return codigo == 0 and salida.strip() == "loaded"
+
+
+def _paso_unidad(unidad: str, accion: str, participio: str, ejecutar) -> bool:
+    """Una unidad de systemd: True si anduvo o no hace falta, False si falló."""
+    if not _unidad_instalada(unidad, ejecutar):
+        print(f"· {unidad}: no instalada")
+        return True
+    codigo, _ = ejecutar(["systemctl", "--user", accion, unidad])
+    print(f"✓ {unidad} {participio}" if codigo == 0 else f"✗ {unidad}: no se pudo {accion}")
+    return codigo == 0
+
+
+def _paso_contenedor(accion: str, participio: str, ejecutar) -> bool:
+    codigo, _ = ejecutar(["docker", "inspect", "-f", "{{.Name}}", CONTENEDOR_LLM])
+    if codigo != 0:
+        print(f"· {CONTENEDOR_LLM}: no está (o docker no responde)")
+        return True
+    codigo, _ = ejecutar(["docker", accion, CONTENEDOR_LLM])
+    print(f"✓ {CONTENEDOR_LLM} {participio}" if codigo == 0 else f"✗ {CONTENEDOR_LLM}: no se pudo {accion}")
+    return codigo == 0
+
+
+def detener_servicios(ejecutar=_ejecutar_comando) -> int:
+    """El apagado definitivo: Soloist, la radio, el DJ y el contenedor de Ollama. Lo que no existe se saltea."""
+    resultados = [_paso_unidad(u, "stop", "detenida", ejecutar) for u in reversed(UNIDADES_ARRANQUE)]
+    resultados.append(_paso_contenedor("stop", "detenido", ejecutar))
+    return 0 if all(resultados) else 1
+
+
+def levantar_servicios(ejecutar=_ejecutar_comando) -> int:
+    """Lo inverso de `detener_servicios`. No espera al DJ: la radio arranca y el DJ se suma cuando termina de cargar."""
+    resultados = [_paso_contenedor("start", "levantado", ejecutar)]
+    resultados += [_paso_unidad(u, "start", "levantada", ejecutar) for u in UNIDADES_ARRANQUE]
+    return 0 if all(resultados) else 1
+
+
+def _esperar_servicio(puerto: int, segundos: float = 30.0) -> bool:
+    fin = time.monotonic() + segundos
+    while time.monotonic() < fin:
+        try:
+            _llamar(puerto, "GET", "/estado", timeout=2)
+            return True
+        except _ErrorCli:
+            time.sleep(0.5)
+    return False
 
 
 def _armar_parser() -> argparse.ArgumentParser:
@@ -66,6 +133,8 @@ def _armar_parser() -> argparse.ArgumentParser:
     parser.add_argument("--version", action="store_true")
     sub = parser.add_subparsers(dest="comando")
     sub.add_parser("serve", parents=[comun], help="levanta el servicio")
+    sub.add_parser("stop", help="apaga todo (radio, Soloist, DJ y Ollama) y libera la memoria: el apagado definitivo")
+    sub.add_parser("start", help="levanta todo lo que apagó `cassette stop`")
     sub.add_parser("atajos", help="registra los atajos de teclado en Cinnamon")
     sub.add_parser("applet", help="instala el applet del panel de Cinnamon")
     for nombre in ACCIONES:
@@ -622,6 +691,10 @@ def main(argv: list[str] | None = None) -> int:
     if args.comando is None:
         parser.print_help()
         return 0
+    if args.comando == "stop":
+        return detener_servicios()
+    if args.comando == "start":
+        return levantar_servicios()
     if args.comando == "atajos":
         return _instalar_atajos()
     if args.comando == "applet":
@@ -661,8 +734,18 @@ def main(argv: list[str] | None = None) -> int:
         return _icono(args, rutas, getattr(args, "puerto", cfg.puerto))
     if args.comando == "renombrar":
         return _renombrar(args, rutas, getattr(args, "puerto", cfg.puerto))
+    puerto = getattr(args, "puerto", cfg.puerto)
     try:
-        _ejecutar(args, getattr(args, "puerto", cfg.puerto))
+        try:
+            _ejecutar(args, puerto)
+        except _ServicioCaido:
+            if args.comando != "on":
+                raise
+            # con el servicio detenido, `on` lo levanta y recién ahí se pone a escuchar
+            levantar_servicios()
+            if not _esperar_servicio(puerto):
+                raise
+            _ejecutar(args, puerto)
     except _ErrorCli as e:
         print(e, file=sys.stderr)
         return 1

@@ -128,7 +128,7 @@ def test_list_marca_la_actual(servicio, capsys):
 
 @pytest.mark.parametrize("comando,ruta", [
     ("next", "siguiente"), ("prev", "anterior"), ("on", "encender"),
-    ("off", "apagar"), ("toggle", "alternar"), ("mute", "silenciar"), ("rescan", "rescan")])
+    ("toggle", "alternar"), ("mute", "silenciar"), ("rescan", "rescan")])
 def test_acciones(servicio, capsys, comando, ruta):
     assert main([comando, "--puerto", servicio.puerto]) == 0
     assert servicio.radio.llamadas == [(ruta, (), {})]
@@ -141,7 +141,7 @@ def test_servicio_caido(capsys):
         libre = s.getsockname()[1]
     assert main(["status", "--puerto", str(libre)]) == 1
     err = capsys.readouterr().err
-    assert "cassette-fm no está corriendo" in err and "systemctl --user start cassette-fm" in err
+    assert "cassette-fm no está corriendo" in err and "cassette start" in err
 
 
 def test_error_de_api(servicio, capsys):
@@ -1052,3 +1052,138 @@ def test_claves_archivo_roto_sale_con_1(tmp_path, monkeypatch, capsys):
     r.claves.write_text("{roto")
     assert main(["claves"]) == 1
     assert "JSON roto" in capsys.readouterr().err
+
+
+# --- radio por oyentes: sin `off`, con `stop` y `start`, `on` que levanta el servicio ---
+
+def test_off_ya_no_es_un_comando():
+    with pytest.raises(SystemExit) as e:
+        main(["off"])
+    assert e.value.code == 2
+
+
+class Ejecutor:
+    """Hace de `systemctl` y `docker`: registra cada comando y responde como se le configure."""
+
+    def __init__(self, no_instaladas=(), sin_docker=False, fallan=(), salida=""):
+        self.llamadas = []
+        self.no_instaladas, self.sin_docker, self.fallan, self.salida = no_instaladas, sin_docker, fallan, salida
+
+    def __call__(self, argv):
+        self.llamadas.append(list(argv))
+        if argv[0] == "docker":
+            return (127, "") if self.sin_docker else (0, self.salida)
+        if argv[2] == "show":
+            return 0, ("not-found\n" if argv[-1] in self.no_instaladas else "loaded\n")
+        return (1, "") if argv[-1] in self.fallan else (0, self.salida)
+
+    def acciones(self):
+        return [a for a in self.llamadas if a[:3] in (["systemctl", "--user", "stop"], ["systemctl", "--user", "start"])
+                or a[:2] in (["docker", "stop"], ["docker", "start"])]
+
+
+def test_stop_detiene_en_orden_y_saltea_lo_que_no_existe(capsys):
+    from cassette_fm import cli
+    ejecutor = Ejecutor(no_instaladas=("cassette-dj",))
+    assert cli.detener_servicios(ejecutor) == 0
+    assert ejecutor.acciones() == [["systemctl", "--user", "stop", "cassette-soloist"],
+                                   ["systemctl", "--user", "stop", "cassette-fm"],
+                                   ["docker", "stop", "cassette-ollama"]]
+    assert "· cassette-dj: no instalada" in capsys.readouterr().out
+
+
+def test_stop_devuelve_1_si_una_unidad_existente_falla(capsys):
+    from cassette_fm import cli
+    assert cli.detener_servicios(Ejecutor(fallan=("cassette-fm",))) == 1
+    assert "✗ cassette-fm" in capsys.readouterr().out
+
+
+def test_start_levanta_en_orden_inverso():
+    from cassette_fm import cli
+    ejecutor = Ejecutor()
+    assert cli.levantar_servicios(ejecutor) == 0
+    assert ejecutor.acciones() == [["docker", "start", "cassette-ollama"],
+                                   ["systemctl", "--user", "start", "cassette-dj"],
+                                   ["systemctl", "--user", "start", "cassette-fm"],
+                                   ["systemctl", "--user", "start", "cassette-soloist"]]
+
+
+def test_stop_sin_docker_no_falla(capsys):
+    from cassette_fm import cli
+    ejecutor = Ejecutor(sin_docker=True)
+    assert cli.detener_servicios(ejecutor) == 0
+    assert ["docker", "stop", "cassette-ollama"] not in ejecutor.llamadas
+    assert "cassette-ollama" in capsys.readouterr().out
+
+
+def test_stop_y_start_no_imprimen_la_salida_capturada(capsys):
+    from cassette_fm import cli
+    cli.detener_servicios(Ejecutor(salida="CLAVE-SECRETA"))
+    cli.levantar_servicios(Ejecutor(salida="CLAVE-SECRETA"))
+    capturado = capsys.readouterr()
+    assert "CLAVE-SECRETA" not in capturado.out + capturado.err
+
+
+def test_stop_y_start_son_comandos_que_no_necesitan_el_servicio(monkeypatch):
+    from cassette_fm import cli
+    monkeypatch.setattr(cli, "detener_servicios", lambda *a, **k: 0)
+    monkeypatch.setattr(cli, "levantar_servicios", lambda *a, **k: 3)
+    assert main(["stop"]) == 0
+    assert main(["start"]) == 3
+
+
+def _estado_sonando():
+    return {"encendida": True, "estacion": "A", "pista": None, "volumen": 50, "estaciones": ["A"]}
+
+
+def test_on_con_el_servicio_caido_lo_levanta_y_reintenta(monkeypatch, capsys):
+    from cassette_fm import cli
+    pedidos, arranques = [], []
+
+    def llamar_falso(puerto, metodo, ruta, cuerpo=None, timeout=10):
+        pedidos.append(ruta)
+        if len(pedidos) == 1:
+            raise cli._ServicioCaido("cassette-fm no está corriendo. Arrancalo con: cassette start")
+        return _estado_sonando()
+
+    monkeypatch.setattr(cli, "_llamar", llamar_falso)
+    monkeypatch.setattr(cli, "levantar_servicios", lambda *a, **k: arranques.append(1) or 0)
+    monkeypatch.setattr(cli, "_esperar_servicio", lambda puerto, segundos=30.0: True)
+    assert main(["on", "--puerto", "1"]) == 0
+    assert pedidos == ["/encender", "/encender"] and arranques == [1]
+    assert "▶ A" in capsys.readouterr().out
+
+
+def test_on_si_el_servicio_no_levanta_da_el_error_de_siempre(monkeypatch, capsys):
+    from cassette_fm import cli
+
+    def llamar_falso(*a, **k):
+        raise cli._ServicioCaido("cassette-fm no está corriendo. Arrancalo con: cassette start")
+
+    monkeypatch.setattr(cli, "_llamar", llamar_falso)
+    monkeypatch.setattr(cli, "levantar_servicios", lambda *a, **k: 0)
+    monkeypatch.setattr(cli, "_esperar_servicio", lambda puerto, segundos=30.0: False)
+    assert main(["on", "--puerto", "1"]) == 1
+    assert "cassette-fm no está corriendo" in capsys.readouterr().err
+
+
+def test_los_otros_comandos_con_el_servicio_caido_no_lo_levantan(monkeypatch, capsys):
+    from cassette_fm import cli
+    arranques = []
+
+    def llamar_falso(*a, **k):
+        raise cli._ServicioCaido("cassette-fm no está corriendo. Arrancalo con: cassette start")
+
+    monkeypatch.setattr(cli, "_llamar", llamar_falso)
+    monkeypatch.setattr(cli, "levantar_servicios", lambda *a, **k: arranques.append(1) or 0)
+    assert main(["next", "--puerto", "1"]) == 1 and arranques == []
+
+
+def test_status_con_oyentes_y_dormida():
+    from cassette_fm.cli import _linea_estado
+    assert _linea_estado({"encendida": False, "volumen": 70, "oyentes": 0}) == "⏹ dormida (vol 70)"
+    assert _linea_estado({"encendida": False, "volumen": 70}) == "⏹ apagada (vol 70)"
+    sonando = {"encendida": True, "estacion": "A", "pista": None, "volumen": 70, "fuente": "carpeta"}
+    assert _linea_estado(sonando | {"oyentes": 2}).endswith("(vol 70) · 2 oyentes")
+    assert _linea_estado(sonando | {"oyentes": 1}).endswith("(vol 70) · 1 oyente")
+    assert "oyente" not in _linea_estado(sonando)

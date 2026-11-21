@@ -56,7 +56,6 @@ def test_servir_de_punta_a_punta(tmp_path, dir_corto, crear_mp3):
         e = llamar(puerto, "POST", "/siguiente")
         assert e["estacion"] == "B" and e["encendida"] is True
         assert json.loads(rutas.estado.read_text())["estacion"] == "B"
-        assert llamar(puerto, "POST", "/apagar")["encendida"] is False
     finally:
         parar.set()
         hilo.join(3)
@@ -213,7 +212,6 @@ def test_dj_de_punta_a_punta(tmp_path, dir_corto, crear_mp3, crear_wav):
             time.sleep(0.05)
         assert habló, "la voz nunca empezó"
         assert llamar(puerto, "GET", "/dj")["hablando"] is False, "la voz no terminó"
-        assert llamar(puerto, "POST", "/apagar")["encendida"] is False
     finally:
         parar.set()
         hilo.join(5)
@@ -332,7 +330,6 @@ def test_dj_de_punta_a_punta_con_el_servicio_real(tmp_path, dir_corto, crear_mp3
         assert llamar(puerto, "GET", "/dj")["hablando"] is False
         guiones = svc.guiones.ultimos(10)
         assert guiones and all(g["fuente"] == "plantilla" for g in guiones)
-        assert llamar(puerto, "POST", "/apagar")["encendida"] is False
     finally:
         parar.set()
         hilo.join(8)
@@ -362,7 +359,6 @@ def test_el_servicio_dj_caido_no_afecta_a_la_radio(tmp_path, dir_corto, crear_mp
         plan = llamar(puerto, "GET", "/dj")["planificador"]
         assert plan["servicio"] == "no responde" and "no responde" in plan["error"]
         assert llamar(puerto, "POST", "/anterior")["estacion"] == "A"
-        assert llamar(puerto, "POST", "/apagar")["encendida"] is False
     finally:
         parar.set()
         hilo.join(8)

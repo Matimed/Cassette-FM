@@ -106,7 +106,7 @@ def test_post_sintonizar_con_espacios_y_acentos(servidor):
     assert servidor.radio.llamadas == [("sintonizar", ("Música Ñandú 2000",), {})]
 
 
-@pytest.mark.parametrize("ruta", ["siguiente", "anterior", "encender", "apagar", "alternar", "silenciar", "rescan"])
+@pytest.mark.parametrize("ruta", ["siguiente", "anterior", "encender", "alternar", "silenciar", "rescan"])
 def test_post_acciones_simples(servidor, ruta):
     codigo, cuerpo = pedir(servidor, "POST", f"/{ruta}")
     assert codigo == 200 and cuerpo["estacion"] == "A"
@@ -323,3 +323,9 @@ def test_estado_agrega_lo_extra_solo_si_se_pide():
     finally:
         srv.shutdown()
         srv.server_close()
+
+
+def test_apagar_ya_no_existe(servidor):
+    codigo, cuerpo = pedir(servidor, "POST", "/apagar")
+    assert codigo == 404 and "/apagar" in cuerpo["error"]
+    assert servidor.radio.llamadas == []
