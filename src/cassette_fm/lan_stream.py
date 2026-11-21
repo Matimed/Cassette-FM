@@ -63,8 +63,10 @@ class Difusor:
     def __init__(self, fuente_actual: Callable[[], str], lanzar: Callable[[list[str]], subprocess.Popen] = lanzar_gst,
                  max_oyentes: int = 4, gracia_segundos: float = 5.0, cola_max: int = 25,
                  estabilidad_segundos: float = 2.0, reloj: Callable[[], float] = time.monotonic,
-                 arranque_segundos: float = 1.0, kbps: int = 160):
+                 arranque_segundos: float = 1.0, kbps: int = 160,
+                 al_conectarse: Callable[[], None] | None = None):
         self.kbps = kbps
+        self._al_conectarse = al_conectarse     # aviso de cada conexión nueva (despierta a la radio)
         self._fuente_actual = fuente_actual
         self._lanzar = lanzar
         self._max = max_oyentes
@@ -95,7 +97,20 @@ class Difusor:
             cola = queue.Queue(maxsize=self._cola_max)
             self._oyentes.append(cola)
             self._sin_oyentes_desde = None
-            return cola
+        self._avisar_conexion()          # fuera del lock: la radio toma el suyo y consulta el conteo
+        return cola
+
+    def _avisar_conexion(self) -> None:
+        if self._al_conectarse is None:
+            return
+        try:
+            self._al_conectarse()
+        except Exception:
+            _log.exception("error al avisar una conexión nueva al stream")
+
+    def cantidad_oyentes(self) -> int:
+        with self._lock:
+            return len(self._oyentes)
 
     def desuscribir(self, cola: queue.Queue) -> None:
         with self._lock:
@@ -244,6 +259,9 @@ class Difusores:
     def _todos(self) -> list[Difusor]:
         with self._lock:
             return list(self._difusores.values())
+
+    def total_oyentes(self) -> int:
+        return sum(difusor.cantidad_oyentes() for difusor in self._todos())
 
     def revisar_fuente(self) -> None:
         for difusor in self._todos():

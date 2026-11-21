@@ -6,8 +6,8 @@ import time
 
 import pytest
 
-from cassette_fm.lan_stream import (FUENTE_ESTATICA, FUENTE_MONITOR, CodificadorNoDisponible, Difusor, SinCapacidad,
-                                    comando_gst, lanzar_gst)
+from cassette_fm.lan_stream import (FUENTE_ESTATICA, FUENTE_MONITOR, CodificadorNoDisponible, Difusor, Difusores,
+                                    SinCapacidad, comando_gst, lanzar_gst)
 
 
 class ProcesoFalso:
@@ -299,3 +299,69 @@ def test_difusores_revisa_corta_y_cierra_todos():
     r.cortar_oyentes()
     r.cerrar()
     assert (a.revisiones, b.revisiones, a.cortes, b.cortes, a.cerrado, b.cerrado) == (1, 1, 1, 1, True, True)
+
+
+# --- conteo de oyentes y aviso de conexión (la radio se despierta con el primero) ---
+
+def test_cantidad_oyentes_sube_y_baja_con_suscribir_y_desuscribir(banco):
+    d = banco.difusor()
+    assert d.cantidad_oyentes() == 0
+    a, _b = d.suscribir(), d.suscribir()
+    assert d.cantidad_oyentes() == 2
+    d.desuscribir(a)
+    assert d.cantidad_oyentes() == 1
+
+
+def test_total_oyentes_suma_las_calidades(banco):
+    difusores = Difusores(lambda: FUENTE_MONITOR, crear=lambda fuente, **kw: banco.difusor(**kw))
+    difusores.de(64).suscribir()
+    difusores.de(160).suscribir()
+    difusores.de(160).suscribir()
+    assert difusores.total_oyentes() == 3
+
+
+def test_al_conectarse_se_llama_una_vez_por_suscripcion(banco):
+    avisos = []
+    d = banco.difusor(al_conectarse=lambda: avisos.append(1))
+    d.suscribir()
+    d.suscribir()
+    assert len(avisos) == 2
+
+
+def test_al_conectarse_llega_a_cada_calidad_de_difusores(banco):
+    avisos = []
+    difusores = Difusores(lambda: FUENTE_MONITOR, crear=lambda fuente, **kw: banco.difusor(**kw),
+                          al_conectarse=lambda: avisos.append(1))
+    difusores.de(64).suscribir()
+    difusores.de(160).suscribir()
+    assert len(avisos) == 2
+
+
+def test_al_conectarse_corre_sin_el_lock_del_difusor(banco):
+    """La radio toma su lock y pregunta cuántos oyentes hay: si el aviso corriera con el lock del difusor tomado,
+    los dos locks se tomarían en orden inverso y se trabarían."""
+    resultado = []
+    d = banco.difusor()
+
+    def aviso():
+        def intentar():
+            resultado.append(d._lock.acquire(timeout=1.0))
+            if resultado[-1]:
+                d._lock.release()
+        hilo = threading.Thread(target=intentar)
+        hilo.start()
+        hilo.join()
+
+    d._al_conectarse = aviso
+    d.suscribir()
+    assert resultado == [True]
+
+
+def test_un_al_conectarse_que_falla_no_impide_el_stream(banco, caplog):
+    def explota():
+        raise RuntimeError("sin emisoras")
+
+    d = banco.difusor(al_conectarse=explota)
+    cola = d.suscribir()
+    assert cola is not None and d.cantidad_oyentes() == 1
+    assert "sin emisoras" in caplog.text
