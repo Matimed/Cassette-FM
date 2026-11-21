@@ -83,6 +83,12 @@ La voz del DJ habla sobre el empalme entre dos temas (20/11, CASSETTE-FM-qi26): 
 tema nuevo, y cae en `inicio`, `entre` o `final` (o `mixto`, al azar; `posicion_voz` en `[dj]` o en el `"dj"` de cada emisora)
 con textos adaptados a cada posición: [`superpowers/specs/2026-11-20-voz-entre-temas-design.md`](superpowers/specs/2026-11-20-voz-entre-temas-design.md),
 plan en [`superpowers/plans/2026-11-20-voz-entre-temas.md`](superpowers/plans/2026-11-20-voz-entre-temas.md). Sin crossfade todavía.
+Radio por oyentes (20/11, CASSETTE-FM-ta67): la radio suena solo si alguien la escucha; esta PC es un oyente más (su
+monitor local), igual que un `/stream` de la LAN o la nube. Sin oyentes durante `segundos_hasta_dormir` (60 s) el `Vigilante`
+la duerme; abrir un stream o elegir emisora con cero oyentes la despierta (y te vuelve el primer oyente). Ya no existen
+`/apagar` ni `cassette off`: dejar de escuchar en todos lados es apagarla, y `cassette stop`/`start` apagan y levantan todo
+(radio, Soloist, DJ, Ollama): [`superpowers/specs/2026-11-20-radio-por-oyentes-design.md`](superpowers/specs/2026-11-20-radio-por-oyentes-design.md),
+plan en [`superpowers/plans/2026-11-20-radio-por-oyentes.md`](superpowers/plans/2026-11-20-radio-por-oyentes.md).
 Prender desde volumen 0 sube a 50. Ojo al tocar el applet: `ReloadXlet` recarga `applet.js` pero no `logic.js` (queda en caché hasta reiniciar Cinnamon).
 
 ## Relevamiento previo (leer antes de diseñar)

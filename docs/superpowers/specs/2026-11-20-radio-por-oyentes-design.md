@@ -137,3 +137,12 @@ sin relación con las otras). Además el contenedor Docker `cassette-ollama` (~4
 - Tests a actualizar: `test_radio`, `test_api`, `test_cli`, `test_servicio`, `test_lan_server`, `test_lan_receiver`, `test_mpris`,
   `test_applet_estructura` y `applet/tests/logic.test.js`.
 - Ojo con el applet: `ReloadXlet` no recarga `logic.js` (ver `project-context.md`); para probar cambios en él hay que reiniciar Cinnamon.
+
+## Desvíos al implementar
+
+- El dial sigue usando `POST /encender`, que ya significa "escuchar acá" (prende el monitor y despierta); no hizo falta `POST /monitor`.
+- `Radio.monitor(True)` con la radio dormida también la despierta.
+- El servicio arranca con el monitor local apagado salvo en el reinicio de recuperación (cierra el cabo suelto de `monitor_local` persistido).
+- El applet remoto prende su receptor *después* de pedir la emisora (`despues` en `planRemoto`).
+- El mensaje de estado hacia el relay de la nube no lleva `oyentes` (el protocolo con el relay no cambia); solo el `/status` de la LAN.
+- La opción se llama `segundos_hasta_dormir` (pedido del usuario).

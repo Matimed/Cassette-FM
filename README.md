@@ -17,7 +17,9 @@ scripts/instalar-todo.sh
 ```
 
 Después recargá Cinnamon con `Ctrl+Alt+Esc` para ver el applet. Se puede correr las veces que haga falta.
-El servicio arranca con la sesión **en silencio**: solo suena con `cassette on` (o con el applet).
+El servicio arranca con la sesión **dormido**: la radio solo suena si alguien la escucha (`cassette on`, el applet, el
+dial, o un oyente por la red). Sin oyentes durante `segundos_hasta_dormir` (60 s por defecto, en `config.toml`) se duerme
+sola; el apagado de verdad es `cassette stop`.
 
 Si solo querés el servicio y la CLI, sin el escritorio: `scripts/instalar.sh`.
 
@@ -25,19 +27,21 @@ Si solo querés el servicio y la CLI, sin el escritorio: `scripts/instalar.sh`.
 
 | Comando | Qué hace |
 |---|---|
-| `cassette on` / `off` / `toggle` | enciende, apaga o alterna (al encender suena lo que corresponde *ahora*) |
-| `cassette next` / `prev` | estación siguiente o anterior (en el orden de `estaciones.json`, con vuelta) |
+| `cassette on` / `mute` / `toggle` | empezar a escuchar acá, dejar de escuchar acá o alternar (al escuchar suena lo que corresponde *ahora*; si el servicio estaba detenido, `on` lo levanta) |
+| `cassette stop` / `start` | apaga o levanta todo (radio, Soloist, DJ y el contenedor de Ollama): `stop` libera la memoria, sobre todo la del DJ |
+| `cassette next` / `prev` | estación siguiente o anterior (en el orden de `estaciones.json`, con vuelta); si nadie escuchaba, te vuelve el primer oyente |
 | `cassette tune <nombre>` | sintoniza por nombre o por el comienzo (`cassette tune reg`) |
-| `cassette status` | qué suena |
+| `cassette status` | qué suena y cuántos oyentes tiene (`dormida` si nadie escucha) |
 | `cassette list` | estaciones y cantidad de temas |
-| `cassette vol 70` / `+5` / `-5` | volumen; en 0 la radio se apaga (como un mute) y subirlo la enciende |
+| `cassette vol 70` / `+5` / `-5` | volumen; en 0 dejás de escuchar acá (como un mute) y subirlo vuelve a escuchar |
 | `cassette rescan` | vuelve a leer `estaciones.json` y la música de cada emisora |
 | `cassette serve` | levanta el servicio a mano (sin systemd) |
 
 ## Applet de Cinnamon
 
-Un ícono en el panel con el nombre de la estación (vacío si está apagada). Rueda del mouse: hacia arriba pasa
-a la estación siguiente y hacia abajo a la anterior. Clic izquierdo: enciende o apaga. Clic derecho: lista de
+Un ícono en el panel con el nombre de la estación (vacío si está dormida). Rueda del mouse: hacia arriba pasa
+a la estación siguiente y hacia abajo a la anterior (sin prender el sonido de esta PC si otro la está escuchando).
+Clic izquierdo: escuchar o dejar de escuchar acá (con el servicio detenido, lo levanta). Clic derecho: lista de
 estaciones para elegir una. El tooltip muestra estación, tema y volumen; si el servicio no está, dice que no
 responde. En los ajustes del applet se cambia el puerto, si se muestra el nombre y el atajo del dial.
 
@@ -525,7 +529,7 @@ cifrar: por Tailscale el tráfico ya viaja cifrado; por la LAN sirve para una re
 `~/.local/share/cinnamon/applets/`, habilitá el applet en el panel y, en sus ajustes, prendé **Modo remoto** y completá
 **Dirección de la radio remota** (`http://100.x.y.z:8765`) y **Clave de oyente**. Si no se ve, reiniciá Cinnamon
 (`Alt+F2`, `r`). El applet se ve igual que el local (menú, dial, logos) salvo que no ofrece editar emisoras, y el clic
-izquierdo, el volumen y "Apagar" actúan solo sobre la escucha de esa PC (`lan_receiver.py`, que viaja dentro de la carpeta
+izquierdo y el volumen (en 0 se deja de escuchar, subirlo vuelve a escuchar) actúan solo sobre la escucha de esa PC (`lan_receiver.py`, que viaja dentro de la carpeta
 del applet). Si algo falla, el tooltip lo dice (clave rechazada, no alcanzo a la radio, la radio principal está apagada).
 
 ## Radio desde cualquier lado (relay en la nube)
