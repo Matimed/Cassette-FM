@@ -1,10 +1,11 @@
 ---
 # CASSETTE-FM-ta67
 title: Radio por oyentes, se duerme sola sin oyentes y la despierta el primero que llega
-status: in-progress
+status: completed
 type: feature
+priority: normal
 created_at: 2026-11-20T05:11:07Z
-updated_at: 2026-11-20T05:11:07Z
+updated_at: 2026-11-21T02:55:18Z
 parent: CASSETTE-FM-abja
 blocked_by:
     - CASSETTE-FM-u8ea
