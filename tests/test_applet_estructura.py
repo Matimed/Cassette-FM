@@ -283,3 +283,25 @@ def test_icono_del_applet_es_el_casete_blanco_y_las_barras_son_de_puntos():
     assert "AppletDir.puntos.modo(" in js and "AppletDir.puntos.alturas(" in js and "St.DrawingArea" in js
     assert "_animacionBarras" in js and js.count("Mainloop.source_remove(this._animacionBarras)") >= 2   # al apagar y al sacar el applet
     assert (CARPETA / "puntos.js").exists()
+
+
+# --- radio por oyentes: sin "Apagar", el clic levanta el servicio caído y el modo remoto prende su receptor ---
+
+def test_el_menu_ya_no_tiene_apagar():
+    js = _js()
+    assert '"/apagar"' not in js and 'PopupMenuItem("Apagar")' not in js
+
+
+def test_el_clic_con_el_servicio_caido_corre_cassette_on():
+    js = _js()
+    cuerpo = js[js.index("    _accion(ruta, cuerpo) {"):]
+    cuerpo = cuerpo[:cuerpo.index("\n    }\n")]
+    assert '"/alternar"' in cuerpo and "r.codigo === 0" in cuerpo and "!this.is_remote" in cuerpo
+    assert '"cassette"' in cuerpo and '["on"]' in cuerpo
+
+
+def test_el_modo_remoto_corre_el_despues_del_plan():
+    js = _js()
+    cuerpo = js[js.index("    _pedirRemoto("):]
+    cuerpo = cuerpo[:cuerpo.index("\n    }\n")]
+    assert "plan.despues" in cuerpo and "_correrReceptor(plan.despues" in cuerpo

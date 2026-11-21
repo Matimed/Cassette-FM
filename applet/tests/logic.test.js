@@ -309,7 +309,6 @@ test("planRemoto: encendido y volumen van al receptor local", () => {
   assert.deepEqual(args("/alternar"), ["off"]);
   assert.deepEqual(args("/alternar", undefined, { escuchando: false, volumen: 5 }), ["on"]);
   assert.deepEqual(args("/encender"), ["on"]);
-  assert.deepEqual(args("/apagar"), ["off"]);
   assert.deepEqual(args("/volumen", { delta: -10 }), ["volume", "0"]);
   assert.deepEqual(args("/volumen", { delta: 200 }), ["volume", "100"]);
   assert.deepEqual(args("/volumen", { valor: 40 }), ["volume", "40"]);
@@ -317,8 +316,30 @@ test("planRemoto: encendido y volumen van al receptor local", () => {
   assert.deepEqual(L.planRemoto("/volumen", {}, status.datos, receptor), { destino: "ninguno" });
 });
 
+test("planRemoto: elegir emisora con cero oyentes y sin escuchar prende el receptor después", () => {
+  const sin = { ...status.datos, oyentes: 0 };
+  const nadie = { escuchando: false, volumen: 70, error: null };
+  const planes = [L.planRemoto("/sintonizar", { estacion: "C" }, sin, nadie), L.planRemoto("/siguiente", undefined, sin, nadie),
+                  L.planRemoto("/anterior", undefined, sin, nadie)];
+  assert.deepEqual(planes.map((p) => p.ruta), ["/station/C", "/station/C", "/station/A"]);
+  for (const p of planes) {
+    assert.equal(p.destino, "servidor");
+    assert.equal(p.metodo, "POST");
+    assert.deepEqual(p.despues, ["on"]);
+  }
+});
+
+test("planRemoto: con otros oyentes, ya escuchando o sin dato de oyentes no hay despues", () => {
+  const nadie = { escuchando: false, volumen: 70, error: null };
+  const casos = [L.planRemoto("/sintonizar", { estacion: "C" }, { ...status.datos, oyentes: 1 }, nadie),
+                 L.planRemoto("/sintonizar", { estacion: "C" }, { ...status.datos, oyentes: 0 }, receptor),
+                 L.planRemoto("/siguiente", undefined, status.datos, nadie),
+                 L.planRemoto("/anterior", undefined, { ...status.datos, oyentes: 2 }, nadie)];
+  for (const plan of casos) assert.equal("despues" in plan, false);
+});
+
 test("planRemoto: lo que edita o no existe no hace nada", () => {
-  for (const r of ["/dj/modo", "/rescan", "/monitor", "/silenciar", "/otra"])
+  for (const r of ["/dj/modo", "/rescan", "/monitor", "/silenciar", "/apagar", "/otra"])
     assert.deepEqual(L.planRemoto(r, {}, status.datos, receptor), { destino: "ninguno" }, r);
 });
 

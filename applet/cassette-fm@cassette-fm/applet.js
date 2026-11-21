@@ -166,6 +166,9 @@ class CassetteApplet extends Applet.TextIconApplet {
         this._pedir("POST", ruta, cuerpo, (r) => {
             if (r.codigo === 200) {
                 this._aplicar(r.datos);
+            } else if (r.codigo === 0 && !this.is_remote && ruta === "/alternar") {
+                // el servicio está detenido (`cassette stop`): el clic lo levanta y se pone a escuchar
+                this._correr("cassette", ["on"], 60, () => this._sondear());
             } else {
                 if (r.datos && r.datos.error) global.logWarning("cassette-fm: " + r.datos.error);
                 this._sondear();
@@ -240,12 +243,6 @@ class CassetteApplet extends Applet.TextIconApplet {
             const nueva = new PopupMenu.PopupMenuItem("    Nueva emisora…");
             nueva.connect("activate", () => new DialogoEmisora(this).abrir());
             this._seccionEstaciones.addMenuItem(nueva);
-        }
-        if (estado.encendida) {
-            // el único que corta la transmisión: el clic izquierdo, la pausa y el volumen en 0 solo silencian
-            const apagar = new PopupMenu.PopupMenuItem("Apagar");
-            apagar.connect("activate", () => this._accion("/apagar"));
-            this._seccionEstaciones.addMenuItem(apagar);
         }
         this._seccionEstaciones.addMenuItem(new PopupMenu.PopupSeparatorMenuItem());
     }
@@ -407,7 +404,15 @@ class CassetteApplet extends Applet.TextIconApplet {
                 pedir(plan.metodo, plan.ruta, (r) => {
                     // 404: la lista cambió en la otra PC; se vuelve a pedir el estado y el menú se refresca
                     if (r.codigo === 404) pedir("GET", "/status", responder);
-                    else {
+                    else if (r.codigo === 200 && plan.despues) {
+                        // elegiste emisora cuando nadie escuchaba: ahora sí se abre el stream en esta PC
+                        this._correrReceptor(plan.despues, (e) => {
+                            if (!e.error && e.codigo === 0 && plan.despues[0] === "on")
+                                this._receptor = Object.assign({}, this._receptor, { escuchando: true, error: null });
+                            this._receptorTs = Date.now();
+                            responder(r);
+                        });
+                    } else {
                         if (r.codigo === 200) this._resincronizar();
                         responder(r);
                     }
@@ -1005,7 +1010,7 @@ class Dial {
         this._reiniciarCierre();
         const nuevo = Math.max(0, Math.min(100, this._volumen + delta));
         if (nuevo === this._volumen) return;
-        this._volumen = nuevo;          // en 0 la API apaga la radio; subir desde 0 la prende
+        this._volumen = nuevo;          // en 0 la API silencia el monitor; subir desde 0 lo prende
         this._refrescarTextos();
         this._colaVolumen.pedir(nuevo);
     }

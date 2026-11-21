@@ -249,19 +249,27 @@ function _acotar(n) {
 function planRemoto(ruta, cuerpo, estado, receptor) {
     receptor = receptor || { escuchando: false, volumen: 70 };
     const emisoras = estado && Array.isArray(estado.estaciones) ? estado.estaciones : [];
+    // Elegir emisora cuando nadie escucha te vuelve el primer oyente: el receptor de esta PC se prende después del pedido
+    // (la gracia de la radio cubre ese tiempo). Con otro oyente, o si ya escuchás, solo cambia la emisora.
+    const nadieEscucha = !!estado && estado.oyentes === 0 && receptor.escuchando === false;
+    const pedirEmisora = (nombre) => {
+        const plan = { destino: "servidor", metodo: "POST", ruta: "/station/" + idEstacion(nombre) };
+        if (nadieEscucha) plan.despues = ["on"];
+        return plan;
+    };
     const hacia = (paso) => {
         if (emisoras.length === 0) return { destino: "ninguno" };
         const actual = emisoras.indexOf(estado.estacion);
         const destino = actual < 0 ? (paso > 0 ? 0 : emisoras.length - 1)
                                    : (actual + paso + emisoras.length) % emisoras.length;
-        return { destino: "servidor", metodo: "POST", ruta: "/station/" + idEstacion(emisoras[destino]) };
+        return pedirEmisora(emisoras[destino]);
     };
     switch (ruta) {
     case "/estado":
         return { destino: "servidor", metodo: "GET", ruta: "/status" };
     case "/sintonizar":
         if (!cuerpo || typeof cuerpo.estacion !== "string") return { destino: "ninguno" };
-        return { destino: "servidor", metodo: "POST", ruta: "/station/" + idEstacion(cuerpo.estacion) };
+        return pedirEmisora(cuerpo.estacion);
     case "/siguiente":
         return hacia(+1);
     case "/anterior":
@@ -270,8 +278,6 @@ function planRemoto(ruta, cuerpo, estado, receptor) {
         return { destino: "receptor", argumentos: [receptor.escuchando ? "off" : "on"] };
     case "/encender":
         return { destino: "receptor", argumentos: ["on"] };
-    case "/apagar":
-        return { destino: "receptor", argumentos: ["off"] };
     case "/volumen": {
         if (!cuerpo) return { destino: "ninguno" };
         let nuevo;
