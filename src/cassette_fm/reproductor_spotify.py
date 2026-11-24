@@ -163,7 +163,7 @@ class ReproductorSpotify:
                         return
             if not self._soloist.conectado:
                 self._fallar(n, estacion, "Soloist no responde: ¿está corriendo o venció su build? "
-                                          "(systemctl --user status cassette-soloist · cassette spotify estado)")
+                                          "(journalctl --user -u cassette-soloist -e · cassette spotify estado)")
                 return
             try:
                 self._aplicar_volumen()

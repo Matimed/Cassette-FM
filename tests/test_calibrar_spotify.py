@@ -5,7 +5,7 @@ from pathlib import Path
 
 import pytest
 
-_RUTA = Path(__file__).resolve().parent.parent / "scripts" / "calibrar-spotify.py"
+_RUTA = Path(__file__).resolve().parent.parent / "scripts" / "herramientas" / "calibrar-spotify.py"
 _spec = importlib.util.spec_from_file_location("calibrar_spotify", _RUTA)
 calibrar = importlib.util.module_from_spec(_spec)
 _spec.loader.exec_module(calibrar)

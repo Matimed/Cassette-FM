@@ -68,7 +68,7 @@ class ConfigSpotify:
     soloist_ws: str = "ws://127.0.0.1:9787"   # WebSocket local de Soloist (servicio cassette-soloist)
     soloist_bin: Path = Path.home() / ".local/share/cassette-fm/soloist/bin/soloist"
     nombre_dispositivo: str = "cassette-fm"   # nombre de Soloist como dispositivo de Spotify
-    ajuste_volumen_db: float = 0.0            # para que Spotify suene tan fuerte como las locales (scripts/calibrar-spotify.py)
+    ajuste_volumen_db: float = 0.0            # para que Spotify suene tan fuerte como las locales (scripts/herramientas/calibrar-spotify.py)
     uris_por_pedido: int = 100                # temas que se le mandan a Spotify de una vez (no se usa la cola)
     tolerancia_resync_segundos: float = 3.0   # desfase con el reloj que hace re-sintonizar al empezar un tema
 

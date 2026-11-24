@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Calibra el volumen de las emisoras de Spotify contra las locales y propone `ajuste_volumen_db` para [spotify].
 
-    .venv/bin/python scripts/calibrar-spotify.py [--local "Nombre"] [--spotify "Nombre"] [--segundos 15]
+    .venv/bin/python scripts/herramientas/calibrar-spotify.py [--local "Nombre"] [--spotify "Nombre"] [--segundos 15]
 
 Con la radio corriendo: sintoniza una emisora local, graba ~15 s solo de su stream (parec), hace lo mismo con una
 de Spotify, compara el nivel medio (dB, sin contar los silencios) y vuelve a dejar la radio como estaba.
@@ -67,7 +67,7 @@ def _grabar(indice: int, segundos: float) -> bytes:
 
 
 def main() -> int:
-    sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "src"))
+    sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "src"))
     from cassette_fm import config as cfg_mod
     from cassette_fm.emisoras import leer_emisoras
     a = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])

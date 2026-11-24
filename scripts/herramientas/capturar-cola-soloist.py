@@ -2,7 +2,7 @@
 """Escucha el WebSocket de Soloist y escribe cada evento (JSON, uno por línea) en un archivo. Solo lee: no manda
 ningún comando, así que no cambia lo que está sonando.
 
-    .venv/bin/python scripts/capturar-cola-soloist.py SALIDA.jsonl [--url ws://127.0.0.1:9787] [--segundos 300]
+    .venv/bin/python scripts/herramientas/capturar-cola-soloist.py SALIDA.jsonl [--url ws://127.0.0.1:9787] [--segundos 300]
 
 Sirve para ver qué manda Soloist al encolar temas desde la app de Spotify (queue_changed, track_changed)."""
 import argparse

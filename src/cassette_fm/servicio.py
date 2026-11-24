@@ -235,7 +235,7 @@ def servir(config: Config, rutas: Rutas, avisar: Callable[[str, str], None] | No
             extra_args_mpv = ["--ao=pulse", *extra_args_mpv]
         except AudioRouterError as e:
             _log.error("no se pudo crear el bus de audio (%s); la radio suena sin él. Si no lo necesitás, poné "
-                       "`bus_audio = false` en config.toml (y corré scripts/instalar-bus.sh quitar)", e)
+                       "`bus_audio = false` en config.toml (y corré scripts/bus-audio.sh quitar)", e)
             router = env_audio = None
 
     estado = cargar_estado(rutas.estado)

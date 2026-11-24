@@ -60,7 +60,7 @@ prioridad) y después compartir con amigos (CASSETTE-FM-3m6b, diferible):
 Bus de audio (CASSETTE-FM-r80e, 18/11): todo el audio sale al sink virtual `radio_virtual` y lo que se oye en esta PC es un
 monitor local con volumen propio (el volumen de la radio es el del monitor; las fuentes quedan al 100 % salvo ducking y
 calibración), base de la retransmisión por red; `bus_audio` en `config.toml` (por defecto `true`), `POST /monitor`,
-interruptor en el applet y `scripts/instalar-bus.sh` para Soloist (cliente PipeWire nativo: `PIPEWIRE_NODE`, no `PULSE_SINK`):
+interruptor en el applet y enrutado de Soloist al bus (cliente PipeWire nativo: `PIPEWIRE_NODE`, no `PULSE_SINK`; lo hace `scripts/instalar-spotify.sh` y `scripts/bus-audio.sh` lo activa o lo quita):
 [`superpowers/specs/2026-11-18-bus-de-audio-design.md`](superpowers/specs/2026-11-18-bus-de-audio-design.md).
 Radio por la LAN (CASSETTE-FM-u8ea, 18/11): una segunda PC propia escucha la misma transmisión con el mismo applet en modo remoto;
 servidor `lan_server.py` (`[lan]`, apagado por defecto, escucha en la IP de Tailscale) con `/status`, `/station`, `/stream`
@@ -76,7 +76,7 @@ en Docker Hub): recibe al puente con `INGEST_TOKEN`, reparte el audio a varios o
 le avisa a la PC qué calidades se escuchan y tiene una API privada con la clave maestra `MASTER_PASSWORD` y claves de solo escucha o completas que se
 administran desde la PC con `cassette claves` (cookie firmada o Bearer; diseño en
 [`superpowers/specs/2026-11-19-claves-relay-design.md`](superpowers/specs/2026-11-19-claves-relay-design.md)) y una
-página de prueba; el puente manda un `latido` cada 2 min para que Render no lo duerma. Falta la web (entrega siguiente):
+página de prueba; el puente manda un `latido` cada 2 min para que Render no lo duerma. La web (el dial en el navegador y en el celular, instalable en Android) ya está en `relay/web`, con diseño en [`superpowers/specs/2026-11-19-web-del-relay-design.md`](superpowers/specs/2026-11-19-web-del-relay-design.md). Diseño del relay:
 [`superpowers/specs/2026-11-19-relay-nube-design.md`](superpowers/specs/2026-11-19-relay-nube-design.md),
 plan en [`superpowers/plans/2026-11-19-relay-nube.md`](superpowers/plans/2026-11-19-relay-nube.md).
 La voz del DJ habla sobre el empalme entre dos temas (20/11, CASSETTE-FM-qi26): se ancla al **corte**, no al arranque del
@@ -90,6 +90,13 @@ la duerme; abrir un stream o elegir emisora con cero oyentes la despierta (y te 
 (radio, Soloist, DJ, Ollama): [`superpowers/specs/2026-11-20-radio-por-oyentes-design.md`](superpowers/specs/2026-11-20-radio-por-oyentes-design.md),
 plan en [`superpowers/plans/2026-11-20-radio-por-oyentes.md`](superpowers/plans/2026-11-20-radio-por-oyentes.md).
 Prender desde volumen 0 sube a 50. Ojo al tocar el applet: `ReloadXlet` recarga `applet.js` pero no `logic.js` (queda en caché hasta reiniciar Cinnamon).
+
+## Documentación del proyecto
+
+El README es la puerta de entrada y reparte el resto (20/11): [`setup.md`](setup.md) para instalar y configurar cada módulo en
+orden, [`uso.md`](uso.md), [`dj.md`](dj.md), [`configuracion.md`](configuracion.md) y [`arquitectura.md`](arquitectura.md)
+(decisiones técnicas). Este documento queda como bitácora de estado y decisiones: **al agregar una función, actualizá el
+documento temático que corresponda** (no el README) y dejá acá, como mucho, una línea con el enlace al diseño.
 
 ## Relevamiento previo (leer antes de diseñar)
 

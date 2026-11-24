@@ -4,7 +4,7 @@ from pathlib import Path
 
 from cassette_fm.biblioteca import Estacion, Pista
 
-_RUTA = Path(__file__).resolve().parent.parent / "scripts" / "ensayo-dj.py"
+_RUTA = Path(__file__).resolve().parent.parent / "scripts" / "herramientas" / "ensayo-dj.py"
 _spec = importlib.util.spec_from_file_location("ensayo_dj", _RUTA)
 ensayo = importlib.util.module_from_spec(_spec)
 _spec.loader.exec_module(ensayo)

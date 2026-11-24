@@ -2,9 +2,9 @@
 """Ensayo del DJ: manda pedidos reales al servicio DJ para unas cuantas transiciones de cada radio, muestra los
 guiones en vivo (con colores) y al final resume qué escribió y qué descartó.
 
-    .venv/bin/python scripts/ensayo-dj.py                       # 5 temas por radio, todas las radios
-    .venv/bin/python scripts/ensayo-dj.py --canciones 3 --estacion "Power F.M."
-    .venv/bin/python scripts/ensayo-dj.py --modo llm            # además cambia el modo del DJ (hasta reiniciarlo)
+    .venv/bin/python scripts/herramientas/ensayo-dj.py                       # 5 temas por radio, todas las radios
+    .venv/bin/python scripts/herramientas/ensayo-dj.py --canciones 3 --estacion "Power F.M."
+    .venv/bin/python scripts/herramientas/ensayo-dj.py --modo llm            # además cambia el modo del DJ (hasta reiniciarlo)
 
 Los pedidos son los mismos que arma el planificador de la radio (`armar_pedido`), con la voz, el idioma y la
 personalidad de cada radio. Se mandan de a uno para pasar los `recientes` como lo hace el planificador.
@@ -27,7 +27,7 @@ try:
     from cassette_fm.emisoras import Catalogo
     from cassette_fm.planificacion import Hueco, armar_pedido
 except ImportError:      # corrido con otro Python: se reintenta con el del proyecto
-    _venv = Path(__file__).resolve().parent.parent / ".venv" / "bin" / "python3"
+    _venv = Path(__file__).resolve().parents[2] / ".venv" / "bin" / "python3"
     if _venv.exists() and Path(sys.executable).absolute() != _venv.absolute():
         os.execv(_venv, [str(_venv), *sys.argv])
     raise

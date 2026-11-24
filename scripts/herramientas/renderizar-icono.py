@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Renderiza los íconos de cassette-fm a partir de branding/casete.png (contorno negro sobre transparente), con Chromium sin
 ventana: el casete en blanco con la ventana de la cinta (los carretes) en naranja, solo o sobre un fondo oscuro, y el blanco
-liso del panel del applet. Uso: python3 scripts/renderizar-icono.py"""
+liso del panel del applet. Uso: python3 scripts/herramientas/renderizar-icono.py"""
 import base64
 import shutil
 import subprocess
@@ -9,7 +9,7 @@ import sys
 import tempfile
 from pathlib import Path
 
-RAIZ = Path(__file__).resolve().parent.parent
+RAIZ = Path(__file__).resolve().parents[2]
 FUENTE = RAIZ / "branding" / "casete.png"
 BLANCO, NARANJA = "#f4f4f7", "#d9822b"
 FONDO_OSCURO = "linear-gradient(#2c2c3a, #0e0e13)"

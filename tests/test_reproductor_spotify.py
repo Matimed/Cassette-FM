@@ -555,7 +555,7 @@ def test_soloist_caido_dice_tambien_que_puede_haber_vencido():
 # --- peticiones por la cola de la app (etapa 7a) ---
 
 def _items_capturados() -> dict:
-    """Los ítems tal como los manda Soloist (captura real de `scripts/capturar-cola-soloist.py`)."""
+    """Los ítems tal como los manda Soloist (captura real de `scripts/herramientas/capturar-cola-soloist.py`)."""
     items = {}
     for linea in (Path(__file__).parent / "spotify" / "eventos_cola.jsonl").read_text(encoding="utf-8").splitlines():
         for u in json.loads(linea)["evento"].get("upcoming", []):

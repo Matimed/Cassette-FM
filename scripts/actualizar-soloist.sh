@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# Baja el build actual de Spotify Soloist (vencen a los 90 días) y reinicia el servicio.
+# Baja el build actual de Spotify Soloist (vencen a los 90 días) y reinicia su servicio. Lo usa también
+# scripts/instalar-spotify.sh (con --sin-reiniciar, porque el servicio todavía no existe).
 # Uso: scripts/actualizar-soloist.sh [--sin-reiniciar]
 set -euo pipefail
 
@@ -14,6 +15,10 @@ mkdir -p "$base/bin"
 install -m 755 "$tmp/soloist" "$base/bin/soloist"
 "$base/bin/soloist" --version
 if [ "${1:-}" != "--sin-reiniciar" ]; then
-    systemctl --user restart cassette-soloist
-    echo "Soloist actualizado y reiniciado."
+    if systemctl --user cat cassette-soloist >/dev/null 2>&1; then
+        systemctl --user restart cassette-soloist
+        echo "Soloist actualizado y reiniciado."
+    else
+        echo "Soloist actualizado. Todavía no tiene servicio: para instalarlo, scripts/instalar-spotify.sh."
+    fi
 fi

@@ -288,7 +288,7 @@ def _ejecutar(args, puerto: int) -> None:
 def _instalar_atajos() -> int:
     ejecutable = shutil.which("cassette")
     if ejecutable is None:
-        print("instalá cassette en el PATH primero (scripts/instalar.sh)", file=sys.stderr)
+        print("instalá cassette en el PATH primero (scripts/instalar-radio.sh)", file=sys.stderr)
         return 1
     try:
         for mensaje in atajos.instalar(ejecutable, atajos.gsettings):
@@ -307,7 +307,7 @@ def _instalar_applet() -> int:
     origen = _origen_applet()
     if not origen.is_dir():
         print(f"no se encuentra el applet en {origen}: corré cassette desde una instalación "
-              "en modo editable del repo (scripts/instalar.sh)", file=sys.stderr)
+              "en modo editable del repo (scripts/instalar-radio.sh)", file=sys.stderr)
         return 1
     datos = Path(os.environ.get("XDG_DATA_HOME") or Path.home() / ".local" / "share")
     try:
@@ -466,7 +466,7 @@ def _estado_soloist(c) -> None:
         else:
             print("Soloist: corriendo, pero no contestó el estado de la sesión")
     except ErrorSpotify as e:
-        print(f"Soloist: no responde ({e}) — systemctl --user status cassette-soloist")
+        print(f"Soloist: no responde ({e}) — journalctl --user -u cassette-soloist -e")
     finally:
         cliente.cerrar()
     try:
