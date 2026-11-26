@@ -185,10 +185,15 @@ function filaDial(estaciones, actual, lado = 3) {
 }
 
 const _TECLAS_DIAL = { Left: "anterior", Right: "siguiente", Up: "subir", Down: "bajar", Escape: "cerrar",
-                      Return: "cerrar" };
+                      Return: "cerrar", space: "alternar" };
 
 function teclaDial(nombreTecla) {
     return _TECLAS_DIAL[nombreTecla] || null;
+}
+
+// ¿Se oye la radio en esta PC? Apagada, o con el bus de audio y el monitor local silenciado, no.
+function muteada(estado) {
+    return !estado || !estado.encendida || estado.monitor_local === false;
 }
 
 // Pedidos a la radio de a uno: si llega otro mientras uno está en curso, al terminar se manda solo el último
@@ -366,7 +371,7 @@ if (typeof module !== "undefined") {
         etiqueta, tooltip, accionDeRueda, crearLimitador, pedidoHttp, parsearRespuesta,
         parsearVoces, idiomaBase, vocesDelIdioma, etiquetaDeVoz, elegirVoz, elegirIdioma, faltante, argumentosNueva,
         mensajeDeError, argumentosMuestra, botonMuestra, rutaDeMuestra, argumentosExaminar, rutaElegida,
-        filaDial, teclaDial, crearCola, barraVolumen, iconoDe, volumenTrasRespuesta, receptorTrasVolumen,
+        filaDial, teclaDial, muteada, crearCola, barraVolumen, iconoDe, volumenTrasRespuesta, receptorTrasVolumen,
         parsearUrlServidor, idEstacion, planRemoto, estadoRemoto, parsearReceptor, parsearIconos, musicaSonando,
     };
 }

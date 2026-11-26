@@ -249,6 +249,18 @@ test("volumenTrasRespuesta: solo sintonizar con la radio apagada adopta el volum
   assert.equal(L.volumenTrasRespuesta(30, 60, true), 30);    // lo local manda si no estaba en 0
 });
 
+test("teclaDial: la barra espaciadora alterna (mutea / desmutea)", () => {
+  assert.equal(L.teclaDial("space"), "alternar");
+});
+
+test("muteada: apagada o con el monitor local silenciado", () => {
+  assert.equal(L.muteada({ encendida: true }), false);
+  assert.equal(L.muteada({ encendida: true, monitor_local: true }), false);
+  assert.equal(L.muteada({ encendida: true, monitor_local: false }), true);
+  assert.equal(L.muteada({ encendida: false }), true);
+  assert.equal(L.muteada(null), true);
+});
+
 test("teclaDial: Enter también cierra", () => {
   assert.equal(L.teclaDial("Return"), "cerrar");
 });

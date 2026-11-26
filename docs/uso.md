@@ -52,6 +52,7 @@ logo (*Examinar…*).
 |---|---|
 | ◀ ▶ | cambia de emisora |
 | ▲ ▼ | volumen de a 5 (en 0 se apaga) |
+| Barra espaciadora | mutea / desmutea (igual que el clic en el applet o la tecla de pausa) |
 | Enter, Escape o el mismo atajo | lo cierra (también se cierra solo a los 3 s sin tocar nada) |
 | Clic en un logo / rueda | sintoniza / cambia de emisora |
 

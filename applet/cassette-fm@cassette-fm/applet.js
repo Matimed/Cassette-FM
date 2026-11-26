@@ -767,7 +767,7 @@ const DIAL_ANCHO_TEXTOS = 350;      // ancho fijo del recuadro de los textos (ce
 function _nombreDeTecla(simbolo) {
     const nombres = { [Clutter.KEY_Left]: "Left", [Clutter.KEY_Right]: "Right", [Clutter.KEY_Up]: "Up",
                       [Clutter.KEY_Down]: "Down", [Clutter.KEY_Escape]: "Escape", [Clutter.KEY_Return]: "Return",
-                      [Clutter.KEY_KP_Enter]: "Return",
+                      [Clutter.KEY_KP_Enter]: "Return", [Clutter.KEY_space]: "space",
                       // teclado numérico: sin NumLock manda KP_Left/…; con NumLock, los dígitos 4/6/8/2
                       [Clutter.KEY_KP_Left]: "Left", [Clutter.KEY_KP_Right]: "Right", [Clutter.KEY_KP_Up]: "Up",
                       [Clutter.KEY_KP_Down]: "Down", [Clutter.KEY_KP_4]: "Left", [Clutter.KEY_KP_6]: "Right",
@@ -804,6 +804,8 @@ class Dial {
         this._estado = null;
         this._actual = null;
         this._volumen = 0;
+        this._muteada = false;          // la radio está prendida pero no se oye en esta PC
+        this._alternando = false;       // hay un pedido de mutear/desmutear en curso
         this._logos = new Map();        // nombre → St.Icon
         this._lugares = new Map();      // nombre → desplazamiento visible (undefined: no se ve)
         this._vencimiento = 0;
@@ -940,7 +942,7 @@ class Dial {
 
     _refrescarTextos() {
         this._nombre.text = this._actual || "";
-        this._ayuda.text = AppletDir.logic.barraVolumen(this._volumen);
+        this._ayuda.text = this._muteada && this._volumen > 0 ? "Muteada" : AppletDir.logic.barraVolumen(this._volumen);
         this._centrar();
     }
 
@@ -981,6 +983,7 @@ class Dial {
         else if (accion === "siguiente") this._mover(+1);
         else if (accion === "subir") this._cambiarVolumen(+DIAL_PASO_VOLUMEN);
         else if (accion === "bajar") this._cambiarVolumen(-DIAL_PASO_VOLUMEN);
+        else if (accion === "alternar") this._alternar();
         return Clutter.EVENT_STOP;
     }
 
@@ -1005,9 +1008,32 @@ class Dial {
         this._colaEmisora.pedir(nombre);
     }
 
+    // Barra espaciadora: lo mismo que el clic en el applet o la tecla de pausa (mutea o desmutea). Un pedido a la vez:
+    // alternar no es idempotente y dos seguidos se anularían.
+    _alternar() {
+        if (!this._estado) return;
+        this._reiniciarCierre();
+        if (this._alternando) return;
+        this._alternando = true;
+        this._applet._pedir("POST", "/alternar", undefined, (r) => {
+            this._alternando = false;
+            if (this._cerrado) return;
+            if (r.codigo !== 200) return this._avisarYCerrar("cassette-fm no responde");
+            this._aplicarEstado(r.datos);
+            this._refrescarTextos();
+        });
+    }
+
+    _aplicarEstado(datos) {
+        this._applet._aplicar(datos);
+        this._estado = Object.assign({}, this._estado, datos, { iconos: this._estado.iconos });
+        this._muteada = AppletDir.logic.muteada(datos);
+    }
+
     _cambiarVolumen(delta) {
         if (!this._estado) return;
         this._reiniciarCierre();
+        if (delta > 0) this._muteada = false;       // subir el volumen la desmutea (la API la prende)
         const nuevo = Math.max(0, Math.min(100, this._volumen + delta));
         if (nuevo === this._volumen) return;
         this._volumen = nuevo;          // en 0 la API silencia el monitor; subir desde 0 lo prende
@@ -1018,8 +1044,7 @@ class Dial {
     _alResponder(r, cola, eraSintonizar) {
         cola.listo();
         if (this._cerrado || r.codigo !== 200) return;
-        this._applet._aplicar(r.datos);
-        this._estado = Object.assign({}, this._estado, r.datos, { iconos: this._estado.iconos });
+        this._aplicarEstado(r.datos);
         this._volumen = AppletDir.logic.volumenTrasRespuesta(this._volumen, r.datos.volumen, eraSintonizar);
         this._refrescarTextos();
         if (eraSintonizar) this._vigilarMusica(++this._vigilia);
