@@ -130,4 +130,4 @@ Python 3, Node. No hay Ollama ni Go instalados en el sistema (en las pruebas cor
 
 - Tareas en **Beans**, integrado en este repo (`.beans/`, prefijo `CASSETTE-FM-`).
   `beans list`, `beans show <id>`; para crear: `/beans:create <descripción>`.
-- Git **solo local** (sin remote por ahora). Rama `main`.
+- Git con remoto `github` (git@github.com:Matimed/Cassette-FM.git), rama `main`. Las versiones llevan tag `vX.Y.Z` (versionado semántico; la primera, `v0.1.0`, del 2026-11-26) y su release en GitHub con notas.
